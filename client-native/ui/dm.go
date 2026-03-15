@@ -75,8 +75,10 @@ type DMViewUI struct {
 	joinGroupEd    widget.Editor
 	showJoinGroup  bool
 
-	// Files
-	filesBtn widget.Clickable
+	// Files / Tools
+	filesBtn    widget.Clickable
+	kanbanBtn   widget.Clickable
+	calendarBtn widget.Clickable
 
 	// Emoji picker
 	emojiBtn         widget.Clickable
@@ -243,6 +245,18 @@ func (v *DMViewUI) LayoutSidebar(gtx layout.Context) layout.Dimensions {
 		v.app.mu.Unlock()
 		v.app.SharesView.loadShareList()
 	}
+	if v.kanbanBtn.Clicked(gtx) {
+		v.app.mu.Lock()
+		v.app.Mode = ViewKanban
+		v.app.mu.Unlock()
+		v.app.KanbanView.LoadBoards()
+	}
+	if v.calendarBtn.Clicked(gtx) {
+		v.app.mu.Lock()
+		v.app.Mode = ViewCalendar
+		v.app.mu.Unlock()
+		v.app.CalendarView.LoadEvents()
+	}
 
 	// Handle create group
 	if v.createGroupBtn.Clicked(gtx) {
@@ -285,27 +299,15 @@ func (v *DMViewUI) LayoutSidebar(gtx layout.Context) layout.Dimensions {
 
 		// Files button
 		layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-			bg := ColorCard
-			if v.filesBtn.Hovered() {
-				bg = ColorHover
-			}
-			return v.filesBtn.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-				paint.FillShape(gtx.Ops, bg, clip.Rect{Max: image.Pt(gtx.Constraints.Max.X, gtx.Dp(36))}.Op())
-				return layout.Inset{Top: unit.Dp(8), Bottom: unit.Dp(8), Left: unit.Dp(12), Right: unit.Dp(8)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-					return layout.Flex{Alignment: layout.Middle}.Layout(gtx,
-						layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-							return layoutIcon(gtx, IconFolder, 18, ColorAccent)
-						}),
-						layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-							return layout.Inset{Left: unit.Dp(8)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-								lbl := material.Body2(v.app.Theme.Material, "Files")
-								lbl.Color = ColorText
-								return lbl.Layout(gtx)
-							})
-						}),
-					)
-				})
-			})
+			return v.layoutNavBtn(gtx, &v.filesBtn, IconFolder, "Files")
+		}),
+		// Kanban button
+		layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+			return v.layoutNavBtn(gtx, &v.kanbanBtn, IconViewColumn, "Kanban")
+		}),
+		// Calendar button
+		layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+			return v.layoutNavBtn(gtx, &v.calendarBtn, IconSchedule, "Calendar")
 		}),
 
 		layout.Rigid(func(gtx layout.Context) layout.Dimensions {
@@ -1808,6 +1810,30 @@ func layoutDMCircleIconBtn(gtx layout.Context, app *App, btn *widget.Clickable, 
 		}.Op(gtx.Ops))
 		return layout.Center.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
 			return layoutIcon(gtx, icon, 20, ColorText)
+		})
+	})
+}
+
+func (v *DMViewUI) layoutNavBtn(gtx layout.Context, btn *widget.Clickable, icon *NIcon, label string) layout.Dimensions {
+	bg := ColorCard
+	if btn.Hovered() {
+		bg = ColorHover
+	}
+	return btn.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+		paint.FillShape(gtx.Ops, bg, clip.Rect{Max: image.Pt(gtx.Constraints.Max.X, gtx.Dp(36))}.Op())
+		return layout.Inset{Top: unit.Dp(8), Bottom: unit.Dp(8), Left: unit.Dp(12), Right: unit.Dp(8)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+			return layout.Flex{Alignment: layout.Middle}.Layout(gtx,
+				layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+					return layoutIcon(gtx, icon, 18, ColorAccent)
+				}),
+				layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+					return layout.Inset{Left: unit.Dp(8)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+						lbl := material.Body2(v.app.Theme.Material, label)
+						lbl.Color = ColorText
+						return lbl.Layout(gtx)
+					})
+				}),
+			)
 		})
 	})
 }

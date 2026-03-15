@@ -66,6 +66,12 @@ type ChannelView struct {
 	visualOrder    []int
 	emptyCatIDs    []string // category IDs for sentinels
 
+	// Root category channel slot: channelID → child index after which channel is displayed
+	// -1 = before first child, 0 = after child[0], 1 = after child[1], ...
+	rootChanSlot map[string]int
+	// Root gap sentinels: emptyCatIDs index → slot position (for drop line rendering)
+	rootGapSentinels map[int]int
+
 	// Per-channel rendered heights (flat index → pixel height)
 	chanItemH map[int]int
 
@@ -109,7 +115,10 @@ type ChannelView struct {
 	catDragOffsetY    float32 // delta kurzoru od startu
 	catDragTargetIdx  int    // cílový index v renderedCatIDs (-1 = žádný)
 	catDragTargetID   string // cílová kategorie ID pro adopt ("" = reorder/unadopt)
-	catDragAction     string // "reorder" | "adopt" | "" (žádný)
+	catDragAction     string // "reorder" | "adopt" | "child_reorder" | "" (žádný)
+	catDragChildFrom  int    // zdrojový index mezi siblings
+	catDragChildTo    int    // cílový index mezi siblings
+	catDragSiblings   []string // sibling IDs v pořadí
 	renderedCatIDs    []string // uložené pro D&D
 	catHeights        []int    // výška každé kategorie v px
 	allCatInfos       []catDragInfo // flat list všech kategorií pro D&D
@@ -623,6 +632,15 @@ func (v *ChannelView) Layout(gtx layout.Context) layout.Dimensions {
 	// Negative sentinel -(pos+1): emptyCatIDs[pos] = catID (empty cat) or "" (gap between cats)
 	v.visualOrder = v.visualOrder[:0]
 	v.emptyCatIDs = v.emptyCatIDs[:0]
+	if v.rootChanSlot == nil {
+		v.rootChanSlot = make(map[string]int)
+	}
+	if v.rootGapSentinels == nil {
+		v.rootGapSentinels = make(map[int]int)
+	}
+	for k := range v.rootGapSentinels {
+		delete(v.rootGapSentinels, k)
+	}
 	// Gap sentinel před první kategorií (pro drop nahoru)
 	if len(renderedCatIDs) > 0 {
 		sentinel := -(len(v.emptyCatIDs) + 1)
@@ -638,11 +656,33 @@ func (v *ChannelView) Layout(gtx layout.Context) layout.Dimensions {
 		collapsed := v.collapsedCats[catID]
 		if g != nil && len(g.children) > 0 {
 			if !collapsed {
-				// Kanály přímo na root úrovni
-				if len(g.channels) > 0 {
-					v.visualOrder = append(v.visualOrder, g.channels...)
+				// Group root channels by slot position among children
+				slotChans := make(map[int][]int) // slot → channel indices
+				for _, ci := range g.channels {
+					slot := -1
+					if s, ok := v.rootChanSlot[channels[ci].ID]; ok {
+						slot = s
+						// Clamp to valid range
+						if slot >= len(g.children) {
+							slot = len(g.children) - 1
+						}
+					}
+					slotChans[slot] = append(slotChans[slot], ci)
 				}
-				for _, child := range g.children {
+
+				// Channels before first child (slot -1)
+				if chans := slotChans[-1]; len(chans) > 0 {
+					v.visualOrder = append(v.visualOrder, chans...)
+				}
+				// Sentinel before first child
+				{
+					sentinel := -(len(v.emptyCatIDs) + 1)
+					v.emptyCatIDs = append(v.emptyCatIDs, catID)
+					v.rootGapSentinels[len(v.emptyCatIDs)-1] = -1
+					v.visualOrder = append(v.visualOrder, sentinel)
+				}
+
+				for childIdx, child := range g.children {
 					childCollapsed := v.collapsedCats[child.id]
 					if len(child.channels) > 0 && !childCollapsed {
 						v.visualOrder = append(v.visualOrder, child.channels...)
@@ -651,6 +691,15 @@ func (v *ChannelView) Layout(gtx layout.Context) layout.Dimensions {
 						v.emptyCatIDs = append(v.emptyCatIDs, child.id)
 						v.visualOrder = append(v.visualOrder, sentinel)
 					}
+					// Channels after this child (slot childIdx)
+					if chans := slotChans[childIdx]; len(chans) > 0 {
+						v.visualOrder = append(v.visualOrder, chans...)
+					}
+					// Sentinel after this child
+					sentinel := -(len(v.emptyCatIDs) + 1)
+					v.emptyCatIDs = append(v.emptyCatIDs, catID)
+					v.rootGapSentinels[len(v.emptyCatIDs)-1] = childIdx
+					v.visualOrder = append(v.visualOrder, sentinel)
 				}
 			}
 		} else if g != nil && len(g.channels) > 0 && !collapsed {
@@ -963,6 +1012,10 @@ func (v *ChannelView) Layout(gtx layout.Context) layout.Dimensions {
 func (v *ChannelView) layoutRootCategory(gtx layout.Context, catID, name, hexColor string, children []chanCatChild, rootChans []int, channels []api.Channel, activeID string, catIdx, dragIdx int) layout.Dimensions {
 	catColor := parseHexColor(hexColor)
 	borderColor := withAlpha(catColor, 170)
+	isDropTarget := v.isEmptyCatDropTarget(catID)
+	if isDropTarget {
+		borderColor = ColorAccent
+	}
 	isCatDragSource := v.catDragging && v.catDragFromID == catID
 	if isCatDragSource {
 		borderColor = withAlpha(borderColor, 80)
@@ -1010,11 +1063,11 @@ func (v *ChannelView) layoutRootCategory(gtx layout.Context, catID, name, hexCol
 				return layout.Dimensions{Size: bounds.Max}
 			},
 			func(gtx layout.Context) layout.Dimensions {
-				return layout.Inset{Top: unit.Dp(1), Bottom: unit.Dp(1), Left: unit.Dp(1), Right: unit.Dp(1)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+				return layout.Inset{Top: unit.Dp(2), Bottom: unit.Dp(2), Left: unit.Dp(2), Right: unit.Dp(2)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
 					return layout.Background{}.Layout(gtx,
 						func(gtx layout.Context) layout.Dimensions {
 							bounds := image.Rect(0, 0, gtx.Constraints.Min.X, gtx.Constraints.Min.Y)
-							rr := gtx.Dp(7)
+							rr := gtx.Dp(6)
 							bgColor := ColorCard
 							if isCatDragSource {
 								bgColor = withAlpha(bgColor, 100)
@@ -1033,28 +1086,72 @@ func (v *ChannelView) layoutRootCategory(gtx layout.Context, catID, name, hexCol
 								return v.layoutRootCatHeader(gtx, catIdx, catID, name, catColor, collapsed)
 							}))
 
-							// Kanály přímo na root úrovni + child kategorie
+							// Channels interleaved with child categories
 							if !collapsed {
-								// Root-level kanály (pod headerem, nad children)
-								if len(rootChans) > 0 {
-									for _, chIdx := range rootChans {
-										chIdx := chIdx
-										ch := channels[chIdx]
-										items = append(items, layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-											return layout.Inset{Left: unit.Dp(8)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-												return v.layoutChannelItem(gtx, chIdx, ch, activeID)
-											})
-										}))
+								dropGap := v.rootGapDropAfterChild(catID)
+
+								// Group root channels by slot
+								slotChans := make(map[int][]int)
+								for _, ci := range rootChans {
+									slot := -1
+									if s, ok := v.rootChanSlot[channels[ci].ID]; ok {
+										slot = s
+										if slot >= len(children) {
+											slot = len(children) - 1
+										}
 									}
+									slotChans[slot] = append(slotChans[slot], ci)
 								}
-								for _, child := range children {
+
+								// Channels before first child (slot -1)
+								for _, chIdx := range slotChans[-1] {
+									chIdx := chIdx
+									ch := channels[chIdx]
+									items = append(items, layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+										return layout.Inset{Left: unit.Dp(8)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+											return v.layoutChannelItem(gtx, chIdx, ch, activeID)
+										})
+									}))
+								}
+								// Drop line before first child
+								if dropGap == -1 {
+									items = append(items, layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+										return layout.Inset{Left: unit.Dp(12), Right: unit.Dp(8)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+											return v.layoutDropLine(gtx)
+										})
+									}))
+								}
+
+								for childIdx, child := range children {
 									ch := child
 									items = append(items, layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 										return layout.Inset{Left: unit.Dp(12)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
 											return v.layoutCategory(gtx, ch.id, ch.name, ch.hexColor, ch.channels, channels, activeID, ch.widgetIdx)
 										})
 									}))
+									// Channels after this child (slot childIdx)
+									for _, chIdx := range slotChans[childIdx] {
+										chIdx := chIdx
+										chItem := channels[chIdx]
+										items = append(items, layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+											return layout.Inset{Left: unit.Dp(8)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+												return v.layoutChannelItem(gtx, chIdx, chItem, activeID)
+											})
+										}))
+									}
+									// Drop line after this child
+									if dropGap == childIdx {
+										items = append(items, layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+											return layout.Inset{Left: unit.Dp(12), Right: unit.Dp(8)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+												return v.layoutDropLine(gtx)
+											})
+										}))
+									}
 								}
+								// Bottom spacing so root border doesn't merge with last child
+								items = append(items, layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+									return layout.Dimensions{Size: image.Pt(0, gtx.Dp(4))}
+								}))
 							}
 
 							return layout.Flex{Axis: layout.Vertical}.Layout(gtx, items...)
@@ -1197,6 +1294,27 @@ func (v *ChannelView) isEmptyCatDropTarget(catID string) bool {
 	return false
 }
 
+// rootGapDropAfterChild returns the slot being targeted for a root category drop.
+// Returns -1 for "before first child", 0+ for "after child[N]",
+// -2 for "no active root gap drop for this catID".
+func (v *ChannelView) rootGapDropAfterChild(catID string) int {
+	if !v.dragging || v.dragTargetIdx >= 0 {
+		return -2
+	}
+	emptyCatPos := -(v.dragTargetIdx + 1)
+	if emptyCatPos < 0 || emptyCatPos >= len(v.emptyCatIDs) {
+		return -2
+	}
+	if v.emptyCatIDs[emptyCatPos] != catID {
+		return -2
+	}
+	if gapIdx, ok := v.rootGapSentinels[emptyCatPos]; ok {
+		return gapIdx
+	}
+	return -2
+}
+
+
 func (v *ChannelView) layoutCategory(gtx layout.Context, catID, name, hexColor string, indices []int, channels []api.Channel, activeID string, catIdx int) layout.Dimensions {
 	catColor := parseHexColor(hexColor)
 	borderColor := withAlpha(catColor, 170)
@@ -1213,7 +1331,7 @@ func (v *ChannelView) layoutCategory(gtx layout.Context, catID, name, hexColor s
 		borderColor = ColorAccent
 	}
 
-	// Drop line for cat reorder
+	// Drop line for cat reorder (top-level or child)
 	catReorderAbove := false
 	catReorderBelow := false
 	if v.catDragging && v.catDragAction == "reorder" && v.catDragTargetIdx >= 0 && v.catDragTargetIdx < len(v.renderedCatIDs) && v.renderedCatIDs[v.catDragTargetIdx] == catID && catID != v.catDragFromID {
@@ -1221,6 +1339,16 @@ func (v *ChannelView) layoutCategory(gtx layout.Context, catID, name, hexColor s
 			catReorderAbove = true
 		} else {
 			catReorderBelow = true
+		}
+	}
+	// Child reorder within same parent
+	if v.catDragging && v.catDragAction == "child_reorder" && catID != v.catDragFromID && len(v.catDragSiblings) > 0 {
+		if v.catDragChildTo >= 0 && v.catDragChildTo < len(v.catDragSiblings) && v.catDragSiblings[v.catDragChildTo] == catID {
+			if v.catDragChildTo < v.catDragChildFrom {
+				catReorderAbove = true
+			} else {
+				catReorderBelow = true
+			}
 		}
 	}
 
@@ -1516,6 +1644,7 @@ func (v *ChannelView) computeCatDragTarget() {
 	v.catDragAction = ""
 	v.catDragTargetID = ""
 	v.catDragTargetIdx = -1
+	v.catDragSiblings = nil
 
 	var fromInfo *catDragInfo
 	for i := range v.allCatInfos {
@@ -1528,18 +1657,51 @@ func (v *ChannelView) computeCatDragTarget() {
 		return
 	}
 
-	startIdx := v.catDragFromIdx
-	if startIdx < 0 {
-		for ri, rid := range v.renderedCatIDs {
-			if rid == fromInfo.parentID {
-				startIdx = ri
+	// Child-to-child reorder within the same parent
+	if fromInfo.parentID != "" {
+		var siblings []string
+		for _, ci := range v.allCatInfos {
+			if ci.parentID == fromInfo.parentID {
+				siblings = append(siblings, ci.id)
+			}
+		}
+		if len(siblings) < 2 {
+			return
+		}
+		fromIdx := -1
+		for i, id := range siblings {
+			if id == v.catDragFromID {
+				fromIdx = i
 				break
 			}
 		}
-		if startIdx < 0 {
-			startIdx = 0
+		if fromIdx < 0 {
+			return
 		}
+		// Use drag offset and estimated child height to determine target
+		stepPx := 60
+		fromDragIdx := fromInfo.dragIdx
+		if fromDragIdx < len(v.catHeights) && v.catHeights[fromDragIdx] > 0 {
+			stepPx = v.catHeights[fromDragIdx]
+		}
+		steps := int(v.catDragOffsetY) / (stepPx / 2)
+		toIdx := fromIdx + steps
+		if toIdx < 0 {
+			toIdx = 0
+		}
+		if toIdx >= len(siblings) {
+			toIdx = len(siblings) - 1
+		}
+		if toIdx != fromIdx {
+			v.catDragAction = "child_reorder"
+			v.catDragChildFrom = fromIdx
+			v.catDragChildTo = toIdx
+			v.catDragSiblings = siblings
+		}
+		return
 	}
+
+	startIdx := v.catDragFromIdx
 
 	// Build cumulative pixel positions from ALL render items (categories + uncategorized blocks)
 	// This ensures physical distances match cursor movement
@@ -1635,6 +1797,9 @@ func (v *ChannelView) executeCatDrop() {
 	fromIdx := v.catDragFromIdx
 	toIdx := v.catDragTargetIdx
 	adoptTargetID := v.catDragTargetID
+	childFrom := v.catDragChildFrom
+	childTo := v.catDragChildTo
+	siblings := v.catDragSiblings
 
 	v.catDragging = false
 	v.catDragFromIdx = -1
@@ -1644,8 +1809,50 @@ func (v *ChannelView) executeCatDrop() {
 	v.catDragTargetIdx = -1
 	v.catDragTargetID = ""
 	v.catDragAction = ""
+	v.catDragSiblings = nil
 
 	if conn == nil || fromID == "" || action == "" {
+		return
+	}
+
+	if action == "child_reorder" && len(siblings) > 1 && childFrom != childTo {
+		// Reorder children within the same parent
+		reordered := make([]string, len(siblings))
+		copy(reordered, siblings)
+		// Move childFrom to childTo position
+		id := reordered[childFrom]
+		reordered = append(reordered[:childFrom], reordered[childFrom+1:]...)
+		if childTo >= len(reordered) {
+			reordered = append(reordered, id)
+		} else {
+			reordered = append(reordered[:childTo+1], reordered[childTo:]...)
+			reordered[childTo] = id
+		}
+		// Update local state
+		v.app.mu.Lock()
+		for pi := range conn.Categories {
+			if conn.Categories[pi].ID == fromParent {
+				newChildren := make([]api.ChannelCategory, 0, len(reordered))
+				childMap := make(map[string]api.ChannelCategory)
+				for _, ch := range conn.Categories[pi].Children {
+					childMap[ch.ID] = ch
+				}
+				for _, rid := range reordered {
+					if ch, ok := childMap[rid]; ok {
+						newChildren = append(newChildren, ch)
+					}
+				}
+				conn.Categories[pi].Children = newChildren
+				break
+			}
+		}
+		v.app.mu.Unlock()
+		go func() {
+			if err := conn.Client.ReorderCategories(reordered); err != nil {
+				log.Printf("ReorderCategories(children): %v", err)
+			}
+		}()
+		v.app.Window.Invalidate()
 		return
 	}
 
@@ -2704,6 +2911,7 @@ func (v *ChannelView) executeDrop() {
 				ch.CategoryID = nil
 				categoryChanged = true
 			}
+			delete(v.rootChanSlot, ch.ID)
 			// Uložit pozici gap dropu
 			// Gap 0 = před první kategorií (slot -1), gap N = za renderedCatIDs[N-1] (slot N-1)
 			emptyCatPos := -(toIdx + 1)
@@ -2714,11 +2922,18 @@ func (v *ChannelView) executeDrop() {
 				}
 			}
 			v.uncatPositions[ch.ID] = gapNum - 1
-		} else if !sameCategoryID(ch.CategoryID, &sentinelTargetCatID) {
-			ch.CategoryID = &sentinelTargetCatID
-			categoryChanged = true
-			// Kanál byl přesunut do kategorie → smazat z uncatPositions
-			delete(v.uncatPositions, ch.ID)
+		} else {
+			if !sameCategoryID(ch.CategoryID, &sentinelTargetCatID) {
+				ch.CategoryID = &sentinelTargetCatID
+				categoryChanged = true
+				// Kanál byl přesunut do kategorie → smazat z uncatPositions
+				delete(v.uncatPositions, ch.ID)
+			}
+			// Set slot position within root category
+			emptyCatPos := -(toIdx + 1)
+			if gapIdx, ok := v.rootGapSentinels[emptyCatPos]; ok {
+				v.rootChanSlot[ch.ID] = gapIdx
+			}
 		}
 
 		// Reorder: vložit kanál na pozici sentinelu ve visual orderu
@@ -2784,8 +2999,14 @@ func (v *ChannelView) executeDrop() {
 		ch.CategoryID = copyCategoryID(targetCatID)
 		categoryChanged = true
 	}
-	// Kanál dostal kategorii → smazat z uncatPositions
+	// Kanál dostal kategorii → smazat z uncatPositions, adoptovat slot od cíle
 	delete(v.uncatPositions, ch.ID)
+	targetChID := channels[toIdx].ID
+	if s, ok := v.rootChanSlot[targetChID]; ok {
+		v.rootChanSlot[ch.ID] = s
+	} else {
+		delete(v.rootChanSlot, ch.ID)
+	}
 
 	// Reorder: build new array from visual order with the move applied
 	newOrder := make([]api.Channel, 0, len(channels))

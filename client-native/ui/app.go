@@ -4,7 +4,6 @@ import (
 	"context"
 	"image"
 	"image/color"
-	"io"
 	"log"
 	"sync"
 	"time"
@@ -13,7 +12,6 @@ import (
 	"gioui.org/io/event"
 	"gioui.org/io/key"
 	"gioui.org/io/pointer"
-	"gioui.org/io/transfer"
 	"gioui.org/layout"
 	"gioui.org/op"
 	"gioui.org/op/clip"
@@ -262,15 +260,16 @@ func (a *App) runAutoCleanup(publicKey string) {
 }
 
 func (a *App) Layout(gtx layout.Context) layout.Dimensions {
-	if a.useTransferDrop {
-		// Wayland fallback: přijímej OS drop data přes Gio transfer eventy.
-		st := clip.Rect{Max: gtx.Constraints.Max}.Push(gtx.Ops)
-		event.Op(gtx.Ops, &a.dropTag)
-		st.Pop()
-
-		a.consumeTransferDrop(gtx, "text/uri-list")
-		a.consumeTransferDrop(gtx, "text/plain")
+	// Poll OS-level file drops (X11 XDND)
+	for {
+		select {
+		case raw := <-app.FileDropChan:
+			a.HandleDroppedFiles(parseDroppedURIList(raw))
+		default:
+			goto doneFileDrop
+		}
 	}
+doneFileDrop:
 
 	// Cursor tracking — zpracovat eventy z minulého framu
 	for {
@@ -341,34 +340,6 @@ func (a *App) Layout(gtx layout.Context) layout.Dimensions {
 	// Cursor tracker na vrch Z-orderu (PassOp → eventy projdou dolů k obsahu)
 	cursorOps.Add(gtx.Ops)
 	return dims
-}
-
-func (a *App) consumeTransferDrop(gtx layout.Context, mime string) {
-	for {
-		ev, ok := gtx.Event(transfer.TargetFilter{Target: &a.dropTag, Type: mime})
-		if !ok {
-			return
-		}
-		switch e := ev.(type) {
-		case transfer.DataEvent:
-			a.showDropOverlay = false
-			r := e.Open()
-			if r == nil {
-				continue
-			}
-			raw, err := io.ReadAll(r)
-			_ = r.Close()
-			if err != nil {
-				log.Printf("drop: read transfer data failed: %v", err)
-				continue
-			}
-			a.HandleDroppedFiles(parseDroppedURIList(string(raw)))
-		case transfer.CancelEvent:
-			a.showDropOverlay = false
-		case transfer.InitiateEvent:
-			a.showDropOverlay = true
-		}
-	}
 }
 
 func (a *App) layoutWithOverlay(gtx layout.Context) layout.Dimensions {

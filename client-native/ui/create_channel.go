@@ -152,19 +152,14 @@ func (d *CreateDialog) Layout(gtx layout.Context) layout.Dimensions {
 		d.app.mu.RUnlock()
 	}
 	// Flat list přiřaditelných kategorií pro channel mode:
-	// standalone (bez children) + child kategorie
+	// všechny kategorie (root i child)
 	var assignableCats []catPickerItem
 	for _, cat := range cats {
-		if len(cat.Children) == 0 {
-			// Standalone kategorie (bez children, bez parenta) — přiřaditelná
-			assignableCats = append(assignableCats, catPickerItem{id: cat.ID, name: cat.Name, color: cat.Color})
-		} else {
-			// Root kategorie — přidat její children
-			for _, child := range cat.Children {
-				assignableCats = append(assignableCats, catPickerItem{
-					id: child.ID, name: cat.Name + " / " + child.Name, color: child.Color, isChild: true,
-				})
-			}
+		assignableCats = append(assignableCats, catPickerItem{id: cat.ID, name: cat.Name, color: cat.Color})
+		for _, child := range cat.Children {
+			assignableCats = append(assignableCats, catPickerItem{
+				id: child.ID, name: cat.Name + " / " + child.Name, color: child.Color, isChild: true,
+			})
 		}
 	}
 

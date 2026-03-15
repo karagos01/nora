@@ -2,6 +2,8 @@ module nora-client
 
 go 1.25.7
 
+replace gioui.org v0.9.0 => ./gio-xdnd
+
 require (
 	filippo.io/edwards25519 v1.2.0
 	gioui.org v0.9.0

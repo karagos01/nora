@@ -21,8 +21,6 @@ import (
 type SidebarView struct {
 	app            *App
 	homeBtn        widget.Clickable
-	kanbanBtn      widget.Clickable
-	calendarBtn    widget.Clickable
 	notifBtn       widget.Clickable
 	addBtn         widget.Clickable
 	serverBtns     []widget.Clickable
@@ -96,32 +94,6 @@ func (v *SidebarView) Layout(gtx layout.Context) layout.Dimensions {
 			v.app.mu.RUnlock()
 			return v.layoutIconBtnWithBadgeIcon(gtx, &v.homeBtn, IconChat, isActive, hasUnreadDM, func() {
 				v.app.SwitchToHome()
-			})
-		})
-	}))
-
-	// Kanban button
-	children = append(children, layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-		return layout.Inset{Bottom: unit.Dp(8)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-			isActive := mode == ViewKanban
-			return v.layoutIconBtnIcon(gtx, &v.kanbanBtn, IconViewColumn, isActive, func() {
-				v.app.mu.Lock()
-				v.app.Mode = ViewKanban
-				v.app.mu.Unlock()
-				v.app.KanbanView.LoadBoards()
-			})
-		})
-	}))
-
-	// Calendar button
-	children = append(children, layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-		return layout.Inset{Bottom: unit.Dp(8)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-			isActive := mode == ViewCalendar
-			return v.layoutIconBtnIcon(gtx, &v.calendarBtn, IconSchedule, isActive, func() {
-				v.app.mu.Lock()
-				v.app.Mode = ViewCalendar
-				v.app.mu.Unlock()
-				v.app.CalendarView.LoadEvents()
 			})
 		})
 	}))
