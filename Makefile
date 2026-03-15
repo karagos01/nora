@@ -7,11 +7,11 @@ all: build
 
 build: server client
 
-# Go server
+# Server
 server:
 	cd server && go build -o nora .
 
-# Nativní klient (Go + Gio, vyžaduje CGO kvůli malgo)
+# Native client (Go + Gio, requires CGO for malgo)
 client:
 	cd client-native && go build -ldflags '$(LDFLAGS)' -o nora-native .
 
@@ -23,7 +23,7 @@ client-windows:
 dev-server:
 	cd server && go run .
 
-# Testy
+# Tests
 test:
 	cd server && go test ./...
 
@@ -33,7 +33,7 @@ test-verbose:
 test-client:
 	cd client-native && go test ./...
 
-# Vyčištění
+# Clean
 clean:
 	rm -f server/nora
 	rm -f client-native/nora-native

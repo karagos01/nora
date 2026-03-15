@@ -1,7 +1,7 @@
 # Go binaries
 server/nora
-server/nora-client
-server/nora-native
+client-native/nora-native
+wg-helper/nora-lan
 *.exe
 *.dll
 *.so
@@ -13,10 +13,6 @@ vendor/
 # Build
 dist/
 build/
-client/build/
-
-# Rust / Tauri
-client/src-tauri/target/
 
 # Data
 data/
@@ -41,10 +37,6 @@ nora.toml
 .DS_Store
 Thumbs.db
 
-# Node
-client/node_modules/
-client/.svelte-kit/
-
 # Environment
 .env
 .env.*
@@ -54,15 +46,9 @@ coverage/
 *.cover
 *.out
 
-# Old code
-old/
-
 # Binaries / archives
 *.zip
 NORA-windows/
-client-native/nora-native
-wg-helper/nora-lan
-wg-helper/nora-native
 
 # Claude / AI prompts
 CLAUDE.md

@@ -1,4 +1,4 @@
-# NORA v2
+# NORA
 
 Self-hosted chat for small groups. No federation, no tracking, no cloud dependency. Runs on a cheap VPS (512MB RAM).
 
