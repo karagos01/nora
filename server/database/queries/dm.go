@@ -144,7 +144,7 @@ func (q *DMQueries) ListPending(conversationID string) ([]models.DMPendingMessag
 }
 
 func (q *DMQueries) DeletePending(conversationID, recipientID string) error {
-	// Smaže pending zprávy v konverzaci, které neposlal recipient (= ty co recipient přijal)
+	// Delete pending messages in conversation that were not sent by the recipient (= those the recipient received)
 	_, err := q.DB.Exec(
 		`DELETE FROM dm_pending WHERE conversation_id = ? AND sender_id != ?`,
 		conversationID, recipientID,

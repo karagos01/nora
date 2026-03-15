@@ -28,14 +28,14 @@ type CalendarView struct {
 	eventBtns []widget.Clickable
 	eventList widget.List
 
-	// Měsíční navigace
+	// Monthly navigation
 	viewMonth time.Time
 	prevBtn   widget.Clickable
 	nextBtn   widget.Clickable
 
-	// Vybraný den (0 = vše)
+	// Selected day (0 = all)
 	selectedDay int
-	dayBtns     [42]widget.Clickable // max 6 řádků * 7 dní
+	dayBtns     [42]widget.Clickable // max 6 rows * 7 days
 
 	// New event
 	newBtn widget.Clickable
@@ -55,7 +55,7 @@ func NewCalendarView(a *App) *CalendarView {
 	return v
 }
 
-// LoadEvents načte eventy pro aktuální měsíc (+/- 1 měsíc buffer).
+// LoadEvents loads events for the current month (+/- 1 month buffer).
 func (v *CalendarView) LoadEvents() {
 	conn := v.app.Conn()
 	if conn == nil {
@@ -89,7 +89,7 @@ func (v *CalendarView) LoadEvents() {
 	}()
 }
 
-// HandleWSEvent zpracuje WS eventy pro kalendář.
+// HandleWSEvent processes WS events for the calendar.
 func (v *CalendarView) HandleWSEvent(evType string, payload json.RawMessage) {
 	switch evType {
 	case "calendar.event_create":
@@ -131,12 +131,12 @@ func (v *CalendarView) HandleWSEvent(evType string, payload json.RawMessage) {
 	}
 }
 
-// LayoutSidebar renderuje mini kalendář v levém panelu.
+// LayoutSidebar renders the mini calendar in the left panel.
 func (v *CalendarView) LayoutSidebar(gtx layout.Context) layout.Dimensions {
 	th := v.app.Theme.Material
 	paint.FillShape(gtx.Ops, ColorCard, clip.Rect{Max: gtx.Constraints.Max}.Op())
 
-	// Zpracovat navigaci
+	// Handle navigation
 	if v.prevBtn.Clicked(gtx) {
 		v.viewMonth = v.viewMonth.AddDate(0, -1, 0)
 		v.selectedDay = 0
@@ -183,7 +183,7 @@ func (v *CalendarView) LayoutSidebar(gtx layout.Context) layout.Dimensions {
 			})
 		}),
 
-		// Měsíční navigace
+		// Monthly navigation
 		layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 			return layout.Inset{Top: unit.Dp(12), Left: unit.Dp(8), Right: unit.Dp(8)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
 				return layout.Flex{Alignment: layout.Middle}.Layout(gtx,
@@ -207,7 +207,7 @@ func (v *CalendarView) LayoutSidebar(gtx layout.Context) layout.Dimensions {
 			})
 		}),
 
-		// Mini kalendář grid
+		// Mini calendar grid
 		layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 			return layout.Inset{Top: unit.Dp(8), Left: unit.Dp(8), Right: unit.Dp(8)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
 				return v.layoutMiniCalendar(gtx, th)
@@ -239,7 +239,7 @@ func (v *CalendarView) LayoutSidebar(gtx layout.Context) layout.Dimensions {
 	)
 }
 
-// layoutMiniCalendar renderuje měsíční grid (Mo Tu We Th Fr Sa Su).
+// layoutMiniCalendar renders the monthly grid (Mo Tu We Th Fr Sa Su).
 func (v *CalendarView) layoutMiniCalendar(gtx layout.Context, th *material.Theme) layout.Dimensions {
 	now := time.Now()
 	today := now.Day()
@@ -249,7 +249,7 @@ func (v *CalendarView) layoutMiniCalendar(gtx layout.Context, th *material.Theme
 	year := v.viewMonth.Year()
 	month := v.viewMonth.Month()
 	first := time.Date(year, month, 1, 0, 0, 0, 0, time.UTC)
-	// Pondělí = 0, Neděle = 6
+	// Monday = 0, Sunday = 6
 	weekday := int(first.Weekday())
 	if weekday == 0 {
 		weekday = 6
@@ -258,7 +258,7 @@ func (v *CalendarView) layoutMiniCalendar(gtx layout.Context, th *material.Theme
 	}
 	daysInMonth := time.Date(year, month+1, 0, 0, 0, 0, 0, time.UTC).Day()
 
-	// Zjistit které dny mají eventy
+	// Determine which days have events
 	eventDays := make(map[int]bool)
 	for _, e := range v.events {
 		eLocal := e.StartsAt.Local()
@@ -294,7 +294,7 @@ func (v *CalendarView) layoutMiniCalendar(gtx layout.Context, th *material.Theme
 		}()...)
 	}))
 
-	// Dny v gridu (max 6 řádků)
+	// Days in grid (max 6 rows)
 	day := 1
 	for row := 0; row < 6; row++ {
 		if day > daysInMonth {
@@ -346,7 +346,7 @@ func (v *CalendarView) layoutMiniCalendar(gtx layout.Context, th *material.Theme
 }
 
 func (v *CalendarView) layoutDayCell(gtx layout.Context, th *material.Theme, day int, isToday, isSelected, hasEvent bool, w, h int) layout.Dimensions {
-	// Pozadí
+	// Background
 	if isSelected {
 		rr := h / 2
 		paint.FillShape(gtx.Ops, ColorAccent, clip.RRect{
@@ -376,7 +376,7 @@ func (v *CalendarView) layoutDayCell(gtx layout.Context, th *material.Theme, day
 				return lbl.Layout(gtx)
 			})
 		}),
-		// Event indikátor (malá tečka dole)
+		// Event indicator (small dot at bottom)
 		layout.Stacked(func(gtx layout.Context) layout.Dimensions {
 			if !hasEvent || isSelected {
 				return layout.Dimensions{Size: image.Pt(w, h)}
@@ -394,7 +394,7 @@ func (v *CalendarView) layoutDayCell(gtx layout.Context, th *material.Theme, day
 	)
 }
 
-// layoutUpcoming renderuje nejbližší eventy v sidebaru.
+// layoutUpcoming renders upcoming events in the sidebar.
 func (v *CalendarView) layoutUpcoming(gtx layout.Context, th *material.Theme) layout.Dimensions {
 	now := time.Now()
 	var upcoming []api.Event
@@ -421,7 +421,7 @@ func (v *CalendarView) layoutUpcoming(gtx layout.Context, th *material.Theme) la
 		children = append(children, layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 			return layout.Inset{Bottom: unit.Dp(4), Left: unit.Dp(4), Right: unit.Dp(4)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
 				return layout.Flex{Alignment: layout.Middle}.Layout(gtx,
-					// Barevná tečka
+					// Color dot
 					layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 						sz := gtx.Dp(8)
 						c := parseHexColor(e.Color)
@@ -459,7 +459,7 @@ func (v *CalendarView) layoutUpcoming(gtx layout.Context, th *material.Theme) la
 	return layout.Flex{Axis: layout.Vertical}.Layout(gtx, children...)
 }
 
-// LayoutMain renderuje hlavní oblast s chronologickým seznamem eventů.
+// LayoutMain renders the main area with a chronological event list.
 func (v *CalendarView) LayoutMain(gtx layout.Context) layout.Dimensions {
 	th := v.app.Theme.Material
 	paint.FillShape(gtx.Ops, ColorBg, clip.Rect{Max: gtx.Constraints.Max}.Op())
@@ -469,10 +469,10 @@ func (v *CalendarView) LayoutMain(gtx layout.Context) layout.Dimensions {
 		v.app.CalendarDlg.ShowCreate()
 	}
 
-	// Filtrovat eventy podle vybraného dne
+	// Filter events by selected day
 	filtered := v.getFilteredEvents()
 
-	// Kliknutí na event
+	// Click on event
 	for i := range filtered {
 		if i < len(v.eventBtns) && v.eventBtns[i].Clicked(gtx) {
 			evt := filtered[i]
@@ -533,7 +533,7 @@ func (v *CalendarView) LayoutMain(gtx layout.Context) layout.Dimensions {
 
 func (v *CalendarView) getFilteredEvents() []api.Event {
 	if v.selectedDay == 0 {
-		// Vrátit eventy z aktuálního měsíce
+		// Return events from the current month
 		var filtered []api.Event
 		for _, e := range v.events {
 			eLocal := e.StartsAt.Local()
@@ -543,7 +543,7 @@ func (v *CalendarView) getFilteredEvents() []api.Event {
 		}
 		return filtered
 	}
-	// Filtrovat na konkrétní den
+	// Filter to a specific day
 	var filtered []api.Event
 	for _, e := range v.events {
 		eLocal := e.StartsAt.Local()
@@ -554,7 +554,7 @@ func (v *CalendarView) getFilteredEvents() []api.Event {
 	return filtered
 }
 
-// layoutEventCard renderuje jednu event kartu.
+// layoutEventCard renders a single event card.
 func (v *CalendarView) layoutEventCard(gtx layout.Context, th *material.Theme, event api.Event, idx int) layout.Dimensions {
 	return layout.Inset{Bottom: unit.Dp(8)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
 		if idx >= len(v.eventBtns) {
@@ -574,7 +574,7 @@ func (v *CalendarView) layoutEventCard(gtx layout.Context, th *material.Theme, e
 				func(gtx layout.Context) layout.Dimensions {
 					return layout.UniformInset(unit.Dp(12)).Layout(gtx, func(gtx layout.Context) layout.Dimensions {
 						return layout.Flex{Alignment: layout.Middle}.Layout(gtx,
-							// Barevný pásek vlevo
+							// Color strip on the left
 							layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 								w := gtx.Dp(4)
 								h := gtx.Dp(40)
@@ -591,7 +591,7 @@ func (v *CalendarView) layoutEventCard(gtx layout.Context, th *material.Theme, e
 							layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
 								return layout.Flex{Axis: layout.Vertical}.Layout(gtx,
 									layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-										// Název + repeat ikona
+										// Name + repeat icon
 										return layout.Flex{Alignment: layout.Middle}.Layout(gtx,
 											layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 												lbl := material.Body1(th, event.Title)
@@ -628,7 +628,7 @@ func (v *CalendarView) layoutEventCard(gtx layout.Context, th *material.Theme, e
 									}),
 								)
 							}),
-							// Datum (pravá strana)
+							// Date (right side)
 							layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 								dayStr := event.StartsAt.Local().Format("Jan 2")
 								lbl := material.Caption(th, dayStr)

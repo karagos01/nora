@@ -23,22 +23,22 @@ import (
 
 type pendingDownload struct {
 	filename  string
-	size      int64 // z Content-Length, -1 pokud neznámý
+	size      int64 // from Content-Length, -1 if unknown
 	received  int64
 	status    int // 0=downloading, 1=done, 2=error
 	err       string
 	startTime time.Time
-	// Batch download (více souborů)
+	// Batch download (multiple files)
 	totalFiles  int
 	currentFile int
 	currentName string
 }
 
-// startDownload zahájí stahování souboru s progress trackingem.
+// startDownload starts downloading a file with progress tracking.
 func (v *MessageView) startDownload(fileURL, savePath, filename, token string) {
 	isZip := strings.HasSuffix(strings.ToLower(savePath), ".zip")
 
-	// Zobrazit extract dialog hned při zahájení stahování .zip
+	// Show extract dialog immediately when starting .zip download
 	if isZip {
 		v.app.ZipExtractDlg.Show(savePath)
 		v.app.Window.Invalidate()
@@ -55,7 +55,7 @@ func (v *MessageView) startDownload(fileURL, savePath, filename, token string) {
 	v.downloadMu.Unlock()
 
 	go func() {
-		// Při chybě zrušit zip dialog
+		// Cancel zip dialog on error
 		var downloadOK bool
 		if isZip {
 			defer func() {
@@ -131,12 +131,12 @@ func (v *MessageView) startDownload(fileURL, savePath, filename, token string) {
 		downloadOK = true
 		v.app.Window.Invalidate()
 
-		// Oznámit dialogu, že stahování je hotové
+		// Notify the dialog that the download is complete
 		if isZip {
 			v.app.ZipExtractDlg.MarkDownloaded()
 		}
 
-		// Po stažení .zip aplikovat volbu uživatele
+		// After downloading .zip, apply user's choice
 		if isZip {
 			choice := v.app.ZipExtractDlg.WaitChoice()
 			dir := filepath.Dir(savePath)
@@ -164,7 +164,7 @@ func (v *MessageView) startDownload(fileURL, savePath, filename, token string) {
 			}
 		}
 
-		// Auto-cleanup po 3 sekundách
+		// Auto-cleanup after 3 seconds
 		time.AfterFunc(3*time.Second, func() {
 			v.downloadMu.Lock()
 			filtered := v.pendingDownloads[:0]
@@ -188,7 +188,7 @@ func (v *MessageView) layoutDownloadPanel(gtx layout.Context) layout.Dimensions 
 		return layout.Dimensions{}
 	}
 
-	// Spočítat celkový progress
+	// Calculate total progress
 	var totalSize, totalReceived int64
 	var earliest time.Time
 	allDone := true
@@ -213,7 +213,7 @@ func (v *MessageView) layoutDownloadPanel(gtx layout.Context) layout.Dimensions 
 	}
 	v.downloadMu.Unlock()
 
-	// Batch download info (pokud existuje)
+	// Batch download info (if exists)
 	var batchFile, batchName string
 	var batchTotal int
 	for _, dl := range v.pendingDownloads {
@@ -307,7 +307,7 @@ func (v *MessageView) layoutDownloadPanel(gtx layout.Context) layout.Dimensions 
 	})
 }
 
-// startDirectoryDownload sekvenčně stáhne attachmenty do zvoleného adresáře
+// startDirectoryDownload sequentially downloads attachments to the chosen directory
 func (v *MessageView) startDirectoryDownload(attachments []api.Attachment, baseURL, token, dir string) {
 	total := len(attachments)
 	if total == 0 {
@@ -339,8 +339,8 @@ func (v *MessageView) startDirectoryDownload(attachments []api.Attachment, baseU
 		pd.currentName = att.Filename
 		v.app.Window.Invalidate()
 
-		// Vytvořit podadresáře pokud relPath obsahuje /
-		// Path traversal ochrana — filename nesmí uniknout z cílového adresáře
+		// Create subdirectories if relPath contains /
+		// Path traversal protection — filename must not escape the target directory
 		cleanName := filepath.Clean(att.Filename)
 		if strings.HasPrefix(cleanName, "..") || filepath.IsAbs(cleanName) {
 			pd.status = 2
@@ -409,7 +409,7 @@ func (v *MessageView) startDirectoryDownload(attachments []api.Attachment, baseU
 	v.app.Window.Invalidate()
 }
 
-// hasGameServerAttachments vrátí true pokud zpráva má >1 attachment s game server URL
+// hasGameServerAttachments returns true if the message has >1 attachment with a game server URL
 func hasGameServerAttachments(attachments []api.Attachment) bool {
 	count := 0
 	for _, a := range attachments {

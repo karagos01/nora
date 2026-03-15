@@ -10,7 +10,7 @@ type RoleQueries struct {
 }
 
 func (q *RoleQueries) Create(role *models.Role) error {
-	// Automaticky nastavit position před everyone (999) — nižší číslo = vyšší rank
+	// Automatically set position before everyone (999) — lower number = higher rank
 	var maxPos sql.NullInt64
 	q.DB.QueryRow(`SELECT MAX(position) FROM roles WHERE position < (SELECT position FROM roles WHERE id = 'everyone')`).Scan(&maxPos)
 	if maxPos.Valid {
@@ -92,7 +92,7 @@ func (q *RoleQueries) GetUserPermissions(userID string) (int64, error) {
 	var everyonePos int
 	q.DB.QueryRow(`SELECT COALESCE(permissions, 0), position FROM roles WHERE id = 'everyone'`).Scan(&everyonePerms, &everyonePos)
 
-	// Bitový OR přes všechny přiřazené role (SUM nefunguje pro bitmasky)
+	// Bitwise OR across all assigned roles (SUM doesn't work for bitmasks)
 	rows, err := q.DB.Query(
 		`SELECT r.permissions, r.position FROM roles r
 		 JOIN user_roles ur ON ur.role_id = r.id
@@ -116,7 +116,7 @@ func (q *RoleQueries) GetUserPermissions(userID string) (int64, error) {
 			hasBelowEveryone = true
 		}
 	}
-	// Pokud uživatel má roli pod everyone, everyone perms se nepřičítají
+	// If user has a role below everyone, everyone perms are not added
 	if hasBelowEveryone {
 		return perms, nil
 	}
@@ -147,8 +147,8 @@ func (q *RoleQueries) GetUserRoles(userID string) ([]models.Role, error) {
 	return roles, rows.Err()
 }
 
-// GetHighestPosition vrátí nejnižší position číslo z rolí uživatele (= jeho nejvyšší rank).
-// Owner vrací -1 (nad vším). Uživatel bez rolí vrací MaxInt.
+// GetHighestPosition returns the lowest position number from the user's roles (= their highest rank).
+// Owner returns -1 (above everything). User without roles returns MaxInt.
 func (q *RoleQueries) GetHighestPosition(userID string, isOwner bool) (int, error) {
 	if isOwner {
 		return -1, nil
@@ -169,8 +169,8 @@ func (q *RoleQueries) GetHighestPosition(userID string, isOwner bool) (int, erro
 	return int(pos.Int64), nil
 }
 
-// SwapPositions prohodí position dvou rolí v transakci.
-// Pokud jedna z rolí je "everyone", nepřehazuje — přesune druhou roli přes hranici.
+// SwapPositions swaps the position of two roles in a transaction.
+// If one of the roles is "everyone", it doesn't swap — it moves the other role across the boundary.
 func (q *RoleQueries) SwapPositions(roleID1, roleID2 string) error {
 	tx, err := q.DB.Begin()
 	if err != nil {
@@ -178,7 +178,7 @@ func (q *RoleQueries) SwapPositions(roleID1, roleID2 string) error {
 	}
 	defer tx.Rollback()
 
-	// Speciální případ: přesun přes everyone hranici
+	// Special case: moving across the everyone boundary
 	if roleID1 == "everyone" || roleID2 == "everyone" {
 		otherID := roleID1
 		if roleID1 == "everyone" {
@@ -194,7 +194,7 @@ func (q *RoleQueries) SwapPositions(roleID1, roleID2 string) error {
 
 		var newPos int
 		if otherPos < everyonePos {
-			// Přesun pod everyone
+			// Move below everyone
 			var maxBelow sql.NullInt64
 			tx.QueryRow(`SELECT MAX(position) FROM roles WHERE position > ?`, everyonePos).Scan(&maxBelow)
 			if maxBelow.Valid {
@@ -203,7 +203,7 @@ func (q *RoleQueries) SwapPositions(roleID1, roleID2 string) error {
 				newPos = everyonePos + 1
 			}
 		} else {
-			// Přesun nad everyone
+			// Move above everyone
 			var maxAbove sql.NullInt64
 			tx.QueryRow(`SELECT MAX(position) FROM roles WHERE position < ?`, everyonePos).Scan(&maxAbove)
 			if maxAbove.Valid {
@@ -218,7 +218,7 @@ func (q *RoleQueries) SwapPositions(roleID1, roleID2 string) error {
 		return tx.Commit()
 	}
 
-	// Normální swap
+	// Normal swap
 	var pos1, pos2 int
 	if err := tx.QueryRow(`SELECT position FROM roles WHERE id = ?`, roleID1).Scan(&pos1); err != nil {
 		return err

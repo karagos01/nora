@@ -160,7 +160,7 @@ func (d *Deps) DeleteGroup(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Broadcast delete event všem členům
+	// Broadcast delete event to all members
 	members, _ := d.Groups.GetMembers(groupID)
 	event, _ := ws.NewEvent(ws.EventGroupDelete, map[string]string{"group_id": groupID})
 	for _, m := range members {
@@ -182,7 +182,7 @@ func (d *Deps) JoinGroup(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Ověřit invite kód
+	// Verify invite code
 	inv, err := d.Groups.GetInviteByCode(req.InviteCode)
 	if err != nil {
 		util.Error(w, http.StatusNotFound, "invalid invite code")
@@ -201,7 +201,7 @@ func (d *Deps) JoinGroup(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Už je členem?
+	// Already a member?
 	already, _ := d.Groups.IsMember(groupID, user.ID)
 	if already {
 		util.Error(w, http.StatusConflict, "already a member")
@@ -222,7 +222,7 @@ func (d *Deps) JoinGroup(w http.ResponseWriter, r *http.Request) {
 
 	d.Groups.IncrementInviteUses(inv.ID)
 
-	// Broadcast join event všem členům
+	// Broadcast join event to all members
 	members, _ := d.Groups.GetMembers(groupID)
 	event, _ := ws.NewEvent(ws.EventGroupMemberJoin, map[string]any{
 		"group_id":   groupID,
@@ -242,7 +242,7 @@ func (d *Deps) LeaveGroup(w http.ResponseWriter, r *http.Request) {
 	groupID := r.PathValue("id")
 	targetID := r.PathValue("userId")
 
-	// Může odejít jen sám nebo creator může vyhodit
+	// Can only leave yourself, or creator can kick
 	g, err := d.Groups.GetByID(groupID)
 	if err != nil {
 		util.Error(w, http.StatusNotFound, "group not found")
@@ -265,7 +265,7 @@ func (d *Deps) LeaveGroup(w http.ResponseWriter, r *http.Request) {
 	for _, m := range members {
 		d.Hub.BroadcastToUser(m.UserID, event)
 	}
-	// Taky tomu kdo odešel
+	// Also notify the user who left
 	d.Hub.BroadcastToUser(targetID, event)
 
 	util.JSON(w, http.StatusOK, map[string]string{"status": "ok"})
@@ -313,7 +313,7 @@ func (d *Deps) RelayGroupMessage(w http.ResponseWriter, r *http.Request) {
 		msg["attachments"] = req.Attachments
 	}
 
-	// Broadcast všem členům — server nic neukládá
+	// Broadcast to all members — server does not store anything
 	members, _ := d.Groups.GetMembers(groupID)
 	event, _ := ws.NewEvent(ws.EventGroupMessage, msg)
 	for _, m := range members {

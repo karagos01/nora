@@ -9,6 +9,7 @@ import (
 	"io"
 	"log"
 	"math"
+	"os"
 	"os/exec"
 	"runtime"
 	"strconv"
@@ -43,9 +44,12 @@ type Player struct {
 	state        atomic.Int32
 	meta         Metadata
 	url          string
+	audioURL     string    // separate audio URL (for adaptive YouTube formats)
 	currentFrame atomic.Pointer[image.NRGBA]
 	position     atomic.Int64 // milliseconds
 	volume       atomic.Int32 // 0-200 (percent)
+	buffering    atomic.Int32 // 1 = buffering, 0 = ready
+	videoReady   atomic.Int32 // 1 = first video frame received
 	invalidate   func()
 	onError      func(string)
 
@@ -60,11 +64,11 @@ type Player struct {
 
 	audio *AudioPlayer
 
-	// Pause/seek pozice
+	// Pause/seek position
 	pausedAt int64 // ms
 }
 
-// CheckFFmpeg vrátí cestu k ffmpeg nebo prázdný string.
+// CheckFFmpeg returns the path to ffmpeg or an empty string.
 func CheckFFmpeg() string {
 	path, err := exec.LookPath("ffmpeg")
 	if err != nil {
@@ -73,7 +77,7 @@ func CheckFFmpeg() string {
 	return path
 }
 
-// CheckFFprobe vrátí cestu k ffprobe nebo prázdný string.
+// CheckFFprobe returns the path to ffprobe or an empty string.
 func CheckFFprobe() string {
 	path, err := exec.LookPath("ffprobe")
 	if err != nil {
@@ -82,7 +86,7 @@ func CheckFFprobe() string {
 	return path
 }
 
-// FFmpegInstallHint vrátí platformově specifický návod na instalaci.
+// FFmpegInstallHint returns a platform-specific installation hint.
 func FFmpegInstallHint() string {
 	switch runtime.GOOS {
 	case "windows":
@@ -94,7 +98,7 @@ func FFmpegInstallHint() string {
 	}
 }
 
-// NewPlayer vytvoří nový přehrávač.
+// NewPlayer creates a new player.
 func NewPlayer(invalidate func(), onError func(string)) *Player {
 	p := &Player{
 		invalidate: invalidate,
@@ -105,9 +109,23 @@ func NewPlayer(invalidate func(), onError func(string)) *Player {
 	return p
 }
 
-// LoadAndPlay spustí přehrávání z URL.
+// LoadAndPlay starts playback from a URL.
 func (p *Player) LoadAndPlay(url string) {
-	p.Stop()
+	p.LoadAndPlayDual(url, "")
+}
+
+// LoadAndPlayDual starts playback with separate video and audio URLs.
+// If audioURL is empty, audio is extracted from the video URL.
+func (p *Player) LoadAndPlayDual(videoURL, audioURL string) {
+	p.LoadAndPlayWithHints(videoURL, audioURL, 0, 0, 0, 0)
+}
+
+// LoadAndPlayWithHints starts playback with optional metadata hints.
+// If width/height/duration are non-zero, ffprobe is skipped (useful for YouTube).
+// seekMs allows resuming from a specific position.
+func (p *Player) LoadAndPlayWithHints(videoURL, audioURL string, width, height int, duration time.Duration, seekMs int64) {
+	// Kill running streams but keep last frame visible (overwritten by first new frame)
+	p.killStreams()
 
 	if CheckFFmpeg() == "" {
 		p.state.Store(int32(StateError))
@@ -118,15 +136,55 @@ func (p *Player) LoadAndPlay(url string) {
 	}
 
 	p.mu.Lock()
-	p.url = url
-	p.pausedAt = 0
+	p.url = videoURL
+	p.audioURL = audioURL
+	p.pausedAt = seekMs
 	p.state.Store(int32(StateLoading))
 	p.mu.Unlock()
 
-	go p.probeAndStart(url, 0)
+	if width > 0 && height > 0 {
+		meta := Metadata{
+			Width:    width,
+			Height:   height,
+			Duration: duration,
+			HasAudio: audioURL != "" || true, // assume audio present
+		}
+		go p.startWithMeta(videoURL, meta, seekMs)
+	} else {
+		go p.probeAndStart(videoURL, seekMs)
+	}
 }
 
-// ffprobe výstup
+func (p *Player) startWithMeta(url string, meta Metadata, seekMs int64) {
+	p.mu.Lock()
+	p.meta = meta
+
+	w, h := meta.Width, meta.Height
+	maxW, maxH := 1280, 720
+	if w > maxW {
+		h = h * maxW / w
+		w = maxW
+	}
+	if h > maxH {
+		w = w * maxH / h
+		h = maxH
+	}
+	w = w &^ 1
+	h = h &^ 1
+	if w < 2 {
+		w = 2
+	}
+	if h < 2 {
+		h = 2
+	}
+	p.outputWidth = w
+	p.outputHeight = h
+	p.mu.Unlock()
+
+	p.startStreams(url, seekMs)
+}
+
+// ffprobe output
 type probeResult struct {
 	Streams []probeStream `json:"streams"`
 	Format  probeFormat   `json:"format"`
@@ -147,14 +205,14 @@ func (p *Player) probeAndStart(url string, seekMs int64) {
 	meta, err := probeMetadata(url)
 	if err != nil {
 		log.Printf("video: probe failed: %v", err)
-		// Pokračovat s defaults
+		// Continue with defaults
 		meta = Metadata{Width: 640, Height: 360, HasAudio: true}
 	}
 
 	p.mu.Lock()
 	p.meta = meta
 
-	// Omezit výstupní rozlišení na max 854x480
+	// Limit output resolution to max 1280x720
 	w, h := meta.Width, meta.Height
 	if w <= 0 {
 		w = 640
@@ -171,7 +229,7 @@ func (p *Player) probeAndStart(url string, seekMs int64) {
 		w = w * maxH / h
 		h = maxH
 	}
-	// Zarovnat na sudé (ffmpeg vyžaduje)
+	// Align to even dimensions (ffmpeg requires it)
 	w = w &^ 1
 	h = h &^ 1
 	if w < 2 {
@@ -187,12 +245,15 @@ func (p *Player) probeAndStart(url string, seekMs int64) {
 	p.startStreams(url, seekMs)
 }
 
+const ffUserAgent = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36"
+
 func probeMetadata(url string) (Metadata, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
 	cmd := exec.CommandContext(ctx, "ffprobe",
 		"-v", "quiet",
+		"-user_agent", ffUserAgent,
 		"-print_format", "json",
 		"-show_streams", "-show_format",
 		url,
@@ -233,14 +294,27 @@ func (p *Player) startStreams(url string, seekMs int64) {
 	h := p.outputHeight
 	fps := p.fps
 	hasAudio := p.meta.HasAudio
+	separateAudioURL := p.audioURL
 	p.mu.Unlock()
 
+	if separateAudioURL != "" {
+		hasAudio = true
+	}
+
 	seekSec := fmt.Sprintf("%.3f", float64(seekMs)/1000.0)
+
+	isHTTP := strings.HasPrefix(url, "http://") || strings.HasPrefix(url, "https://")
 
 	// Video stream
 	videoCtx, videoCancel := context.WithCancel(context.Background())
 	args := []string{
 		"-hide_banner", "-loglevel", "error",
+	}
+	if isHTTP {
+		args = append(args, "-user_agent", ffUserAgent,
+			"-reconnect", "1",
+			"-reconnect_streamed", "1",
+			"-reconnect_delay_max", "5")
 	}
 	if seekMs > 0 {
 		args = append(args, "-ss", seekSec)
@@ -253,7 +327,9 @@ func (p *Player) startStreams(url string, seekMs int64) {
 		"-r", strconv.Itoa(fps),
 		"pipe:1",
 	)
+	log.Printf("video: starting ffmpeg video url=%s size=%dx%d", url, w, h)
 	videoCmd := exec.CommandContext(videoCtx, "ffmpeg", args...)
+	videoCmd.Stderr = os.Stderr
 	videoPipe, err := videoCmd.StdoutPipe()
 	if err != nil {
 		videoCancel()
@@ -272,17 +348,29 @@ func (p *Player) startStreams(url string, seekMs int64) {
 	p.videoCancel = videoCancel
 	p.mu.Unlock()
 
-	// Audio stream (pokud existuje)
+	// Audio stream
+	audioStarted := false
 	if hasAudio {
+		audioInputURL := url
+		if separateAudioURL != "" {
+			audioInputURL = separateAudioURL
+		}
+		isAudioHTTP := strings.HasPrefix(audioInputURL, "http://") || strings.HasPrefix(audioInputURL, "https://")
 		audioCtx, audioCancel := context.WithCancel(context.Background())
 		audioArgs := []string{
 			"-hide_banner", "-loglevel", "error",
+		}
+		if isAudioHTTP {
+			audioArgs = append(audioArgs, "-user_agent", ffUserAgent,
+				"-reconnect", "1",
+				"-reconnect_streamed", "1",
+				"-reconnect_delay_max", "5")
 		}
 		if seekMs > 0 {
 			audioArgs = append(audioArgs, "-ss", seekSec)
 		}
 		audioArgs = append(audioArgs,
-			"-i", url,
+			"-i", audioInputURL,
 			"-vn",
 			"-f", "f32le",
 			"-ar", "48000",
@@ -290,6 +378,7 @@ func (p *Player) startStreams(url string, seekMs int64) {
 			"pipe:1",
 		)
 		audioCmd := exec.CommandContext(audioCtx, "ffmpeg", audioArgs...)
+		audioCmd.Stderr = os.Stderr
 		audioPipe, err := audioCmd.StdoutPipe()
 		if err != nil {
 			audioCancel()
@@ -304,24 +393,26 @@ func (p *Player) startStreams(url string, seekMs int64) {
 				p.audioCancel = audioCancel
 				p.mu.Unlock()
 
-				// Audio player — Start se volá až po pre-bufferingu v readAudioLoop
 				if p.audio == nil {
 					p.audio = NewAudioPlayer()
 				}
 				vol := float32(p.volume.Load()) / 100.0
 				p.audio.SetVolume(vol)
 
+				audioStarted = true
 				go p.readAudioLoop(audioPipe, audioCtx)
 			}
 		}
 	}
 
+	p.videoReady.Store(0)
+	p.buffering.Store(1)
 	p.state.Store(int32(StatePlaying))
 	p.position.Store(seekMs)
-	go p.readFrameLoop(videoPipe, videoCtx, w, h, fps, seekMs)
+	go p.readFrameLoop(videoPipe, videoCtx, w, h, fps, seekMs, audioStarted)
 }
 
-func (p *Player) readFrameLoop(pipe io.ReadCloser, ctx context.Context, w, h, fps int, startMs int64) {
+func (p *Player) readFrameLoop(pipe io.ReadCloser, ctx context.Context, w, h, fps int, startMs int64, audioStarted bool) {
 	frameSize := w * h * 4 // RGBA
 	buf := make([]byte, frameSize)
 	ticker := time.NewTicker(time.Second / time.Duration(fps))
@@ -340,7 +431,6 @@ func (p *Player) readFrameLoop(pipe io.ReadCloser, ctx context.Context, w, h, fp
 			if err != io.EOF && err != io.ErrUnexpectedEOF && !strings.Contains(err.Error(), "closed") {
 				log.Printf("video: frame read error: %v (read %d/%d)", err, n, frameSize)
 			}
-			// Video skončilo — zastavit i audio stream
 			p.state.Store(int32(StateIdle))
 			go p.killStreams()
 			if p.invalidate != nil {
@@ -349,13 +439,21 @@ func (p *Player) readFrameLoop(pipe io.ReadCloser, ctx context.Context, w, h, fp
 			return
 		}
 
-		// Vytvořit NRGBA frame
 		img := image.NewNRGBA(image.Rect(0, 0, w, h))
 		copy(img.Pix, buf)
 
 		p.currentFrame.Store(img)
 		frameNum++
 		p.position.Store(startMs + (frameNum * 1000 / int64(fps)))
+
+		// Signal first video frame arrived
+		if frameNum == 1 {
+			p.videoReady.Store(1)
+			// If no audio stream, clear buffering now
+			if !audioStarted {
+				p.buffering.Store(0)
+			}
+		}
 
 		if p.invalidate != nil {
 			p.invalidate()
@@ -364,8 +462,8 @@ func (p *Player) readFrameLoop(pipe io.ReadCloser, ctx context.Context, w, h, fp
 }
 
 func (p *Player) readAudioLoop(pipe io.ReadCloser, ctx context.Context) {
-	// Větší čtecí chunky = méně syscallů, stabilnější tok dat
-	// 100ms @ 48kHz stereo = 4800 frames * 2 ch = 9600 samplů * 4 bytes = 38400 bytes
+	// Larger read chunks = fewer syscalls, more stable data flow
+	// 100ms @ 48kHz stereo = 4800 frames * 2 ch = 9600 samples * 4 bytes = 38400 bytes
 	const readFrames = 4800
 	const readSamples = readFrames * audioChannels
 	const readBytes = readSamples * 4
@@ -373,10 +471,10 @@ func (p *Player) readAudioLoop(pipe io.ReadCloser, ctx context.Context) {
 	buf := make([]byte, readBytes)
 	samples := make([]float32, readSamples)
 
-	// Pre-buffering: 500ms (5 chunků po 100ms) — dostatečná rezerva
-	// proti GC pauzám a síťové latenci
+	// Pre-buffering: 500ms (5 chunks of 100ms) — sufficient reserve
+	// against GC pauses and network latency
 	const preBufferChunks = 5
-	audioStarted := false
+	audioReady := false
 	chunksBuffered := 0
 
 	for {
@@ -395,26 +493,38 @@ func (p *Player) readAudioLoop(pipe io.ReadCloser, ctx context.Context) {
 			continue
 		}
 
-		// Konvertovat bytes na float32
+		// Convert bytes to float32
 		for i := range samples {
 			bits := uint32(buf[i*4]) | uint32(buf[i*4+1])<<8 | uint32(buf[i*4+2])<<16 | uint32(buf[i*4+3])<<24
 			samples[i] = math.Float32frombits(bits)
 		}
 
-		if !audioStarted {
-			// Pre-buffering fáze: zapisovat bez blokování (buffer je prázdný)
+		if !audioReady {
+			// Pre-buffering: write without blocking (buffer is empty)
 			p.audio.Write(samples)
 			chunksBuffered++
 			if chunksBuffered >= preBufferChunks {
+				// Wait for first video frame before starting audio playback
+				for p.videoReady.Load() == 0 {
+					select {
+					case <-ctx.Done():
+						return
+					default:
+						time.Sleep(5 * time.Millisecond)
+					}
+				}
 				if err := p.audio.Start(); err != nil {
 					log.Printf("video: audio start failed: %v", err)
 					return
 				}
-				audioStarted = true
+				audioReady = true
+				p.buffering.Store(0)
+				if p.invalidate != nil {
+					p.invalidate()
+				}
 			}
 		} else {
-			// Normální fáze: blokující zápis s notifikací od malgo callbacku.
-			// Backpressure na ffmpeg pipe (ffmpeg zpomalí když buffer plný).
+			// Normal phase: blocking write with notification from malgo callback.
 			if !p.audio.WriteBlocking(ctx, samples) {
 				return // ctx cancelled (Pause/Stop)
 			}
@@ -429,7 +539,7 @@ func (p *Player) setError(msg string) {
 	}
 }
 
-// Pause pozastaví přehrávání.
+// Pause pauses playback.
 func (p *Player) Pause() {
 	if State(p.state.Load()) != StatePlaying {
 		return
@@ -442,7 +552,7 @@ func (p *Player) Pause() {
 	p.state.Store(int32(StatePaused))
 }
 
-// Resume obnoví přehrávání.
+// Resume resumes playback.
 func (p *Player) Resume() {
 	if State(p.state.Load()) != StatePaused {
 		return
@@ -456,7 +566,7 @@ func (p *Player) Resume() {
 	go p.startStreams(url, pos)
 }
 
-// SeekTo přeskočí na pozici v ms.
+// SeekTo seeks to a position in ms.
 func (p *Player) SeekTo(posMs int64) {
 	st := State(p.state.Load())
 	if st != StatePlaying && st != StatePaused {
@@ -475,7 +585,7 @@ func (p *Player) SeekTo(posMs int64) {
 	go p.startStreams(url, posMs)
 }
 
-// Stop zastaví přehrávání.
+// Stop stops playback.
 func (p *Player) Stop() {
 	p.killStreams()
 	p.state.Store(int32(StateIdle))
@@ -484,6 +594,7 @@ func (p *Player) Stop() {
 
 	p.mu.Lock()
 	p.url = ""
+	p.audioURL = ""
 	p.pausedAt = 0
 	p.meta = Metadata{}
 	p.mu.Unlock()
@@ -514,24 +625,24 @@ func (p *Player) killStreams() {
 	}
 }
 
-// Frame vrátí aktuální frame.
+// Frame returns the current frame.
 func (p *Player) Frame() *image.NRGBA {
 	return p.currentFrame.Load()
 }
 
-// Position vrátí aktuální pozici v ms.
+// Position returns the current position in ms.
 func (p *Player) Position() int64 {
 	return p.position.Load()
 }
 
-// Duration vrátí délku videa.
+// Duration returns the video duration.
 func (p *Player) Duration() time.Duration {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	return p.meta.Duration
 }
 
-// SetVolume nastaví hlasitost (0-200).
+// SetVolume sets the volume (0-200).
 func (p *Player) SetVolume(v int) {
 	if v < 0 {
 		v = 0
@@ -545,12 +656,17 @@ func (p *Player) SetVolume(v int) {
 	}
 }
 
-// GetState vrátí aktuální stav.
+// GetState returns the current state.
 func (p *Player) GetState() State {
 	return State(p.state.Load())
 }
 
-// Destroy uvolní resources.
+// Buffering returns true while audio pre-buffer is filling.
+func (p *Player) Buffering() bool {
+	return p.buffering.Load() != 0
+}
+
+// Destroy releases resources.
 func (p *Player) Destroy() {
 	p.Stop()
 	p.mu.Lock()
@@ -561,8 +677,8 @@ func (p *Player) Destroy() {
 	p.mu.Unlock()
 }
 
-// GenerateThumbnail extrahuje první frame videa jako NRGBA obrázek.
-// Volat v goroutině.
+// GenerateThumbnail extracts the first frame of a video as an NRGBA image.
+// Call in a goroutine.
 func GenerateThumbnail(url string) *image.NRGBA {
 	if CheckFFmpeg() == "" {
 		return nil
@@ -571,7 +687,7 @@ func GenerateThumbnail(url string) *image.NRGBA {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
-	// Extrahovat 1 frame na pozici 1s (nebo 0s pro krátká videa)
+	// Extract 1 frame at position 1s (or 0s for short videos)
 	cmd := exec.CommandContext(ctx, "ffmpeg",
 		"-hide_banner", "-loglevel", "error",
 		"-ss", "1",
@@ -583,7 +699,7 @@ func GenerateThumbnail(url string) *image.NRGBA {
 		"pipe:1",
 	)
 
-	// Potřebujeme taky rozlišení — probe
+	// We also need the resolution — probe
 	meta, err := probeMetadata(url)
 	if err != nil {
 		return nil
@@ -595,7 +711,7 @@ func GenerateThumbnail(url string) *image.NRGBA {
 		return nil
 	}
 
-	// Přepočítat na max šířku 640
+	// Rescale to max width 640
 	if w > 640 {
 		h = h * 640 / w
 		w = 640
@@ -622,14 +738,14 @@ func GenerateThumbnail(url string) *image.NRGBA {
 	return img
 }
 
-// DrawPlayButton nakreslí play trojúhelník na existující frame.
+// DrawPlayButton draws a play triangle on an existing frame.
 func DrawPlayButton(img *image.NRGBA) {
 	bounds := img.Bounds()
 	cx := bounds.Dx() / 2
 	cy := bounds.Dy() / 2
 	r := 20
 
-	// Semi-transparentní kruh
+	// Semi-transparent circle
 	for y := cy - r - 5; y <= cy+r+5; y++ {
 		for x := cx - r - 5; x <= cx+r+5; x++ {
 			dx := x - cx
@@ -637,7 +753,7 @@ func DrawPlayButton(img *image.NRGBA) {
 			if dx*dx+dy*dy <= (r+5)*(r+5) {
 				if x >= 0 && x < bounds.Dx() && y >= 0 && y < bounds.Dy() {
 					existing := img.NRGBAAt(x, y)
-					// Blend s tmavým overlay
+					// Blend with dark overlay
 					existing.R = uint8(int(existing.R) * 128 / 255)
 					existing.G = uint8(int(existing.G) * 128 / 255)
 					existing.B = uint8(int(existing.B) * 128 / 255)
@@ -647,12 +763,12 @@ func DrawPlayButton(img *image.NRGBA) {
 		}
 	}
 
-	// Bílý trojúhelník (play symbol)
+	// White triangle (play symbol)
 	white := color.NRGBA{R: 255, G: 255, B: 255, A: 230}
 	triSize := r * 2 / 3
 	for y := cy - triSize; y <= cy+triSize; y++ {
 		dy := y - cy
-		// Šířka trojúhelníku na tomto řádku
+		// Triangle width at this row
 		maxX := triSize - abs(dy)*triSize/triSize
 		startX := cx - triSize/3
 		for x := startX; x <= startX+maxX; x++ {

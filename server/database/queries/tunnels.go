@@ -9,7 +9,7 @@ type TunnelQueries struct {
 	DB *sql.DB
 }
 
-// Create vytvoří nový tunnel request
+// Create creates a new tunnel request
 func (q *TunnelQueries) Create(t *models.Tunnel) error {
 	_, err := q.DB.Exec(
 		`INSERT INTO tunnels (id, creator_id, target_id, status, creator_wg_pubkey, creator_ip)
@@ -19,7 +19,7 @@ func (q *TunnelQueries) Create(t *models.Tunnel) error {
 	return err
 }
 
-// GetByID vrátí tunnel s enriched username
+// GetByID returns a tunnel with enriched username
 func (q *TunnelQueries) GetByID(id string) (*models.Tunnel, error) {
 	t := &models.Tunnel{}
 	err := q.DB.QueryRow(
@@ -41,7 +41,7 @@ func (q *TunnelQueries) GetByID(id string) (*models.Tunnel, error) {
 	return t, nil
 }
 
-// GetByUser vrátí všechny tunely pro uživatele (jako creator nebo target)
+// GetByUser returns all tunnels for a user (as creator or target)
 func (q *TunnelQueries) GetByUser(userID string) ([]models.Tunnel, error) {
 	rows, err := q.DB.Query(
 		`SELECT t.id, t.creator_id, t.target_id, t.status,
@@ -73,7 +73,7 @@ func (q *TunnelQueries) GetByUser(userID string) ([]models.Tunnel, error) {
 	return tunnels, rows.Err()
 }
 
-// Accept aktualizuje tunnel na active s target WG pubkey a IP
+// Accept updates a tunnel to active with target WG pubkey and IP
 func (q *TunnelQueries) Accept(id, targetWGPubKey, targetIP string) error {
 	_, err := q.DB.Exec(
 		`UPDATE tunnels SET status = 'active', target_wg_pubkey = ?, target_ip = ?
@@ -83,13 +83,13 @@ func (q *TunnelQueries) Accept(id, targetWGPubKey, targetIP string) error {
 	return err
 }
 
-// Close uzavře tunnel
+// Close closes a tunnel
 func (q *TunnelQueries) Close(id string) error {
 	_, err := q.DB.Exec(`UPDATE tunnels SET status = 'closed' WHERE id = ?`, id)
 	return err
 }
 
-// HasActiveTunnel zkontroluje zda existuje aktivní/pending tunnel mezi dvěma uživateli
+// HasActiveTunnel checks if an active/pending tunnel exists between two users
 func (q *TunnelQueries) HasActiveTunnel(userA, userB string) bool {
 	var count int
 	q.DB.QueryRow(
@@ -101,7 +101,7 @@ func (q *TunnelQueries) HasActiveTunnel(userA, userB string) bool {
 	return count > 0
 }
 
-// GetActiveTunnelsForUser vrátí aktivní tunely kde je uživatel creator nebo target
+// GetActiveTunnelsForUser returns active tunnels where the user is creator or target
 func (q *TunnelQueries) GetActiveTunnelsForUser(userID string) ([]models.Tunnel, error) {
 	rows, err := q.DB.Query(
 		`SELECT t.id, t.creator_id, t.target_id, t.status,
@@ -133,7 +133,7 @@ func (q *TunnelQueries) GetActiveTunnelsForUser(userID string) ([]models.Tunnel,
 	return tunnels, rows.Err()
 }
 
-// Delete smaže tunnel (pro cleanup)
+// Delete removes a tunnel (for cleanup)
 func (q *TunnelQueries) Delete(id string) error {
 	_, err := q.DB.Exec(`DELETE FROM tunnels WHERE id = ?`, id)
 	return err

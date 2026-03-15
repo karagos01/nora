@@ -55,7 +55,7 @@ func (d *UploadDialog) Layout(gtx layout.Context) layout.Dimensions {
 		return layout.Dimensions{}
 	}
 
-	// Focus na editor při otevření
+	// Focus the editor on open
 	if d.needsFocus {
 		d.needsFocus = false
 		gtx.Execute(key.FocusCmd{Tag: &d.editor})
@@ -63,7 +63,7 @@ func (d *UploadDialog) Layout(gtx layout.Context) layout.Dimensions {
 
 	mv := d.app.MsgView
 
-	// Zjistit stav uploadů
+	// Check upload status
 	mv.uploadMu.Lock()
 	uploads := make([]*pendingUpload, len(mv.pendingUploads))
 	copy(uploads, mv.pendingUploads)
@@ -148,7 +148,7 @@ func (d *UploadDialog) Layout(gtx layout.Context) layout.Dimensions {
 		return layout.Dimensions{Size: gtx.Constraints.Max}
 	}
 
-	// Channel name pro header
+	// Channel name for the header
 	channelName := ""
 	if conn := d.app.Conn(); conn != nil {
 		d.app.mu.RLock()
@@ -216,7 +216,7 @@ func (d *UploadDialog) Layout(gtx layout.Context) layout.Dimensions {
 	)
 }
 
-// doSend přenese text z dialogového editoru do hlavního a odešle zprávu.
+// doSend transfers text from the dialog editor to the main editor and sends the message.
 func (d *UploadDialog) doSend(mv *MessageView) {
 	text := strings.TrimSpace(d.editor.Text())
 	mv.editor.SetText(text)
@@ -459,9 +459,9 @@ func (d *UploadDialog) layoutControls(gtx layout.Context, allDone bool) layout.D
 					}),
 					// Cancel
 					layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-						return d.layoutBtn(gtx, &d.cancelBtn, "Cancel", ColorInput, ColorText)
+						return layoutDialogBtn(gtx, d.app.Theme, &d.cancelBtn, "Cancel", ColorInput, ColorText)
 					}),
-					// Send (disabled pokud uploads běží)
+					// Send (disabled while uploads are in progress)
 					layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 						bg := ColorAccentDim
 						fg := color.NRGBA{R: 180, G: 180, B: 180, A: 255}
@@ -470,7 +470,7 @@ func (d *UploadDialog) layoutControls(gtx layout.Context, allDone bool) layout.D
 							fg = color.NRGBA{R: 255, G: 255, B: 255, A: 255}
 						}
 						return layout.Inset{Left: unit.Dp(8)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-							return d.layoutBtn(gtx, &d.sendBtn, "Send", bg, fg)
+							return layoutDialogBtn(gtx, d.app.Theme, &d.sendBtn, "Send", bg, fg)
 						})
 					}),
 				)
@@ -479,34 +479,3 @@ func (d *UploadDialog) layoutControls(gtx layout.Context, allDone bool) layout.D
 	)
 }
 
-func (d *UploadDialog) layoutBtn(gtx layout.Context, btn *widget.Clickable, text string, bg, fg color.NRGBA) layout.Dimensions {
-	return btn.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-		hoverBg := bg
-		if btn.Hovered() {
-			hoverBg = color.NRGBA{
-				R: min8(bg.R + 20),
-				G: min8(bg.G + 20),
-				B: min8(bg.B + 20),
-				A: 255,
-			}
-		}
-		return layout.Background{}.Layout(gtx,
-			func(gtx layout.Context) layout.Dimensions {
-				bounds := image.Rect(0, 0, gtx.Constraints.Min.X, gtx.Constraints.Min.Y)
-				rr := gtx.Dp(6)
-				paint.FillShape(gtx.Ops, hoverBg, clip.RRect{
-					Rect: bounds,
-					NE:   rr, NW: rr, SE: rr, SW: rr,
-				}.Op(gtx.Ops))
-				return layout.Dimensions{Size: bounds.Max}
-			},
-			func(gtx layout.Context) layout.Dimensions {
-				return layout.Inset{Top: unit.Dp(8), Bottom: unit.Dp(8), Left: unit.Dp(16), Right: unit.Dp(16)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-					lbl := material.Body2(d.app.Theme.Material, text)
-					lbl.Color = fg
-					return lbl.Layout(gtx)
-				})
-			},
-		)
-	})
-}

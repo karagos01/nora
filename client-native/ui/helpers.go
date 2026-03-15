@@ -28,7 +28,7 @@ import (
 	"nora-client/api"
 )
 
-// layoutField — sdílený input field s labelem.
+// layoutField — shared input field with a label.
 func layoutField(gtx layout.Context, th *Theme, label string, editor *widget.Editor) layout.Dimensions {
 	return layout.Flex{Axis: layout.Vertical}.Layout(gtx,
 		layout.Rigid(func(gtx layout.Context) layout.Dimensions {
@@ -62,13 +62,13 @@ func layoutField(gtx layout.Context, th *Theme, label string, editor *widget.Edi
 	)
 }
 
-// layoutColoredBg — vyplní celou plochu barvou.
+// layoutColoredBg — fills the entire area with a color.
 func layoutColoredBg(gtx layout.Context, c color.NRGBA) layout.Dimensions {
 	paint.FillShape(gtx.Ops, c, clip.Rect{Max: gtx.Constraints.Max}.Op())
 	return layout.Dimensions{Size: gtx.Constraints.Max}
 }
 
-// FormatBytes formátuje velikost souboru.
+// FormatBytes formats a file size.
 func FormatBytes(b int64) string {
 	switch {
 	case b >= 1<<30:
@@ -81,7 +81,7 @@ func FormatBytes(b int64) string {
 	return fmt.Sprintf("%d B", b)
 }
 
-// removeWithRetry smaže soubor s retry pro Windows (antivirus/indexer drží handle).
+// removeWithRetry deletes a file with retry for Windows (antivirus/indexer holds handle).
 func removeWithRetry(path string) {
 	for i := 0; i < 5; i++ {
 		if err := os.Remove(path); err == nil {
@@ -104,12 +104,13 @@ const (
 	styleLink
 	styleEmoji
 	styleMention
+	styleUnicodeEmoji
 )
 
 type styledSeg struct {
 	text  string
 	style segStyle
-	lang  string // jazyk pro code block (syntax highlighting)
+	lang  string // language for code block (syntax highlighting)
 }
 
 // parseDelimited splits text by delimiter pairs into styled segments.
@@ -188,7 +189,7 @@ func parseEmojiSegments(text string, emojiNames map[string]bool) []styledSeg {
 		return []styledSeg{{text, stylePlain, ""}}
 	}
 
-	// Najít všechny emoji shody (:name: kde name je v emojiNames)
+	// Find all emoji matches (:name: where name is in emojiNames)
 	type emojiMatch struct {
 		start, end int
 		name       string
@@ -218,7 +219,7 @@ func parseEmojiSegments(text string, emojiNames map[string]bool) []styledSeg {
 		return []styledSeg{{text, stylePlain, ""}}
 	}
 
-	// Rozdělit text jen na místech kde je skutečný emoji match
+	// Split text only at places where there is an actual emoji match
 	var result []styledSeg
 	prev := 0
 	for _, m := range matches {
@@ -244,7 +245,7 @@ func parseMentionSegments(text string, usernames map[string]bool) []styledSeg {
 		if idx == -1 {
 			break
 		}
-		// @ musí být na začátku nebo za mezerou/newline
+		// @ must be at the beginning or after a space/newline
 		if idx > 0 {
 			prev := text[idx-1]
 			if prev != ' ' && prev != '\n' && prev != '\t' {
@@ -253,7 +254,7 @@ func parseMentionSegments(text string, usernames map[string]bool) []styledSeg {
 				continue
 			}
 		}
-		// Extrahovat username (vše za @ do mezery/newline/interpunkce/konce)
+		// Extract username (everything after @ until space/newline/punctuation/end)
 		rest := text[idx+1:]
 		end := 0
 		for end < len(rest) {
@@ -264,7 +265,7 @@ func parseMentionSegments(text string, usernames map[string]bool) []styledSeg {
 			end++
 		}
 		if end == 0 {
-			// Jen @ bez username
+			// Just @ without username
 			result = append(result, styledSeg{text[:idx+1], stylePlain, ""})
 			text = text[idx+1:]
 			continue
@@ -292,7 +293,7 @@ func parseFormattedText(text string, emojiNames map[string]bool, usernames map[s
 	segs := parseDelimited(text, "```", styleCodeBlock)
 	for i, s := range segs {
 		if s.style == styleCodeBlock {
-			// Extrahovat language tag (```go, ```python, ...)
+			// Extract language tag (```go, ```python, ...)
 			if nl := strings.Index(s.text, "\n"); nl != -1 && nl < 20 && !strings.Contains(s.text[:nl], " ") {
 				segs[i].lang = strings.TrimSpace(s.text[:nl])
 				segs[i].text = s.text[nl+1:]
@@ -312,12 +313,14 @@ func parseFormattedText(text string, emojiNames map[string]bool, usernames map[s
 	segs = expandPlain(segs, func(t string) []styledSeg { return parseEmojiSegments(t, emojiNames) })
 	// Stage 7: Mentions (@username)
 	segs = expandPlain(segs, func(t string) []styledSeg { return parseMentionSegments(t, usernames) })
-	// Merge sousedních plain segmentů (emoji parser je může rozdělit na ":")
+	// Stage 8: Unicode emoji (larger rendering)
+	segs = expandPlain(segs, parseUnicodeEmojiSegments)
+	// Merge adjacent plain segments (emoji parser may split them on ":")
 	segs = mergePlainSegs(segs)
 	return segs
 }
 
-// mergePlainSegs spojí sousední plain segmenty do jednoho.
+// mergePlainSegs merges adjacent plain segments into one.
 func mergePlainSegs(segs []styledSeg) []styledSeg {
 	if len(segs) <= 1 {
 		return segs
@@ -331,6 +334,139 @@ func mergePlainSegs(segs []styledSeg) []styledSeg {
 		}
 	}
 	return result
+}
+
+// isEmojiRune returns true if the rune is a common unicode emoji or emoji component.
+func isEmojiRune(r rune) bool {
+	switch {
+	case r >= 0x1F600 && r <= 0x1F64F: // Emoticons
+		return true
+	case r >= 0x1F300 && r <= 0x1F5FF: // Misc Symbols and Pictographs
+		return true
+	case r >= 0x1F680 && r <= 0x1F6FF: // Transport and Map
+		return true
+	case r >= 0x1F700 && r <= 0x1F77F: // Alchemical Symbols
+		return true
+	case r >= 0x1F900 && r <= 0x1F9FF: // Supplemental Symbols
+		return true
+	case r >= 0x1FA00 && r <= 0x1FA6F: // Chess Symbols
+		return true
+	case r >= 0x1FA70 && r <= 0x1FAFF: // Symbols Extended-A
+		return true
+	case r >= 0x2600 && r <= 0x26FF: // Misc Symbols
+		return true
+	case r >= 0x2700 && r <= 0x27BF: // Dingbats
+		return true
+	case r >= 0x231A && r <= 0x231B: // watch, hourglass
+		return true
+	case r >= 0x23E9 && r <= 0x23F3: // media controls
+		return true
+	case r == 0xFE0F: // Variation Selector-16 (emoji style)
+		return true
+	case r == 0x200D: // Zero Width Joiner (emoji sequences)
+		return true
+	case r >= 0x2000 && r <= 0x200F: // skip other format chars
+		return false
+	case r >= 0x20D0 && r <= 0x20FF: // Combining marks for symbols
+		return true
+	case r >= 0xE0020 && r <= 0xE007F: // Tags (flag sequences)
+		return true
+	}
+	return false
+}
+
+// parseUnicodeEmojiSegments splits text into individual unicode emoji and non-emoji segments.
+// Each emoji (including ZWJ sequences and skin tone variants) becomes its own segment.
+func parseUnicodeEmojiSegments(text string) []styledSeg {
+	var result []styledSeg
+	var plain, current strings.Builder
+	flushPlain := func() {
+		if plain.Len() > 0 {
+			result = append(result, styledSeg{text: plain.String(), style: stylePlain})
+			plain.Reset()
+		}
+	}
+	flushEmoji := func() {
+		if current.Len() > 0 {
+			result = append(result, styledSeg{text: current.String(), style: styleUnicodeEmoji})
+			current.Reset()
+		}
+	}
+	runes := []rune(text)
+	for i := 0; i < len(runes); i++ {
+		r := runes[i]
+		// ZWJ, variation selectors, skin tones attach to current emoji
+		if r == 0x200D || r == 0xFE0F || (r >= 0x1F3FB && r <= 0x1F3FF) || (r >= 0x20D0 && r <= 0x20FF) || (r >= 0xE0020 && r <= 0xE007F) {
+			if current.Len() > 0 {
+				current.WriteRune(r)
+			} else {
+				plain.WriteRune(r)
+			}
+			continue
+		}
+		if isEmojiRune(r) {
+			flushPlain()
+			// If current has content and previous wasn't ZWJ, flush as separate emoji
+			if current.Len() > 0 {
+				cr := []rune(current.String())
+				if cr[len(cr)-1] != 0x200D {
+					flushEmoji()
+				}
+			}
+			current.WriteRune(r)
+		} else {
+			flushEmoji()
+			plain.WriteRune(r)
+		}
+	}
+	flushEmoji()
+	flushPlain()
+	if len(result) == 0 {
+		return []styledSeg{{text: text, style: stylePlain}}
+	}
+	return result
+}
+
+// twemojiURL converts a single emoji string to a Twemoji CDN image URL.
+// Skips U+FE0F (variation selector-16) as Twemoji filenames omit it.
+func twemojiURL(emoji string) string {
+	var parts []string
+	for _, r := range emoji {
+		if r == 0xFE0F {
+			continue
+		}
+		parts = append(parts, fmt.Sprintf("%x", r))
+	}
+	return "https://cdn.jsdelivr.net/gh/twitter/twemoji@14.0.2/assets/72x72/" + strings.Join(parts, "-") + ".png"
+}
+
+// layoutTwemoji renders a single unicode emoji as a Twemoji image.
+// Returns true + dimensions if rendered as image, false if fallback needed.
+// Uses CPU pre-scaling to exact pixel size, then renders 1:1 without GPU transform.
+func layoutTwemoji(gtx layout.Context, app *App, emoji string, sizeDp int) (layout.Dimensions, bool) {
+	if app == nil {
+		return layout.Dimensions{}, false
+	}
+	url := twemojiURL(emoji)
+	ci := app.Images.Get(url, func() { app.Window.Invalidate() })
+	if ci == nil || !ci.ok {
+		return layout.Dimensions{}, false
+	}
+	if ci.img.Bounds().Dx() <= 0 || ci.img.Bounds().Dy() <= 0 {
+		return layout.Dimensions{}, false
+	}
+	sz := gtx.Dp(unit.Dp(sizeDp))
+	if sz <= 0 {
+		return layout.Dimensions{}, false
+	}
+	// Get pre-scaled image (72x72 → sz×sz on CPU, cached)
+	scaledOp := app.Images.GetScaled(url, sz, sz, ci.img)
+	// Render 1:1 — image is exactly sz×sz pixels, no GPU scaling needed
+	defer clip.Rect{Max: image.Pt(sz, sz)}.Push(gtx.Ops).Pop()
+	scaledOp.Add(gtx.Ops)
+	paint.PaintOp{}.Add(gtx.Ops)
+	pad := gtx.Dp(2)
+	return layout.Dimensions{Size: image.Pt(sz+pad, sz)}, true
 }
 
 // MsgLinks holds clickable state for up to 4 links per message.
@@ -394,7 +530,7 @@ func layoutMessageContent(gtx layout.Context, th *Theme, text string, emojis []a
 			break
 		}
 	}
-	// Handle link clicks (před resetem N)
+	// Handle link clicks (before resetting N)
 	if links != nil {
 		for i := 0; i < links.N && i < 4; i++ {
 			if links.Btns[i].Clicked(gtx) {
@@ -444,7 +580,7 @@ func layoutMessageContent(gtx layout.Context, th *Theme, text string, emojis []a
 }
 
 func layoutInlineSegs(gtx layout.Context, th *Theme, segs []styledSeg, links *MsgLinks, mentions *MsgMentions, usernameToID map[string]string, sels *[]widget.Selectable, selIdx *int, emojiMap map[string]string, app *App, serverURL string) layout.Dimensions {
-	// Zjistit, které emoji mají image (pro přeskočení selIdx)
+	// Determine which emoji have images (for skipping selIdx)
 	emojiHasImage := make(map[string]bool)
 	if app != nil && serverURL != "" {
 		for _, seg := range segs {
@@ -460,7 +596,7 @@ func layoutInlineSegs(gtx layout.Context, th *Theme, segs []styledSeg, links *Ms
 	var items []layout.FlexChild
 	for _, seg := range segs {
 		s := seg
-		// Přiřadit selectable index pro textové segmenty (ne linky, ne image emoji)
+		// Assign selectable index for text segments (not links, not image emoji)
 		mySelIdx := -1
 		isImageEmoji := false
 		if s.style == styleEmoji {
@@ -513,7 +649,7 @@ func layoutInlineSegs(gtx layout.Context, th *Theme, segs []styledSeg, links *Ms
 					fullURL := serverURL + url
 					ci := app.Images.Get(fullURL, func() { app.Window.Invalidate() })
 					if ci != nil && ci.ok {
-						h := gtx.Dp(20)
+						h := gtx.Dp(28)
 						imgBounds := ci.img.Bounds()
 						imgW := imgBounds.Dx()
 						imgH := imgBounds.Dy()
@@ -548,6 +684,18 @@ func layoutInlineSegs(gtx layout.Context, th *Theme, segs []styledSeg, links *Ms
 			case styleMention:
 				lbl.Color = ColorAccent
 				lbl.Font.Weight = font.Bold
+			case styleUnicodeEmoji:
+				// Render as Twemoji image (single emoji per segment)
+				if dims, ok := layoutTwemoji(gtx, app, s.text, 24); ok {
+					return dims
+				}
+				// Fallback to text
+				lbl = material.Body1(th.Material, s.text)
+				lbl.Color = ColorText
+				lbl.TextSize = unit.Sp(22)
+				if sels != nil && mySelIdx >= 0 && mySelIdx < len(*sels) {
+					lbl.State = &(*sels)[mySelIdx]
+				}
 			}
 			return lbl.Layout(gtx)
 		}))
@@ -566,14 +714,14 @@ func layoutCodeBlockSeg(gtx layout.Context, th *Theme, code, lang string, sels *
 			},
 			func(gtx layout.Context) layout.Dimensions {
 				return layout.UniformInset(unit.Dp(8)).Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-					// Syntax highlighting — pokud máme language tag
+					// Syntax highlighting — if we have a language tag
 					if lang != "" {
 						tokens := tokenizeCode(code, lang)
 						if len(tokens) > 0 {
 							return layoutHighlightedTokens(gtx, th, tokens, sels, si)
 						}
 					}
-					// Fallback: mono font bez highlightingu
+					// Fallback: mono font without highlighting
 					lbl := material.Body2(th.Material, code)
 					lbl.Color = ColorText
 					lbl.Font.Typeface = "Go Mono"
@@ -621,7 +769,7 @@ func DisplayNameOf(u *api.User) string {
 }
 
 // openURL opens a URL in the system browser.
-// Validuje schéma — povoluje pouze http, https.
+// Validates the scheme — allows only http, https.
 func openURL(rawURL string) {
 	u, err := neturl.Parse(rawURL)
 	if err != nil || (u.Scheme != "http" && u.Scheme != "https") {
@@ -720,15 +868,15 @@ func layoutAvatar(gtx layout.Context, app *App, username, avatarURL string, size
 	)
 }
 
-// --- Syntax highlighting (chroma + One Dark barvy) ---
+// --- Syntax highlighting (chroma + One Dark colors) ---
 
-// coloredToken je token s barvou pro rendering.
+// coloredToken is a token with a color for rendering.
 type coloredToken struct {
 	text  string
 	color color.NRGBA
 }
 
-// One Dark barvy
+// One Dark colors
 var (
 	colorKeyword  = color.NRGBA{R: 198, G: 120, B: 221, A: 255} // #c678dd
 	colorString   = color.NRGBA{R: 152, G: 195, B: 121, A: 255} // #98c379
@@ -739,7 +887,7 @@ var (
 	colorOperator = color.NRGBA{R: 171, G: 178, B: 191, A: 255} // #abb2bf
 )
 
-// tokenColor vrátí barvu pro chroma token type.
+// tokenColor returns a color for a chroma token type.
 func tokenColor(tt chroma.TokenType) color.NRGBA {
 	switch {
 	case tt == chroma.Comment || tt == chroma.CommentSingle || tt == chroma.CommentMultiline ||
@@ -772,7 +920,7 @@ func tokenColor(tt chroma.TokenType) color.NRGBA {
 	}
 }
 
-// tokenizeCode tokenizuje kód pomocí chroma lexeru.
+// tokenizeCode tokenizes code using a chroma lexer.
 func tokenizeCode(code, lang string) []coloredToken {
 	lexer := lexers.Get(lang)
 	if lexer == nil {
@@ -795,17 +943,17 @@ func tokenizeCode(code, lang string) []coloredToken {
 	return tokens
 }
 
-// layoutHighlightedTokens renderuje tokenizovaný kód s barvami a mono fontem.
-// Tokeny se renderují po řádcích (vertikální flex), každý řádek je horizontální flex tokenů.
+// layoutHighlightedTokens renders tokenized code with colors and mono font.
+// Tokens are rendered per line (vertical flex), each line is a horizontal flex of tokens.
 func layoutHighlightedTokens(gtx layout.Context, th *Theme, tokens []coloredToken, sels *[]widget.Selectable, si int) layout.Dimensions {
-	// Rozdělit tokeny na řádky
+	// Split tokens into lines
 	type line struct {
 		tokens []coloredToken
 	}
 	var lines []line
 	current := line{}
 	for _, tok := range tokens {
-		// Token může obsahovat newliny — rozdělit
+		// Token can contain newlines — split
 		parts := strings.Split(tok.text, "\n")
 		for i, part := range parts {
 			if i > 0 {
@@ -824,7 +972,7 @@ func layoutHighlightedTokens(gtx layout.Context, th *Theme, tokens []coloredToke
 		lineToks := ln.tokens
 		rows = append(rows, layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 			if len(lineToks) == 0 {
-				// Prázdný řádek — malá výška
+				// Empty line — small height
 				lbl := material.Body2(th.Material, " ")
 				lbl.Font.Typeface = "Go Mono"
 				return lbl.Layout(gtx)
@@ -843,21 +991,21 @@ func layoutHighlightedTokens(gtx layout.Context, th *Theme, tokens []coloredToke
 		}))
 	}
 
-	// Selectable pro celý blok (fallback — kopírování celého kódu)
+	// Selectable for entire block (fallback — copying entire code)
 	if sels != nil && si >= 0 && si < len(*sels) {
-		// Přidáme selectable overlay na celý blok
+		// Add selectable overlay over entire block
 		return layout.Stack{}.Layout(gtx,
 			layout.Stacked(func(gtx layout.Context) layout.Dimensions {
 				return layout.Flex{Axis: layout.Vertical}.Layout(gtx, rows...)
 			}),
 			layout.Expanded(func(gtx layout.Context) layout.Dimensions {
-				// Neviditelný selectable text pro kopírování
+				// Invisible selectable text for copying
 				var fullText string
 				for _, tok := range tokens {
 					fullText += tok.text
 				}
 				lbl := material.Body2(th.Material, fullText)
-				lbl.Color = color.NRGBA{A: 0} // průhledný
+				lbl.Color = color.NRGBA{A: 0} // transparent
 				lbl.State = &(*sels)[si]
 				return lbl.Layout(gtx)
 			}),
@@ -867,8 +1015,8 @@ func layoutHighlightedTokens(gtx layout.Context, th *Theme, tokens []coloredToke
 	return layout.Flex{Axis: layout.Vertical}.Layout(gtx, rows...)
 }
 
-// ParseHexColor parsuje hex barvu (#rrggbb nebo #rgb) na color.NRGBA.
-// Vrací ok=false pokud vstup není platný hex color.
+// ParseHexColor parses a hex color (#rrggbb or #rgb) into color.NRGBA.
+// Returns ok=false if input is not a valid hex color.
 func ParseHexColor(hex string) (color.NRGBA, bool) {
 	hex = strings.TrimPrefix(hex, "#")
 	if len(hex) == 3 {
@@ -902,16 +1050,16 @@ func hexVal(c byte) int {
 	return -1
 }
 
-// GetUserRoleColor vrátí barvu role s nejnižší position (= nejvyšší rank) pro daného uživatele.
-// Pokud žádná role nemá barvu, vrátí fallback UserColor(username).
+// GetUserRoleColor returns the color of the role with the lowest position (= highest rank) for the given user.
+// If no role has a color, returns fallback UserColor(username).
 func (a *App) GetUserRoleColor(conn *ServerConnection, userID, username string) color.NRGBA {
 	if conn == nil {
 		return UserColor(username)
 	}
 
-	// Najít role IDs pro uživatele — projít conn.Members a conn.Roles
-	// Klient nemá přímo mapování user→roles, tak projdeme všechny role
-	// a podíváme se jestli user má přiřazené role (přes UserRolesMap).
+	// Find role IDs for user — iterate conn.Members and conn.Roles
+	// Client doesn't have a direct user→roles mapping, so we iterate all roles
+	// and check if the user has assigned roles (via UserRolesMap).
 	roleMap := conn.UserRolesMap
 	if roleMap == nil {
 		return UserColor(username)
@@ -922,7 +1070,7 @@ func (a *App) GetUserRoleColor(conn *ServerConnection, userID, username string) 
 		return UserColor(username)
 	}
 
-	// Najít roli s nejnižší position (= nejvyšší rank) která má color
+	// Find the role with the lowest position (= highest rank) that has a color
 	bestPos := 1<<31 - 1
 	bestColor := color.NRGBA{}
 	found := false
@@ -948,7 +1096,7 @@ func (a *App) GetUserRoleColor(conn *ServerConnection, userID, username string) 
 	return UserColor(username)
 }
 
-// layoutCentered — centrovaný text.
+// layoutCentered — centered text.
 func layoutCentered(gtx layout.Context, th *Theme, text string, c color.NRGBA) layout.Dimensions {
 	paint.FillShape(gtx.Ops, ColorBg, clip.Rect{Max: gtx.Constraints.Max}.Op())
 	return layout.Center.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
@@ -956,4 +1104,41 @@ func layoutCentered(gtx layout.Context, th *Theme, text string, c color.NRGBA) l
 		lbl.Color = c
 		return lbl.Layout(gtx)
 	})
+}
+
+// layoutDialogBtn renders a styled button with hover effect for dialog use.
+func layoutDialogBtn(gtx layout.Context, th *Theme, btn *widget.Clickable, text string, bg, fg color.NRGBA) layout.Dimensions {
+	return btn.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+		hoverBg := bg
+		if btn.Hovered() {
+			pointer.CursorPointer.Add(gtx.Ops)
+			hoverBg = lightenColor(bg, 20)
+		}
+		return layout.Background{}.Layout(gtx,
+			func(gtx layout.Context) layout.Dimensions {
+				sz := image.Rect(0, 0, gtx.Constraints.Min.X, gtx.Constraints.Min.Y)
+				rr := gtx.Dp(8)
+				paint.FillShape(gtx.Ops, hoverBg, clip.RRect{Rect: sz, NE: rr, NW: rr, SE: rr, SW: rr}.Op(gtx.Ops))
+				return layout.Dimensions{Size: sz.Max}
+			},
+			func(gtx layout.Context) layout.Dimensions {
+				return layout.Inset{Top: unit.Dp(8), Bottom: unit.Dp(8), Left: unit.Dp(20), Right: unit.Dp(20)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+					lbl := material.Body2(th.Material, text)
+					lbl.Color = fg
+					return lbl.Layout(gtx)
+				})
+			},
+		)
+	})
+}
+
+// lightenColor brightens a color by adding delta to each channel, clamped to 255.
+func lightenColor(c color.NRGBA, delta uint8) color.NRGBA {
+	add := func(v, d uint8) uint8 {
+		if int(v)+int(d) > 255 {
+			return 255
+		}
+		return v + d
+	}
+	return color.NRGBA{R: add(c.R, delta), G: add(c.G, delta), B: add(c.B, delta), A: c.A}
 }

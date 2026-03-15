@@ -13,10 +13,10 @@ import (
 	"io"
 )
 
-// deriveSharedKey — ECDH(ed25519→x25519) + HKDF-SHA256 → 32B AES klíč.
-// Kompatibilní s JS klientem (dm.ts deriveSharedKey).
+// deriveSharedKey — ECDH(ed25519→x25519) + HKDF-SHA256 → 32B AES key.
+// Compatible with the JS client (dm.ts deriveSharedKey).
 func deriveSharedKey(mySecretHex, theirPubHex string) ([]byte, error) {
-	// ed25519 → x25519 konverze
+	// ed25519 → x25519 conversion
 	myX25519Priv, err := Ed25519SeedToX25519Private(mySecretHex)
 	if err != nil {
 		return nil, err
@@ -35,9 +35,9 @@ func deriveSharedKey(mySecretHex, theirPubHex string) ([]byte, error) {
 	}
 	defer ClearBytes(sharedSecret)
 
-	// HKDF-SHA256 s info="nora-dm-e2e", salt=empty → 32B AES klíč
-	// Prázdný salt je záměrný — kompatibilita s JS klientem (dm.ts).
-	// HKDF bez saltu je bezpečný pokud vstupní materiál (ECDH shared secret) má dostatečnou entropii.
+	// HKDF-SHA256 with info="nora-dm-e2e", salt=empty → 32B AES key
+	// Empty salt is intentional — compatibility with the JS client (dm.ts).
+	// HKDF without salt is secure when the input material (ECDH shared secret) has sufficient entropy.
 	hkdfReader := hkdf.New(sha256.New, sharedSecret, []byte{}, []byte("nora-dm-e2e"))
 	key := make([]byte, 32)
 	if _, err := io.ReadFull(hkdfReader, key); err != nil {
@@ -47,8 +47,8 @@ func deriveSharedKey(mySecretHex, theirPubHex string) ([]byte, error) {
 	return key, nil
 }
 
-// EncryptDM zašifruje plaintext pro DM. Výstup: hex(nonce[12] + ciphertext+tag).
-// Kompatibilní s JS klientem (dm.ts encryptDM).
+// EncryptDM encrypts plaintext for DM. Output: hex(nonce[12] + ciphertext+tag).
+// Compatible with the JS client (dm.ts encryptDM).
 func EncryptDM(mySecretHex, theirPubHex, plaintext string) (string, error) {
 	key, err := deriveSharedKey(mySecretHex, theirPubHex)
 	if err != nil {
@@ -79,15 +79,15 @@ func EncryptDM(mySecretHex, theirPubHex, plaintext string) (string, error) {
 	return hex.EncodeToString(result), nil
 }
 
-// DecryptDM dešifruje DM zprávu. Vstup: hex(nonce[12] + ciphertext+tag).
-// Kompatibilní s JS klientem (dm.ts decryptDM).
+// DecryptDM decrypts a DM message. Input: hex(nonce[12] + ciphertext+tag).
+// Compatible with the JS client (dm.ts decryptDM).
 func DecryptDM(mySecretHex, theirPubHex, encryptedHex string) (string, error) {
 	data, err := hex.DecodeString(encryptedHex)
 	if err != nil {
-		return "", errors.New("neplatný hex")
+		return "", errors.New("invalid hex")
 	}
 	if len(data) < 28 { // nonce(12) + AES-GCM tag(16)
-		return "", errors.New("příliš krátká data")
+		return "", errors.New("data too short")
 	}
 
 	nonce := data[:12]
@@ -110,7 +110,7 @@ func DecryptDM(mySecretHex, theirPubHex, encryptedHex string) (string, error) {
 
 	plaintext, err := aesGCM.Open(nil, nonce, ciphertext, nil)
 	if err != nil {
-		return "", errors.New("dešifrování selhalo")
+		return "", errors.New("decryption failed")
 	}
 
 	return string(plaintext), nil

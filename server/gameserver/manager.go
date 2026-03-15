@@ -48,7 +48,7 @@ func (m *Manager) PullImage(image string) error {
 	return nil
 }
 
-// Start spustí game server — přečte server.toml a spustí docker run
+// Start starts a game server — reads server.toml and runs docker run
 func (m *Manager) Start(gsID string) (string, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -62,6 +62,11 @@ func (m *Manager) Start(gsID string) (string, error) {
 		return "", fmt.Errorf("no image specified in server.toml")
 	}
 
+	// Validate config before building Docker args
+	if err := cfg.ValidateConfig(); err != nil {
+		return "", fmt.Errorf("invalid config: %w", err)
+	}
+
 	containerName := "nora-gs-" + gsID
 	gsDataDir, _ := filepath.Abs(filepath.Join(m.DataDir, gsID))
 
@@ -73,12 +78,12 @@ func (m *Manager) Start(gsID string) (string, error) {
 		return "", fmt.Errorf("%s: %s", err, string(out))
 	}
 
-	// Firewall nastavuje handler po startu (refreshGameServerFirewall)
+	// Firewall is set up by handler after start (refreshGameServerFirewall)
 
 	return strings.TrimSpace(string(out)), nil
 }
 
-// Stop zastaví kontejner — čte stop_timeout z configu
+// Stop stops a container — reads stop_timeout from config
 func (m *Manager) Stop(containerID, gsID string) error {
 	timeout := 10
 	cfg, cfgErr := ReadConfig(m.DataDir, gsID)
@@ -99,17 +104,17 @@ func (m *Manager) Stop(containerID, gsID string) error {
 	return nil
 }
 
-// runIPTables spustí iptables příkaz, loguje chyby
+// runIPTables runs an iptables command, logs errors
 func (m *Manager) runIPTables(args ...string) error {
 	cmd := exec.Command("iptables", args...)
 	out, err := cmd.CombinedOutput()
 	if err != nil {
-		slog.Warn("iptables příkaz selhal", "args", args, "output", strings.TrimSpace(string(out)), "error", err)
+		slog.Warn("iptables command failed", "args", args, "output", strings.TrimSpace(string(out)), "error", err)
 	}
 	return err
 }
 
-// SetupFirewall nastaví iptables DOCKER-USER chain pro game server porty
+// SetupFirewall sets up iptables DOCKER-USER chain for game server ports
 func (m *Manager) SetupFirewall(cfg *ServerConfig, mode string, memberIPs []string) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -123,35 +128,35 @@ func (m *Manager) SetupFirewall(cfg *ServerConfig, mode string, memberIPs []stri
 
 		chain := fmt.Sprintf("NORA-GS-%d-%s", hostPort, proto)
 
-		// Smazat starou chain (ignorovat chyby — nemusí existovat)
+		// Delete old chain (ignore errors — may not exist)
 		m.runIPTables("-D", "DOCKER-USER", "-p", proto, "-m", "conntrack", "--ctorigdstport", fmt.Sprintf("%d", hostPort), "-j", chain)
 		m.runIPTables("-F", chain)
 		m.runIPTables("-X", chain)
 
-		// Vytvořit novou chain
+		// Create new chain
 		if err := m.runIPTables("-N", chain); err != nil {
-			slog.Warn("iptables: nelze vytvořit chain, přeskakuji", "chain", chain)
+			slog.Warn("iptables: cannot create chain, skipping", "chain", chain)
 			continue
 		}
 
-		// Jump z DOCKER-USER
+		// Jump from DOCKER-USER
 		m.runIPTables("-I", "DOCKER-USER", "-p", proto, "-m", "conntrack", "--ctorigdstport", fmt.Sprintf("%d", hostPort), "-j", chain)
 
 		if mode == "room" {
-			// Povolit jen member IP adresy
+			// Allow only member IP addresses
 			for _, ip := range memberIPs {
 				m.runIPTables("-A", chain, "-s", ip, "-j", "RETURN")
 			}
-			// Zbytek zahodit
+			// Drop the rest
 			m.runIPTables("-A", chain, "-j", "DROP")
 		} else {
-			// Open mode — povolit vše
+			// Open mode — allow everything
 			m.runIPTables("-A", chain, "-j", "RETURN")
 		}
 	}
 }
 
-// CleanupFirewall smaže iptables chain pro game server porty
+// CleanupFirewall deletes iptables chain for game server ports
 func (m *Manager) CleanupFirewall(cfg *ServerConfig) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -230,7 +235,7 @@ func (m *Manager) Stats(containerID string) (*GameServerStats, error) {
 	return stats, nil
 }
 
-// GameServerStats — přesunuté sem z models (stále využívané handlery)
+// GameServerStats — moved here from models (still used by handlers)
 type GameServerStats struct {
 	CPUPercent string `json:"cpu_percent"`
 	MemUsage   string `json:"mem_usage"`
@@ -257,7 +262,7 @@ func (m *Manager) StreamLogs(ctx context.Context, containerID string, lines int)
 	return stdout, nil
 }
 
-// isValidContainerID validuje Docker container ID/name (hex, alphanum, dash, underscore, tečka)
+// isValidContainerID validates Docker container ID/name (hex, alphanum, dash, underscore, dot)
 func isValidContainerID(id string) bool {
 	if len(id) == 0 || len(id) > 128 {
 		return false
@@ -270,7 +275,7 @@ func isValidContainerID(id string) bool {
 	return true
 }
 
-// SendCommand — čte console_command z configu
+// SendCommand — reads console_command from config
 func (m *Manager) SendCommand(containerID, gsID, command string) error {
 	if !isValidContainerID(containerID) {
 		return fmt.Errorf("invalid container ID")
@@ -278,14 +283,17 @@ func (m *Manager) SendCommand(containerID, gsID, command string) error {
 
 	consoleCmd := "rcon-cli"
 	if cfg, err := ReadConfig(m.DataDir, gsID); err == nil && cfg.ConsoleCommand != "" {
+		if !allowedConsoleCommands[cfg.ConsoleCommand] {
+			return fmt.Errorf("disallowed console command: %q", cfg.ConsoleCommand)
+		}
 		consoleCmd = cfg.ConsoleCommand
 	}
 
-	// Sanitizovat command — newliny mohou být interpretovány jako oddělení příkazů
+	// Sanitize command — newlines can be interpreted as command separators
 	command = strings.ReplaceAll(command, "\n", " ")
 	command = strings.ReplaceAll(command, "\r", "")
 
-	// "--" zabrání interpretaci containerID jako docker flagu
+	// "--" prevents interpretation of containerID as a docker flag
 	cmd := exec.Command("docker", "exec", "--", containerID, consoleCmd, command)
 	out, err := cmd.CombinedOutput()
 	if err != nil {
@@ -294,7 +302,7 @@ func (m *Manager) SendCommand(containerID, gsID, command string) error {
 	return nil
 }
 
-// RecursiveFileEntry je soubor nalezený rekurzivním listováním
+// RecursiveFileEntry is a file found by recursive listing
 type RecursiveFileEntry struct {
 	RelPath string    `json:"rel_path"`
 	Name    string    `json:"name"`
@@ -302,19 +310,19 @@ type RecursiveFileEntry struct {
 	ModTime time.Time `json:"mod_time"`
 }
 
-// --- File operace ---
+// --- File operations ---
 
-// CreateServerDir vytvoří adresář pro game server + server.toml z presetu
+// CreateServerDir creates a directory for a game server + server.toml from preset
 func (m *Manager) CreateServerDir(gsID, preset string) error {
 	dir := filepath.Join(m.DataDir, gsID)
 	if err := os.MkdirAll(dir, 0755); err != nil {
 		return err
 	}
 
-	// Načti obsah presetu z disku
+	// Load preset content from disk
 	content, err := ReadPreset(m.PresetsDir, preset)
 	if err != nil {
-		// Fallback — první dostupný preset nebo prázdný config
+		// Fallback — first available preset or empty config
 		presets := ListPresets(m.PresetsDir)
 		if len(presets) > 0 {
 			content, _ = ReadPreset(m.PresetsDir, presets[0].Name)
@@ -327,13 +335,13 @@ func (m *Manager) CreateServerDir(gsID, preset string) error {
 	return os.WriteFile(filepath.Join(dir, "server.toml"), []byte(content), 0644)
 }
 
-// DeleteServerDir smaže celý adresář serveru
+// DeleteServerDir deletes the entire server directory
 func (m *Manager) DeleteServerDir(gsID string) error {
 	dir := filepath.Join(m.DataDir, gsID)
 	return os.RemoveAll(dir)
 }
 
-// SafePath validuje cestu a chrání proti path traversal
+// SafePath validates path and protects against path traversal (including symlinks).
 func (m *Manager) SafePath(gsID, relPath string) (string, error) {
 	base := filepath.Join(m.DataDir, gsID)
 	target := filepath.Join(base, relPath)
@@ -348,10 +356,22 @@ func (m *Manager) SafePath(gsID, relPath string) (string, error) {
 	if absTarget != absBase && !strings.HasPrefix(absTarget, absBase+string(filepath.Separator)) {
 		return "", fmt.Errorf("path traversal denied")
 	}
+
+	// Resolve symlinks and re-check (prevent symlink escape)
+	if real, err := filepath.EvalSymlinks(absTarget); err == nil {
+		realBase, _ := filepath.EvalSymlinks(absBase)
+		if realBase == "" {
+			realBase = absBase
+		}
+		if real != realBase && !strings.HasPrefix(real, realBase+string(filepath.Separator)) {
+			return "", fmt.Errorf("path traversal denied (symlink)")
+		}
+	}
+
 	return absTarget, nil
 }
 
-// ListFiles vrátí výpis adresáře
+// ListFiles returns a directory listing
 func (m *Manager) ListFiles(gsID, relPath string) ([]FileEntry, error) {
 	dir, err := m.SafePath(gsID, relPath)
 	if err != nil {
@@ -379,7 +399,7 @@ func (m *Manager) ListFiles(gsID, relPath string) ([]FileEntry, error) {
 	return result, nil
 }
 
-// ReadFile přečte obsah souboru (max 1MB)
+// ReadFile reads the content of a file (max 1MB)
 func (m *Manager) ReadFile(gsID, relPath string) (string, error) {
 	path, err := m.SafePath(gsID, relPath)
 	if err != nil {
@@ -404,20 +424,20 @@ func (m *Manager) ReadFile(gsID, relPath string) (string, error) {
 	return string(data), nil
 }
 
-// WriteFile zapíše obsah do souboru
+// WriteFile writes content to a file
 func (m *Manager) WriteFile(gsID, relPath, content string) error {
 	path, err := m.SafePath(gsID, relPath)
 	if err != nil {
 		return err
 	}
 
-	// Vytvoří nadřazený adresář pokud neexistuje
+	// Create parent directory if it doesn't exist
 	os.MkdirAll(filepath.Dir(path), 0755)
 
 	return os.WriteFile(path, []byte(content), 0644)
 }
 
-// DeleteFile smaže soubor nebo adresář
+// DeleteFile deletes a file or directory
 func (m *Manager) DeleteFile(gsID, relPath string) error {
 	if relPath == "" || relPath == "." || relPath == "/" {
 		return fmt.Errorf("cannot delete root directory")
@@ -429,7 +449,7 @@ func (m *Manager) DeleteFile(gsID, relPath string) error {
 	return os.RemoveAll(path)
 }
 
-// Mkdir vytvoří adresář
+// Mkdir creates a directory
 func (m *Manager) Mkdir(gsID, relPath string) error {
 	path, err := m.SafePath(gsID, relPath)
 	if err != nil {
@@ -438,10 +458,10 @@ func (m *Manager) Mkdir(gsID, relPath string) error {
 	return os.MkdirAll(path, 0755)
 }
 
-// maxRecursiveFiles je limit pro rekurzivní listování (ochrana proti DoS)
+// maxRecursiveFiles is the limit for recursive listing (DoS protection)
 const maxRecursiveFiles = 10000
 
-// ListFilesRecursive vrátí rekurzivní výpis souborů v adresáři (jen soubory, ne adresáře)
+// ListFilesRecursive returns a recursive listing of files in a directory (files only, not directories)
 func (m *Manager) ListFilesRecursive(gsID, relPath string) ([]RecursiveFileEntry, error) {
 	dir, err := m.SafePath(gsID, relPath)
 	if err != nil {
@@ -451,7 +471,7 @@ func (m *Manager) ListFilesRecursive(gsID, relPath string) ([]RecursiveFileEntry
 	var result []RecursiveFileEntry
 	err = filepath.WalkDir(dir, func(path string, d os.DirEntry, err error) error {
 		if err != nil {
-			return nil // přeskočit nepřístupné soubory
+			return nil // skip inaccessible files
 		}
 		if d.IsDir() {
 			return nil
@@ -478,14 +498,14 @@ func (m *Manager) ListFilesRecursive(gsID, relPath string) ([]RecursiveFileEntry
 	return result, err
 }
 
-// FilePath vrátí absolutní cestu k souboru (pro ServeFile).
-// Navíc kontroluje, že soubor po rozřešení symlinků stále leží v game server adresáři.
+// FilePath returns the absolute path to a file (for ServeFile).
+// Additionally checks that the file after resolving symlinks still resides in the game server directory.
 func (m *Manager) FilePath(gsID, relPath string) (string, error) {
 	path, err := m.SafePath(gsID, relPath)
 	if err != nil {
 		return "", err
 	}
-	// Rozřešit symlinky a znovu zkontrolovat cestu
+	// Resolve symlinks and re-check the path
 	real, err := filepath.EvalSymlinks(path)
 	if err != nil {
 		return "", fmt.Errorf("invalid path")

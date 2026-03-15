@@ -68,14 +68,14 @@ func (d *Deps) CreateDMConversation(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Existující konverzace?
+	// Existing conversation?
 	existing, err := d.DMs.FindConversation(user.ID, req.UserID)
 	if err == nil {
 		util.JSON(w, http.StatusOK, existing)
 		return
 	}
 
-	// Block kontrola
+	// Block check
 	blocked, _ := d.Blocks.EitherBlocked(user.ID, req.UserID)
 	if blocked {
 		util.Error(w, http.StatusForbidden, "this user is blocked")
@@ -104,7 +104,7 @@ func (d *Deps) CreateDMConversation(w http.ResponseWriter, r *http.Request) {
 	util.JSON(w, http.StatusCreated, conv)
 }
 
-const maxEncryptedContentLen = 16000 // hex-encoded šifrovaný obsah
+const maxEncryptedContentLen = 16000 // hex-encoded encrypted content
 
 func (d *Deps) CreateDMMessage(w http.ResponseWriter, r *http.Request) {
 	user := auth.GetUser(r)
@@ -121,7 +121,7 @@ func (d *Deps) CreateDMMessage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Block kontrola — zjistit druhou stranu
+	// Block check — find the other party
 	blockParts, _ := d.DMs.GetParticipants(convID)
 	for _, p := range blockParts {
 		if p.UserID != user.ID {
@@ -164,14 +164,14 @@ func (d *Deps) CreateDMMessage(w http.ResponseWriter, r *http.Request) {
 		msg.Author = author
 	}
 
-	// Broadcast WS event všem účastníkům
+	// Broadcast WS event to all participants
 	parts, _ := d.DMs.GetParticipants(convID)
 	event, _ := ws.NewEvent(ws.EventDMMessage, msg)
 	for _, p := range parts {
 		d.Hub.BroadcastToUser(p.UserID, event)
 	}
 
-	// Uložit jako pending pro offline recipienty
+	// Store as pending for offline recipients
 	for _, p := range parts {
 		if p.UserID != user.ID && !d.Hub.IsUserOnline(p.UserID) {
 			d.DMs.CreatePending(msg)
@@ -192,7 +192,7 @@ func (d *Deps) DeleteDMConversation(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Zjistit účastníky před smazáním
+	// Get participants before deletion
 	parts, _ := d.DMs.GetParticipants(convID)
 
 	if err := d.DMs.DeleteConversation(convID); err != nil {
@@ -200,7 +200,7 @@ func (d *Deps) DeleteDMConversation(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Broadcast dm.delete oběma stranám
+	// Broadcast dm.delete to both parties
 	event, _ := ws.NewEvent(ws.EventDMDelete, map[string]string{
 		"conversation_id": convID,
 	})
@@ -230,7 +230,7 @@ func (d *Deps) GetDMPending(w http.ResponseWriter, r *http.Request) {
 		messages = []models.DMPendingMessage{}
 	}
 
-	// Smazat přijatá pending (ty co poslal někdo jiný)
+	// Delete received pending messages (those sent by someone else)
 	d.DMs.DeletePending(convID, user.ID)
 
 	util.JSON(w, http.StatusOK, messages)

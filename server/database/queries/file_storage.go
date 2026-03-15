@@ -9,7 +9,7 @@ type FileStorageQueries struct {
 	DB *sql.DB
 }
 
-// Složky
+// Folders
 
 func (q *FileStorageQueries) CreateFolder(f *models.StorageFolder) error {
 	_, err := q.DB.Exec(
@@ -69,7 +69,7 @@ func (q *FileStorageQueries) DeleteFolder(id string) error {
 	return err
 }
 
-// Soubory
+// Files
 
 func (q *FileStorageQueries) CreateFile(f *models.StorageFile) error {
 	_, err := q.DB.Exec(
@@ -146,7 +146,7 @@ func (q *FileStorageQueries) DeleteFile(id string) (string, error) {
 	return filepath, err
 }
 
-// GetFilesInFolder vrátí filepaths souborů ve složce (pro mazání souborů z disku při smazání složky)
+// GetFilesInFolder returns filepaths of files in a folder (for deleting files from disk when folder is deleted)
 func (q *FileStorageQueries) GetFilesInFolder(folderID string) ([]string, error) {
 	rows, err := q.DB.Query(`SELECT filepath FROM storage_files WHERE folder_id = ?`, folderID)
 	if err != nil {
@@ -165,7 +165,7 @@ func (q *FileStorageQueries) GetFilesInFolder(folderID string) ([]string, error)
 	return result, rows.Err()
 }
 
-// TotalStorageSize vrátí celkovou velikost souborů ve storage
+// TotalStorageSize returns the total size of files in storage
 func (q *FileStorageQueries) TotalStorageSize() (int64, error) {
 	var total int64
 	err := q.DB.QueryRow(`SELECT COALESCE(SUM(size), 0) FROM storage_files`).Scan(&total)

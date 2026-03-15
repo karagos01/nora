@@ -22,7 +22,7 @@ import (
 	"github.com/google/uuid"
 )
 
-// Stav instalace Dockeru (in-memory, per server proces)
+// Docker installation state (in-memory, per server process)
 var (
 	dockerInstallMu      sync.Mutex
 	dockerInstallRunning bool
@@ -31,7 +31,7 @@ var (
 	dockerInstallError   string
 )
 
-// GetGameServerPresets vrátí dostupné presety z disku
+// GetGameServerPresets returns available presets from disk
 func (d *Deps) GetGameServerPresets(w http.ResponseWriter, r *http.Request) {
 	if d.GameServerMgr == nil {
 		util.JSON(w, http.StatusOK, []gameserver.PresetEntry{})
@@ -44,7 +44,7 @@ func (d *Deps) GetGameServerPresets(w http.ResponseWriter, r *http.Request) {
 	util.JSON(w, http.StatusOK, presets)
 }
 
-// GetGameServers vrátí všechny instance herních serverů
+// GetGameServers returns all game server instances
 func (d *Deps) GetGameServers(w http.ResponseWriter, r *http.Request) {
 	servers, err := d.GameServerQ.GetAll()
 	if err != nil {
@@ -54,7 +54,7 @@ func (d *Deps) GetGameServers(w http.ResponseWriter, r *http.Request) {
 		servers = []models.GameServerInstance{}
 	}
 
-	// Zkontroluj skutečný stav kontejnerů
+	// Check actual container status
 	if d.GameServerMgr != nil {
 		for i := range servers {
 			if servers[i].Status == "running" && servers[i].ContainerID != "" {
@@ -69,7 +69,7 @@ func (d *Deps) GetGameServers(w http.ResponseWriter, r *http.Request) {
 	util.JSON(w, http.StatusOK, servers)
 }
 
-// CreateGameServer vytvoří novou instanci herního serveru
+// CreateGameServer creates a new game server instance
 func (d *Deps) CreateGameServer(w http.ResponseWriter, r *http.Request) {
 	user := auth.GetUser(r)
 	if err := d.requirePermission(user, models.PermAdmin); err != nil {
@@ -105,7 +105,7 @@ func (d *Deps) CreateGameServer(w http.ResponseWriter, r *http.Request) {
 		AccessMode: "open",
 	}
 
-	// Vytvoř adresář + server.toml z presetu
+	// Create directory + server.toml from preset
 	preset := req.Preset
 	if preset == "" {
 		preset = "minecraft"
@@ -129,7 +129,7 @@ func (d *Deps) CreateGameServer(w http.ResponseWriter, r *http.Request) {
 	util.JSON(w, http.StatusCreated, gs)
 }
 
-// DeleteGameServer smaže herní server a odebere kontejner
+// DeleteGameServer deletes a game server and removes the container
 func (d *Deps) DeleteGameServer(w http.ResponseWriter, r *http.Request) {
 	user := auth.GetUser(r)
 	if err := d.requirePermission(user, models.PermAdmin); err != nil {
@@ -144,7 +144,7 @@ func (d *Deps) DeleteGameServer(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Zastavit a odebrat kontejner
+	// Stop and remove container
 	if d.GameServerMgr != nil {
 		if gs.ContainerID != "" {
 			d.GameServerMgr.Stop(gs.ContainerID, gs.ID)
@@ -154,7 +154,7 @@ func (d *Deps) DeleteGameServer(w http.ResponseWriter, r *http.Request) {
 		d.GameServerMgr.DeleteServerDir(gs.ID)
 	}
 
-	// Smazat všechny členy (CASCADE by měl stačit, ale pro jistotu)
+	// Delete all members (CASCADE should suffice, but just in case)
 	d.GameServerQ.RemoveAllMembers(id)
 	d.GameServerQ.Delete(id)
 
@@ -164,7 +164,7 @@ func (d *Deps) DeleteGameServer(w http.ResponseWriter, r *http.Request) {
 	util.JSON(w, http.StatusOK, map[string]string{"status": "ok"})
 }
 
-// StartGameServer spustí herní server (docker run) — async
+// StartGameServer starts a game server (docker run) — async
 func (d *Deps) StartGameServer(w http.ResponseWriter, r *http.Request) {
 	user := auth.GetUser(r)
 	if err := d.requirePermission(user, models.PermAdmin); err != nil {
@@ -201,7 +201,7 @@ func (d *Deps) StartGameServer(w http.ResponseWriter, r *http.Request) {
 
 		containerID, err := d.GameServerMgr.Start(gs.ID)
 		if err != nil {
-			slog.Error("game server start selhal", "server_id", gs.ID, "error", err)
+			slog.Error("game server start failed", "server_id", gs.ID, "error", err)
 			d.GameServerQ.UpdateStatus(gs.ID, "error", "", err.Error())
 			gs.Status = "error"
 			gs.ErrorMsg = err.Error()
@@ -216,16 +216,16 @@ func (d *Deps) StartGameServer(w http.ResponseWriter, r *http.Request) {
 		gs.ErrorMsg = ""
 		event, _ := ws.NewEvent(ws.EventGameServerStatus, gs)
 		d.Hub.Broadcast(event)
-		slog.Info("game server spuštěn", "server_id", gs.ID, "container_id", containerID[:12])
+		slog.Info("game server started", "server_id", gs.ID, "container_id", containerID[:12])
 
-		// Nastavit firewall podle access_mode
+		// Set up firewall according to access_mode
 		d.RefreshGameServerFirewall(gs)
 	}()
 
 	util.JSON(w, http.StatusOK, map[string]string{"status": "starting"})
 }
 
-// StopGameServer zastaví herní server
+// StopGameServer stops a game server
 func (d *Deps) StopGameServer(w http.ResponseWriter, r *http.Request) {
 	user := auth.GetUser(r)
 	if err := d.requirePermission(user, models.PermAdmin); err != nil {
@@ -258,7 +258,7 @@ func (d *Deps) StopGameServer(w http.ResponseWriter, r *http.Request) {
 	util.JSON(w, http.StatusOK, map[string]string{"status": "stopped"})
 }
 
-// RestartGameServer restartuje herní server
+// RestartGameServer restarts a game server
 func (d *Deps) RestartGameServer(w http.ResponseWriter, r *http.Request) {
 	user := auth.GetUser(r)
 	if err := d.requirePermission(user, models.PermAdmin); err != nil {
@@ -307,24 +307,24 @@ func (d *Deps) RestartGameServer(w http.ResponseWriter, r *http.Request) {
 		event, _ := ws.NewEvent(ws.EventGameServerStatus, gs)
 		d.Hub.Broadcast(event)
 
-		// Nastavit firewall podle access_mode
+		// Set up firewall according to access_mode
 		d.RefreshGameServerFirewall(gs)
 	}()
 
 	util.JSON(w, http.StatusOK, map[string]string{"status": "restarting"})
 }
 
-// RefreshGameServerFirewall nastaví iptables pravidla podle access_mode a členů
+// RefreshGameServerFirewall sets iptables rules according to access_mode and members
 func (d *Deps) RefreshGameServerFirewall(gs *models.GameServerInstance) {
 	if d.GameServerMgr == nil {
 		return
 	}
 	cfg, err := gameserver.ReadConfig(d.GameServerMgr.DataDir, gs.ID)
 	if err != nil {
-		slog.Error("refreshGameServerFirewall: čtení configu selhalo", "server_id", gs.ID, "error", err)
+		slog.Error("refreshGameServerFirewall: failed to read config", "server_id", gs.ID, "error", err)
 		return
 	}
-	// Načíst aktuální access_mode z DB
+	// Load current access_mode from DB
 	fresh, err := d.GameServerQ.GetByID(gs.ID)
 	if err != nil {
 		return
@@ -336,7 +336,7 @@ func (d *Deps) RefreshGameServerFirewall(gs *models.GameServerInstance) {
 	d.GameServerMgr.SetupFirewall(cfg, fresh.AccessMode, memberIPs)
 }
 
-// JoinGameServer přidá uživatele do game server roomu
+// JoinGameServer adds a user to the game server room
 func (d *Deps) JoinGameServer(w http.ResponseWriter, r *http.Request) {
 	user := auth.GetUser(r)
 	id := r.PathValue("id")
@@ -360,7 +360,7 @@ func (d *Deps) JoinGameServer(w http.ResponseWriter, r *http.Request) {
 	event, _ := ws.NewEvent(ws.EventGameServerJoin, member)
 	d.Hub.Broadcast(event)
 
-	// Refresh firewall pokud server běží v room mode
+	// Refresh firewall if server is running in room mode
 	if gs.Status == "running" && gs.AccessMode == "room" {
 		d.RefreshGameServerFirewall(gs)
 	}
@@ -368,7 +368,7 @@ func (d *Deps) JoinGameServer(w http.ResponseWriter, r *http.Request) {
 	util.JSON(w, http.StatusOK, map[string]string{"status": "ok"})
 }
 
-// LeaveGameServer odebere uživatele z game server roomu
+// LeaveGameServer removes a user from the game server room
 func (d *Deps) LeaveGameServer(w http.ResponseWriter, r *http.Request) {
 	user := auth.GetUser(r)
 	id := r.PathValue("id")
@@ -387,7 +387,7 @@ func (d *Deps) LeaveGameServer(w http.ResponseWriter, r *http.Request) {
 	})
 	d.Hub.Broadcast(event)
 
-	// Refresh firewall pokud server běží v room mode
+	// Refresh firewall if server is running in room mode
 	if gs.Status == "running" && gs.AccessMode == "room" {
 		d.RefreshGameServerFirewall(gs)
 	}
@@ -395,7 +395,7 @@ func (d *Deps) LeaveGameServer(w http.ResponseWriter, r *http.Request) {
 	util.JSON(w, http.StatusOK, map[string]string{"status": "ok"})
 }
 
-// GetGameServerMembers vrátí seznam členů roomu
+// GetGameServerMembers returns the list of room members
 func (d *Deps) GetGameServerMembers(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
 	members, err := d.GameServerQ.GetMembers(id)
@@ -408,7 +408,7 @@ func (d *Deps) GetGameServerMembers(w http.ResponseWriter, r *http.Request) {
 	util.JSON(w, http.StatusOK, members)
 }
 
-// SetGameServerAccess změní access mode (open/room) — vyžaduje admin
+// SetGameServerAccess changes the access mode (open/room) — requires admin
 func (d *Deps) SetGameServerAccess(w http.ResponseWriter, r *http.Request) {
 	user := auth.GetUser(r)
 	if err := d.requirePermission(user, models.PermAdmin); err != nil {
@@ -437,7 +437,7 @@ func (d *Deps) SetGameServerAccess(w http.ResponseWriter, r *http.Request) {
 
 	d.GameServerQ.UpdateAccessMode(gs.ID, req.Mode)
 
-	// Refresh firewall pokud server běží
+	// Refresh firewall if server is running
 	if gs.Status == "running" {
 		d.RefreshGameServerFirewall(gs)
 	}
@@ -450,7 +450,7 @@ func (d *Deps) SetGameServerAccess(w http.ResponseWriter, r *http.Request) {
 	util.JSON(w, http.StatusOK, map[string]string{"status": "ok"})
 }
 
-// GameServerStats vrátí statistiky běžícího kontejneru
+// GameServerStats returns statistics of a running container
 func (d *Deps) GameServerStats(w http.ResponseWriter, r *http.Request) {
 	if !d.GameServersEnabled {
 		util.Error(w, http.StatusServiceUnavailable, "game servers are not enabled")
@@ -478,9 +478,9 @@ func (d *Deps) GameServerStats(w http.ResponseWriter, r *http.Request) {
 	util.JSON(w, http.StatusOK, stats)
 }
 
-// GameServerLogs — WS endpoint pro live streaming docker logů
+// GameServerLogs — WS endpoint for live streaming docker logs
 func (d *Deps) GameServerLogs(w http.ResponseWriter, r *http.Request) {
-	// Token z Authorization headeru (preferovaný) nebo query parametru (fallback)
+	// Token from Authorization header (preferred) or query parameter (fallback)
 	var token string
 	if ah := r.Header.Get("Authorization"); strings.HasPrefix(ah, "Bearer ") {
 		token = ah[7:]
@@ -503,7 +503,7 @@ func (d *Deps) GameServerLogs(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Admin permission kontrola
+	// Admin permission check
 	perms, err := d.Roles.GetUserPermissions(claims.UserID)
 	if err != nil || (!claims.IsOwner && perms&models.PermAdmin == 0) {
 		http.Error(w, "admin permission required", http.StatusForbidden)
@@ -531,7 +531,7 @@ func (d *Deps) GameServerLogs(w http.ResponseWriter, r *http.Request) {
 		InsecureSkipVerify: true,
 	})
 	if err != nil {
-		slog.Error("gameserver logs ws: upgrade selhal", "error", err)
+		slog.Error("gameserver logs ws: upgrade failed", "error", err)
 		return
 	}
 	defer conn.Close(websocket.StatusNormalClosure, "")
@@ -546,7 +546,7 @@ func (d *Deps) GameServerLogs(w http.ResponseWriter, r *http.Request) {
 	}
 	defer reader.Close()
 
-	// Čtení příkazů od klienta (async)
+	// Read commands from client (async)
 	go func() {
 		defer cancel()
 		for {
@@ -561,7 +561,7 @@ func (d *Deps) GameServerLogs(w http.ResponseWriter, r *http.Request) {
 		}
 	}()
 
-	// Stream logů klientovi
+	// Stream logs to client
 	scanner := bufio.NewScanner(reader)
 	for scanner.Scan() {
 		line := scanner.Text()
@@ -572,9 +572,9 @@ func (d *Deps) GameServerLogs(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-// --- File endpointy ---
+// --- File endpoints ---
 
-// GameServerFiles vrátí výpis souborů v adresáři game serveru
+// GameServerFiles returns a file listing in the game server directory
 func (d *Deps) GameServerFiles(w http.ResponseWriter, r *http.Request) {
 	user := auth.GetUser(r)
 	if err := d.requirePermission(user, models.PermAdmin); err != nil {
@@ -603,7 +603,7 @@ func (d *Deps) GameServerFiles(w http.ResponseWriter, r *http.Request) {
 	util.JSON(w, http.StatusOK, entries)
 }
 
-// GameServerFileContent vrátí obsah souboru
+// GameServerFileContent returns the content of a file
 func (d *Deps) GameServerFileContent(w http.ResponseWriter, r *http.Request) {
 	user := auth.GetUser(r)
 	if err := d.requirePermission(user, models.PermAdmin); err != nil {
@@ -637,7 +637,7 @@ func (d *Deps) GameServerFileContent(w http.ResponseWriter, r *http.Request) {
 	util.JSON(w, http.StatusOK, map[string]string{"content": content})
 }
 
-// GameServerFileWrite zapíše obsah do souboru
+// GameServerFileWrite writes content to a file
 func (d *Deps) GameServerFileWrite(w http.ResponseWriter, r *http.Request) {
 	user := auth.GetUser(r)
 	if err := d.requirePermission(user, models.PermAdmin); err != nil {
@@ -678,7 +678,7 @@ func (d *Deps) GameServerFileWrite(w http.ResponseWriter, r *http.Request) {
 	util.JSON(w, http.StatusOK, map[string]string{"status": "ok"})
 }
 
-// GameServerFileUpload nahraje soubor (multipart, max 50MB)
+// GameServerFileUpload uploads a file (multipart, max 50MB)
 func (d *Deps) GameServerFileUpload(w http.ResponseWriter, r *http.Request) {
 	user := auth.GetUser(r)
 	if err := d.requirePermission(user, models.PermAdmin); err != nil {
@@ -716,7 +716,7 @@ func (d *Deps) GameServerFileUpload(w http.ResponseWriter, r *http.Request) {
 		path = "."
 	}
 
-	// Cílová cesta: path/filename
+	// Target path: path/filename
 	targetPath := path + "/" + header.Filename
 	if path == "." || path == "" {
 		targetPath = header.Filename
@@ -736,7 +736,7 @@ func (d *Deps) GameServerFileUpload(w http.ResponseWriter, r *http.Request) {
 	util.JSON(w, http.StatusOK, map[string]string{"status": "ok"})
 }
 
-// GameServerFileDelete smaže soubor nebo adresář
+// GameServerFileDelete deletes a file or directory
 func (d *Deps) GameServerFileDelete(w http.ResponseWriter, r *http.Request) {
 	user := auth.GetUser(r)
 	if err := d.requirePermission(user, models.PermAdmin); err != nil {
@@ -769,7 +769,7 @@ func (d *Deps) GameServerFileDelete(w http.ResponseWriter, r *http.Request) {
 	util.JSON(w, http.StatusOK, map[string]string{"status": "ok"})
 }
 
-// GameServerMkdir vytvoří adresář
+// GameServerMkdir creates a directory
 func (d *Deps) GameServerMkdir(w http.ResponseWriter, r *http.Request) {
 	user := auth.GetUser(r)
 	if err := d.requirePermission(user, models.PermAdmin); err != nil {
@@ -809,7 +809,7 @@ func (d *Deps) GameServerMkdir(w http.ResponseWriter, r *http.Request) {
 	util.JSON(w, http.StatusOK, map[string]string{"status": "ok"})
 }
 
-// GameServerFileDownload stáhne soubor z game serveru (binární)
+// GameServerFileDownload downloads a file from the game server (binary)
 func (d *Deps) GameServerFileDownload(w http.ResponseWriter, r *http.Request) {
 	user := auth.GetUser(r)
 	if err := d.requirePermission(user, models.PermAdmin); err != nil {
@@ -846,7 +846,7 @@ func (d *Deps) GameServerFileDownload(w http.ResponseWriter, r *http.Request) {
 	http.ServeFile(w, r, absPath)
 }
 
-// GameServerListRecursive vrátí rekurzivní výpis souborů v adresáři
+// GameServerListRecursive returns a recursive file listing in the directory
 func (d *Deps) GameServerListRecursive(w http.ResponseWriter, r *http.Request) {
 	user := auth.GetUser(r)
 	if err := d.requirePermission(user, models.PermAdmin); err != nil {
@@ -878,7 +878,7 @@ func (d *Deps) GameServerListRecursive(w http.ResponseWriter, r *http.Request) {
 	util.JSON(w, http.StatusOK, entries)
 }
 
-// RCONCommand vykoná RCON příkaz na běžícím game serveru (Source RCON protokol)
+// RCONCommand executes an RCON command on a running game server (Source RCON protocol)
 func (d *Deps) RCONCommand(w http.ResponseWriter, r *http.Request) {
 	user := auth.GetUser(r)
 	if err := d.requirePermission(user, models.PermAdmin); err != nil {
@@ -903,7 +903,7 @@ func (d *Deps) RCONCommand(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Přečíst RCON konfiguraci ze server.toml
+	// Read RCON configuration from server.toml
 	cfg, err := gameserver.ReadConfig(d.GameServerMgr.DataDir, gs.ID)
 	if err != nil {
 		util.Error(w, http.StatusInternalServerError, "failed to read server config")
@@ -928,18 +928,18 @@ func (d *Deps) RCONCommand(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Sanitizovat command — newliny by mohly způsobit problémy
+	// Sanitize command — newlines could cause problems
 	req.Command = strings.ReplaceAll(req.Command, "\n", " ")
 	req.Command = strings.ReplaceAll(req.Command, "\r", "")
 
-	// Získat IP adresu kontejneru
+	// Get container IP address
 	containerIP, err := gameserver.GetContainerIP(gs.ContainerID)
 	if err != nil {
 		util.Error(w, http.StatusInternalServerError, "failed to get container IP: "+err.Error())
 		return
 	}
 
-	// Vykonat RCON příkaz
+	// Execute RCON command
 	response, err := gameserver.RCONExec(containerIP, cfg.RCONPort, cfg.RCONPassword, req.Command)
 	if err != nil {
 		util.Error(w, http.StatusInternalServerError, "RCON command failed: "+err.Error())
@@ -949,7 +949,7 @@ func (d *Deps) RCONCommand(w http.ResponseWriter, r *http.Request) {
 	util.JSON(w, http.StatusOK, map[string]string{"response": response})
 }
 
-// DockerStatus vrátí stav Dockeru na serveru
+// DockerStatus returns the Docker status on the server
 func (d *Deps) DockerStatus(w http.ResponseWriter, r *http.Request) {
 	user := auth.GetUser(r)
 	if !user.IsOwner {
@@ -974,7 +974,7 @@ func (d *Deps) DockerStatus(w http.ResponseWriter, r *http.Request) {
 	util.JSON(w, http.StatusOK, resp)
 }
 
-// InstallDocker nainstaluje Docker na server (owner only, Linux)
+// InstallDocker installs Docker on the server (owner only, Linux)
 func (d *Deps) InstallDocker(w http.ResponseWriter, r *http.Request) {
 	user := auth.GetUser(r)
 	if !user.IsOwner {
@@ -1000,7 +1000,7 @@ func (d *Deps) InstallDocker(w http.ResponseWriter, r *http.Request) {
 	dockerInstallMu.Unlock()
 
 	go func() {
-		// Instalace Dockeru přes apt (bezpečnější než curl|sh)
+		// Install Docker via apt (safer than curl|sh)
 		cmd := exec.Command("sh", "-c",
 			"apt-get update && apt-get install -y docker.io && systemctl enable --now docker")
 		out, err := cmd.CombinedOutput()
@@ -1011,10 +1011,10 @@ func (d *Deps) InstallDocker(w http.ResponseWriter, r *http.Request) {
 		dockerInstallLog = string(out)
 		if err != nil {
 			dockerInstallError = err.Error()
-			slog.Error("Docker instalace selhala", "error", err)
+			slog.Error("Docker installation failed", "error", err)
 		} else {
 			dockerInstallError = ""
-			slog.Info("Docker úspěšně nainstalován")
+			slog.Info("Docker successfully installed")
 		}
 		dockerInstallMu.Unlock()
 	}()

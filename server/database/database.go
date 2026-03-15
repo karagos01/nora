@@ -41,7 +41,7 @@ func Open(path string) (*DB, error) {
 }
 
 func (db *DB) Migrate() error {
-	// Migrace: drop staré plaintext DM tabulky
+	// Migration: drop old plaintext DM tables
 	db.Exec("DROP TABLE IF EXISTS dm_messages")
 	db.Exec("DROP INDEX IF EXISTS idx_dm_messages_conv_created")
 
@@ -50,83 +50,83 @@ func (db *DB) Migrate() error {
 		return err
 	}
 
-	// Migrace: přidat type sloupec do channels
+	// Migration: add type column to channels
 	db.Exec("ALTER TABLE channels ADD COLUMN type TEXT NOT NULL DEFAULT 'text'")
 
-	// Migrace: přidat category_id sloupec do channels
+	// Migration: add category_id column to channels
 	db.Exec("ALTER TABLE channels ADD COLUMN category_id TEXT REFERENCES channel_categories(id) ON DELETE SET NULL")
 
-	// Migrace: přidat avatar_url sloupec do users
+	// Migration: add avatar_url column to users
 	db.Exec("ALTER TABLE users ADD COLUMN avatar_url TEXT NOT NULL DEFAULT ''")
 
-	// Migrace: přidat reply_to_id sloupec do messages
+	// Migration: add reply_to_id column to messages
 	db.Exec("ALTER TABLE messages ADD COLUMN reply_to_id TEXT REFERENCES messages(id) ON DELETE SET NULL")
 
-	// Migrace: přidat last_ip a invited_by sloupce do users
+	// Migration: add last_ip and invited_by columns to users
 	db.Exec("ALTER TABLE users ADD COLUMN last_ip TEXT NOT NULL DEFAULT ''")
 	db.Exec("ALTER TABLE users ADD COLUMN invited_by TEXT NOT NULL DEFAULT ''")
 
-	// Migrace: přidat pin sloupce do messages
+	// Migration: add pin columns to messages
 	db.Exec("ALTER TABLE messages ADD COLUMN is_pinned INTEGER NOT NULL DEFAULT 0")
 	db.Exec("ALTER TABLE messages ADD COLUMN pinned_by TEXT")
 
-	// Migrace: přidat hidden sloupce do messages
+	// Migration: add hidden columns to messages
 	db.Exec("ALTER TABLE messages ADD COLUMN is_hidden INTEGER NOT NULL DEFAULT 0")
 	db.Exec("ALTER TABLE messages ADD COLUMN hidden_by TEXT")
 	db.Exec("ALTER TABLE messages ADD COLUMN hidden_by_position INTEGER NOT NULL DEFAULT 0")
 
-	// Migrace: multi LAN party — odebrat per-party WG sloupce (nyní server-level)
+	// Migration: multi LAN party — remove per-party WG columns (now server-level)
 	db.Exec("ALTER TABLE lan_parties DROP COLUMN server_private_key")
 	db.Exec("ALTER TABLE lan_parties DROP COLUMN server_public_key")
 	db.Exec("ALTER TABLE lan_parties DROP COLUMN subnet")
 	db.Exec("ALTER TABLE lan_parties DROP COLUMN next_ip")
 
-	// Migrace: share limity
+	// Migration: share limits
 	db.Exec("ALTER TABLE shared_directories ADD COLUMN max_file_size_mb INTEGER NOT NULL DEFAULT 0")
 	db.Exec("ALTER TABLE shared_directories ADD COLUMN storage_quota_mb INTEGER NOT NULL DEFAULT 0")
 	db.Exec("ALTER TABLE shared_directories ADD COLUMN max_files_count INTEGER NOT NULL DEFAULT 0")
 	db.Exec("ALTER TABLE shared_directories ADD COLUMN expires_at DATETIME")
 
-	// Migrace: auth_challenges — pending registration data
+	// Migration: auth_challenges — pending registration data
 	db.Exec("ALTER TABLE auth_challenges ADD COLUMN username TEXT NOT NULL DEFAULT ''")
 	db.Exec("ALTER TABLE auth_challenges ADD COLUMN invited_by TEXT NOT NULL DEFAULT ''")
 
-	// Migrace: zjednodušení game_servers — drop nepotřebné sloupce (config-on-disk)
+	// Migration: simplify game_servers — drop unnecessary columns (config-on-disk)
 	db.Exec("ALTER TABLE game_servers DROP COLUMN def_id")
 	db.Exec("ALTER TABLE game_servers DROP COLUMN env")
 	db.Exec("ALTER TABLE game_servers DROP COLUMN host_port")
 	db.Exec("ALTER TABLE game_servers DROP COLUMN memory_mb")
 
-	// Migrace: content hash pro deduplikaci uploadů
+	// Migration: content hash for upload deduplication
 	db.Exec("ALTER TABLE attachments ADD COLUMN content_hash TEXT NOT NULL DEFAULT ''")
 
-	// Migrace: lobby voice kanály — parent_id pro sub-kanály
+	// Migration: lobby voice channels — parent_id for sub-channels
 	db.Exec("ALTER TABLE channels ADD COLUMN parent_id TEXT REFERENCES channels(id) ON DELETE CASCADE")
 
-	// Migrace: slow mode — cooldown na zprávy per kanál
+	// Migration: slow mode — message cooldown per channel
 	db.Exec("ALTER TABLE channels ADD COLUMN slow_mode_seconds INTEGER NOT NULL DEFAULT 0")
 
-	// Migrace: custom status — user status + text
+	// Migration: custom status — user status + text
 	db.Exec("ALTER TABLE users ADD COLUMN status TEXT NOT NULL DEFAULT ''")
 	db.Exec("ALTER TABLE users ADD COLUMN status_text TEXT NOT NULL DEFAULT ''")
 
-	// Migrace: ban expirace
+	// Migration: ban expiration
 	db.Exec("ALTER TABLE bans ADD COLUMN expires_at DATETIME")
 
-	// Migrace: auth challenges — device info
+	// Migration: auth challenges — device info
 	db.Exec("ALTER TABLE auth_challenges ADD COLUMN device_id TEXT NOT NULL DEFAULT ''")
 	db.Exec("ALTER TABLE auth_challenges ADD COLUMN hardware_hash TEXT NOT NULL DEFAULT ''")
 
-	// Migrace: hierarchické kategorie — parent_id pro sub-kategorie
+	// Migration: hierarchical categories — parent_id for sub-categories
 	db.Exec("ALTER TABLE channel_categories ADD COLUMN parent_id TEXT REFERENCES channel_categories(id) ON DELETE CASCADE")
 
-	// Migrace: reply_to_id pro DM pending zprávy
+	// Migration: reply_to_id for DM pending messages
 	db.Exec("ALTER TABLE dm_pending ADD COLUMN reply_to_id TEXT NOT NULL DEFAULT ''")
 
-	// Migrace: barva role
+	// Migration: role color
 	db.Exec("ALTER TABLE roles ADD COLUMN color TEXT NOT NULL DEFAULT ''")
 
-	// Migrace: game server access control (room pattern)
+	// Migration: game server access control (room pattern)
 	db.Exec("ALTER TABLE game_servers ADD COLUMN access_mode TEXT NOT NULL DEFAULT 'open'")
 	db.Exec(`CREATE TABLE IF NOT EXISTS game_server_members (
 		game_server_id TEXT NOT NULL REFERENCES game_servers(id) ON DELETE CASCADE,
@@ -135,7 +135,7 @@ func (db *DB) Migrate() error {
 		PRIMARY KEY(game_server_id, user_id)
 	)`)
 
-	// Migrace: personální WireGuard tunely
+	// Migration: personal WireGuard tunnels
 	db.Exec(`CREATE TABLE IF NOT EXISTS tunnels (
 		id TEXT PRIMARY KEY,
 		creator_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
@@ -150,13 +150,13 @@ func (db *DB) Migrate() error {
 	db.Exec(`CREATE INDEX IF NOT EXISTS idx_tunnels_creator ON tunnels(creator_id)`)
 	db.Exec(`CREATE INDEX IF NOT EXISTS idx_tunnels_target ON tunnels(target_id)`)
 
-	// Migrace: poll expiration
+	// Migration: poll expiration
 	db.Exec("ALTER TABLE polls ADD COLUMN expires_at DATETIME")
 
-	// Migrace: recurring events — recurrence_rule sloupec
+	// Migration: recurring events — recurrence_rule column
 	db.Exec("ALTER TABLE events ADD COLUMN recurrence_rule TEXT NOT NULL DEFAULT ''")
 
-	// Migrace: historie editací zpráv
+	// Migration: message edit history
 	db.Exec(`CREATE TABLE IF NOT EXISTS message_edits (
 		id INTEGER PRIMARY KEY AUTOINCREMENT,
 		message_id TEXT NOT NULL REFERENCES messages(id) ON DELETE CASCADE,
@@ -198,7 +198,7 @@ func (db *DB) SeedDefaults() error {
 	return nil
 }
 
-// Reopen zavře stávající spojení a otevře novou databázi.
+// Reopen closes the existing connection and opens a new database.
 func (db *DB) Reopen(path string) (*DB, error) {
 	db.Close()
 	newDB, err := Open(path)

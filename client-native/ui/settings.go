@@ -10,6 +10,7 @@ import (
 	"strings"
 	"time"
 
+	"gioui.org/io/pointer"
 	"gioui.org/layout"
 	"gioui.org/op/clip"
 	"gioui.org/op/paint"
@@ -22,7 +23,7 @@ import (
 	"nora-client/store"
 )
 
-// Kategorie settings sidebar
+// Settings sidebar categories
 const (
 	settingsCatProfile  = 0
 	settingsCatPassword = 1
@@ -65,7 +66,7 @@ type SettingsView struct {
 	uploadSizeEditor  widget.Editor
 	saveSettingsBtn   widget.Clickable
 	settingsLoaded    bool
-	// Originální hodnoty pro detekci změn
+	// Original values for change detection
 	origName       string
 	origDesc       string
 	origUploadSize string
@@ -160,7 +161,7 @@ type SettingsView struct {
 
 	// Game servers toggle (owner)
 	gameServersToggle    bool
-	gameServersOriginal  bool // hodnota z serveru při načtení
+	gameServersOriginal  bool // value from server on load
 	gameServersBtn       widget.Clickable
 
 	// Swarm sharing toggle (owner)
@@ -504,13 +505,13 @@ func (v *SettingsView) Layout(gtx layout.Context) layout.Dimensions {
 		saveStatus("dnd")
 	}
 	if v.saveStatusBtn.Clicked(gtx) {
-		// Uložit jen text, nechat status jak je
+		// Save only text, leave status as is
 		if !v.statusSaving {
 			v.statusSaving = true
 			statusText := v.statusTextEditor.Text()
 			go func() {
 				if c := v.app.Conn(); c != nil {
-					// Získat aktuální status
+					// Get current status
 					var currentStatus string
 					v.app.mu.RLock()
 					currentStatus = c.UserStatuses[c.UserID]
@@ -603,7 +604,7 @@ func (v *SettingsView) Layout(gtx layout.Context) layout.Dimensions {
 			copyToClipboard(inv.Link)
 		}
 		if v.inviteQRBtns[i].Clicked(gtx) {
-			// Sestavit nora:// invite link
+			// Build nora:// invite link
 			host := ""
 			if conn := v.app.Conn(); conn != nil {
 				host = conn.URL
@@ -859,7 +860,7 @@ func (v *SettingsView) Layout(gtx layout.Context) layout.Dimensions {
 		}()
 	}
 
-	// Načíst Docker status (jen pokud je game servers zapnuté/přepínáno na zapnuté)
+	// Load Docker status (only if game servers is enabled/being enabled)
 	if isOwner && !v.dockerChecked && conn != nil && v.gameServersToggle {
 		v.dockerChecked = true
 		go func() {
@@ -1067,7 +1068,7 @@ func (v *SettingsView) Layout(gtx layout.Context) layout.Dimensions {
 
 	if v.gameServersBtn.Clicked(gtx) {
 		v.gameServersToggle = !v.gameServersToggle
-		// Při zapnutí zkontrolovat Docker
+		// Check Docker when enabling
 		if v.gameServersToggle && !v.dockerChecked {
 			v.dockerChecked = true
 			go func() {
@@ -1101,7 +1102,7 @@ func (v *SettingsView) Layout(gtx layout.Context) layout.Dimensions {
 					v.app.Window.Invalidate()
 					return
 				}
-				// Pollovat stav instalace
+				// Poll installation status
 				for {
 					status, err := c.Client.GetDockerStatus()
 					if err != nil {
@@ -1120,7 +1121,7 @@ func (v *SettingsView) Layout(gtx layout.Context) layout.Dimensions {
 						break
 					}
 					v.app.Window.Invalidate()
-					// Počkat 3 sekundy před dalším pollem
+					// Wait 3 seconds before next poll
 					select {
 					case <-v.app.ctx.Done():
 						return
@@ -1135,7 +1136,7 @@ func (v *SettingsView) Layout(gtx layout.Context) layout.Dimensions {
 		v.doSaveServerSettings()
 	}
 
-	// Content only (sidebar + click handling je v LayoutSidebar, volaný v channel sloupci)
+	// Content only (sidebar + click handling is in LayoutSidebar, called in channel column)
 	paint.FillShape(gtx.Ops, ColorBg, clip.Rect{Max: gtx.Constraints.Max}.Op())
 	return material.List(v.app.Theme.Material, &v.list).Layout(gtx, 1, func(gtx layout.Context, _ int) layout.Dimensions {
 		return layout.UniformInset(unit.Dp(16)).Layout(gtx, func(gtx layout.Context) layout.Dimensions {
@@ -1188,6 +1189,7 @@ func (v *SettingsView) layoutSidebarItem(gtx layout.Context, btn *widget.Clickab
 		if active {
 			bg = ColorAccentDim
 		} else if btn.Hovered() {
+			pointer.CursorPointer.Add(gtx.Ops)
 			bg = ColorHover
 		}
 		return layout.Background{}.Layout(gtx,
@@ -1219,8 +1221,8 @@ func (v *SettingsView) layoutSidebarItem(gtx layout.Context, btn *widget.Clickab
 	})
 }
 
-// LayoutSidebar renderuje settings kategorie v levém 240px sloupci (jako kanály).
-// Musí být volaný PŘED Layout(), protože btn.Layout() konzumuje click eventy.
+// LayoutSidebar renders settings categories in the left 240px column (like channels).
+// Must be called BEFORE Layout(), because btn.Layout() consumes click events.
 func (v *SettingsView) LayoutSidebar(gtx layout.Context) layout.Dimensions {
 	paint.FillShape(gtx.Ops, ColorCard, clip.Rect{Max: gtx.Constraints.Max}.Op())
 
@@ -1228,7 +1230,7 @@ func (v *SettingsView) LayoutSidebar(gtx layout.Context) layout.Dimensions {
 	isOwner := v.isOwner()
 	isServerMode := v.app.Mode == ViewSettings
 
-	// Sestavit kategorie podle mode a permissions
+	// Build categories based on mode and permissions
 	var cats []catItem
 	if isServerMode {
 		if isOwner {
@@ -1269,14 +1271,14 @@ func (v *SettingsView) LayoutSidebar(gtx layout.Context) layout.Dimensions {
 		cats = append(cats, catItem{settingsCatPinboard, "Pinboard", false})
 	}
 
-	// Click handling — MUSÍ být před btn.Layout() (Gio konzumuje eventy v Layout)
+	// Click handling — MUST be before btn.Layout() (Gio consumes events in Layout)
 	for _, c := range cats {
 		if c.sep {
 			continue
 		}
 		if v.catBtns[c.idx].Clicked(gtx) {
 			if c.idx != v.activeCategory && v.activeCategory == settingsCatServer && v.hasServerChanges() {
-				// Neuložené změny — potvrdit odchod
+				// Unsaved changes — confirm leaving
 				target := c.idx
 				dlg := v.app.ConfirmDlg
 				dlg.CancelText = "Discard"
@@ -1384,6 +1386,7 @@ func (v *SettingsView) layoutSmallIconBtn(gtx layout.Context, btn *widget.Clicka
 	return btn.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
 		bg := ColorInput
 		if btn.Hovered() {
+			pointer.CursorPointer.Add(gtx.Ops)
 			bg = ColorHover
 		}
 		return layout.Background{}.Layout(gtx,
@@ -1409,6 +1412,7 @@ func (v *SettingsView) layoutSmallBtn(gtx layout.Context, btn *widget.Clickable,
 	return btn.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
 		bg := ColorInput
 		if btn.Hovered() {
+			pointer.CursorPointer.Add(gtx.Ops)
 			bg = ColorHover
 		}
 		return layout.Background{}.Layout(gtx,
@@ -1436,6 +1440,7 @@ func (v *SettingsView) layoutAccentBtn(gtx layout.Context, btn *widget.Clickable
 	return btn.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
 		bg := ColorAccent
 		if btn.Hovered() {
+			pointer.CursorPointer.Add(gtx.Ops)
 			bg = ColorAccentHover
 		}
 		return layout.Background{}.Layout(gtx,
@@ -1463,6 +1468,7 @@ func (v *SettingsView) layoutDangerBtn(gtx layout.Context, btn *widget.Clickable
 	return btn.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
 		bg := ColorDanger
 		if btn.Hovered() {
+			pointer.CursorPointer.Add(gtx.Ops)
 			bg = color.NRGBA{R: min8(bg.R + 30), G: bg.G, B: bg.B, A: 255}
 		}
 		return layout.Background{}.Layout(gtx,

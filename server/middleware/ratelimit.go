@@ -8,14 +8,14 @@ import (
 	"time"
 )
 
-// visitor sleduje stav token bucket pro jednu IP adresu.
+// visitor tracks the token bucket state for a single IP address.
 type visitor struct {
 	tokens   float64
 	lastSeen time.Time
 }
 
-// RateLimiter — jednoduchý token bucket per IP.
-// Zachován pro zpětnou kompatibilitu (testy).
+// RateLimiter — simple token bucket per IP.
+// Kept for backward compatibility (tests).
 type RateLimiter struct {
 	mu       sync.Mutex
 	visitors map[string]*visitor
@@ -87,23 +87,23 @@ func (rl *RateLimiter) Middleware(next http.Handler) http.Handler {
 
 // --- Per-endpoint rate limiting ---
 
-// Tier definuje úroveň rate limitingu.
+// Tier defines the rate limiting level.
 type Tier int
 
 const (
-	TierStrict  Tier = iota // auth endpointy — 3 req/s, burst 5
-	TierNormal              // CRUD operace — default (z configu nebo 10/20)
-	TierRelaxed             // čtení, listing — 30 req/s, burst 50
-	TierUpload              // upload endpointy — 5 req/s, burst 10
+	TierStrict  Tier = iota // auth endpoints — 3 req/s, burst 5
+	TierNormal              // CRUD operations — default (from config or 10/20)
+	TierRelaxed             // reads, listing — 30 req/s, burst 50
+	TierUpload              // upload endpoints — 5 req/s, burst 10
 )
 
-// tierConfig definuje rate a burst pro daný tier.
+// tierConfig defines rate and burst for a given tier.
 type tierConfig struct {
 	Rate  float64
 	Burst int
 }
 
-// Výchozí konfigurace tierů.
+// Default tier configurations.
 var defaultTierConfigs = map[Tier]tierConfig{
 	TierStrict:  {Rate: 3, Burst: 5},
 	TierNormal:  {Rate: 10, Burst: 20},
@@ -111,7 +111,7 @@ var defaultTierConfigs = map[Tier]tierConfig{
 	TierUpload:  {Rate: 5, Burst: 10},
 }
 
-// tierLimiter je per-tier rate limiter s mapou IP → visitor.
+// tierLimiter is a per-tier rate limiter with an IP → visitor map.
 type tierLimiter struct {
 	mu       sync.Mutex
 	visitors map[string]*visitor
@@ -153,7 +153,7 @@ func (tl *tierLimiter) allow(ip string) bool {
 	return true
 }
 
-// cleanup smaže visitory neviděné déle než 5 minut.
+// cleanup deletes visitors not seen for more than 5 minutes.
 func (tl *tierLimiter) cleanup() {
 	tl.mu.Lock()
 	defer tl.mu.Unlock()
@@ -164,32 +164,32 @@ func (tl *tierLimiter) cleanup() {
 	}
 }
 
-// pathTierRule definuje pravidlo pro přiřazení tieru cestě.
+// pathTierRule defines a rule for assigning a tier to a path.
 type pathTierRule struct {
-	// Prefix cesty (matchuje strings.HasPrefix).
+	// Path prefix (matched with strings.HasPrefix).
 	Prefix string
-	// Method — pokud prázdný, matchuje všechny metody.
+	// Method — if empty, matches all methods.
 	Method string
-	// Tier pro toto pravidlo.
+	// Tier for this rule.
 	Tier Tier
 }
 
-// EndpointRateLimiter rozřazuje requesty do tierů podle cesty a metody,
-// každý tier má vlastní per-IP token bucket.
+// EndpointRateLimiter classifies requests into tiers based on path and method,
+// each tier has its own per-IP token bucket.
 type EndpointRateLimiter struct {
 	limiters map[Tier]*tierLimiter
 	rules    []pathTierRule
 }
 
-// NewEndpointRateLimiter vytvoří nový per-endpoint rate limiter.
-// normalRate a normalBurst přepíšou default pro TierNormal
-// (zachovává hodnoty z nora.toml configu).
+// NewEndpointRateLimiter creates a new per-endpoint rate limiter.
+// normalRate and normalBurst override the default for TierNormal
+// (preserving values from the nora.toml config).
 func NewEndpointRateLimiter(normalRate float64, normalBurst int) *EndpointRateLimiter {
 	configs := make(map[Tier]tierConfig)
 	for t, c := range defaultTierConfigs {
 		configs[t] = c
 	}
-	// Přepsat normal tier hodnotami z configu
+	// Override normal tier with values from config
 	configs[TierNormal] = tierConfig{Rate: normalRate, Burst: normalBurst}
 
 	limiters := make(map[Tier]*tierLimiter)
@@ -202,35 +202,35 @@ func NewEndpointRateLimiter(normalRate float64, normalBurst int) *EndpointRateLi
 		rules:    buildRules(),
 	}
 
-	// GC goroutine — každou minutu vyčistit staré visitory
+	// GC goroutine — clean up old visitors every minute
 	go erl.cleanup()
 
 	return erl
 }
 
-// buildRules vrací pravidla pro přiřazení cest k tierům.
-// Pravidla se prochází od prvního k poslednímu, první match vyhrává.
-// Specifičtější pravidla musí být první.
+// buildRules returns rules for assigning paths to tiers.
+// Rules are checked from first to last, first match wins.
+// More specific rules must come first.
 func buildRules() []pathTierRule {
 	return []pathTierRule{
-		// Strict: auth endpointy
+		// Strict: auth endpoints
 		{Prefix: "/api/auth/challenge", Tier: TierStrict},
 		{Prefix: "/api/auth/verify", Tier: TierStrict},
 		{Prefix: "/api/auth/refresh", Tier: TierStrict},
 
-		// Relaxed: servování nahraných souborů (musí být před /api/upload)
+		// Relaxed: serving uploaded files (must be before /api/upload)
 		{Prefix: "/api/uploads/", Method: "GET", Tier: TierRelaxed},
 
-		// Upload: nahrávání souborů
+		// Upload: file uploads
 		{Prefix: "/api/upload", Tier: TierUpload},
 		{Prefix: "/api/emojis", Method: "POST", Tier: TierUpload},
 		{Prefix: "/api/users/me/avatar", Method: "POST", Tier: TierUpload},
 		{Prefix: "/api/server/icon", Method: "POST", Tier: TierUpload},
 		{Prefix: "/api/storage/files", Method: "POST", Tier: TierUpload},
-		// Game server file upload (cesta obsahuje /files/upload)
-		{Prefix: "/api/gameservers/", Tier: TierUpload}, // jen pro upload — viz resolveTier
+		// Game server file upload (path contains /files/upload)
+		{Prefix: "/api/gameservers/", Tier: TierUpload}, // only for upload — see resolveTier
 
-		// Relaxed: čtení, listing, health, WS
+		// Relaxed: reads, listing, health, WS
 		{Prefix: "/api/health", Tier: TierRelaxed},
 		{Prefix: "/api/server", Method: "GET", Tier: TierRelaxed},
 		{Prefix: "/api/ws", Tier: TierRelaxed},
@@ -260,15 +260,15 @@ func buildRules() []pathTierRule {
 		{Prefix: "/api/approvals", Method: "GET", Tier: TierRelaxed},
 		{Prefix: "/api/messages/", Method: "GET", Tier: TierRelaxed},
 
-		// Vše ostatní → TierNormal (nemusí být v rules, je default)
+		// Everything else → TierNormal (doesn't need to be in rules, is default)
 	}
 }
 
-// resolveTier určí tier pro daný request podle cesty a metody.
+// resolveTier determines the tier for a given request based on path and method.
 func (erl *EndpointRateLimiter) resolveTier(method, path string) Tier {
 	for _, rule := range erl.rules {
-		// Speciální pravidlo pro gameservers upload —
-		// matchujeme jen pokud cesta obsahuje /files/upload
+		// Special rule for gameservers upload —
+		// match only if path contains /files/upload
 		if rule.Prefix == "/api/gameservers/" {
 			if strings.Contains(path, "/files/upload") {
 				return rule.Tier
@@ -287,7 +287,7 @@ func (erl *EndpointRateLimiter) resolveTier(method, path string) Tier {
 	return TierNormal
 }
 
-// Middleware vrací HTTP middleware s per-endpoint rate limitingem.
+// Middleware returns HTTP middleware with per-endpoint rate limiting.
 func (erl *EndpointRateLimiter) Middleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		ip := util.GetClientIP(r)
@@ -303,7 +303,7 @@ func (erl *EndpointRateLimiter) Middleware(next http.Handler) http.Handler {
 	})
 }
 
-// cleanup periodicky čistí staré visitory ze všech tierů.
+// cleanup periodically removes old visitors from all tiers.
 func (erl *EndpointRateLimiter) cleanup() {
 	for {
 		time.Sleep(time.Minute)

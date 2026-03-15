@@ -13,18 +13,18 @@ import (
 const (
 	audioSampleRate = 48000
 	audioChannels   = 2
-	audioFrameSize  = 2048 // ~42ms @ 48kHz (větší = méně callbacků, méně šance na underrun)
-	audioFadeLen    = 128  // samplů pro fade-in/fade-out při underrunu
+	audioFrameSize  = 2048 // ~42ms @ 48kHz (larger = fewer callbacks, less chance of underrun)
+	audioFadeLen    = 128  // samples for fade-in/fade-out on underrun
 )
 
-// AudioRingBuf je thread-safe ring buffer pro float32 audio samply.
+// AudioRingBuf is a thread-safe ring buffer for float32 audio samples.
 type AudioRingBuf struct {
 	mu     sync.Mutex
 	buf    []float32
 	size   int
 	r, w   int
 	count  int
-	notify chan struct{} // signalizace že je volné místo (pro WriteBlocking)
+	notify chan struct{} // signal that there is free space (for WriteBlocking)
 }
 
 func NewAudioRingBuf(size int) *AudioRingBuf {
@@ -93,7 +93,7 @@ func (rb *AudioRingBuf) Read(dst []float32) int {
 	rb.count -= n
 	rb.mu.Unlock()
 
-	// Signalizovat že je volné místo — probudí WriteBlocking
+	// Signal that there is free space — wakes up WriteBlocking
 	select {
 	case rb.notify <- struct{}{}:
 	default:
@@ -119,14 +119,14 @@ func (rb *AudioRingBuf) Reset() {
 	rb.r = 0
 	rb.w = 0
 	rb.count = 0
-	// Vyprázdnit notify kanál
+	// Drain notify channel
 	select {
 	case <-rb.notify:
 	default:
 	}
 }
 
-// AudioPlayer přehrává float32 stereo audio přes malgo.
+// AudioPlayer plays float32 stereo audio via malgo.
 type AudioPlayer struct {
 	mu          sync.Mutex
 	ctx         *malgo.AllocatedContext
@@ -134,8 +134,8 @@ type AudioPlayer struct {
 	ring        *AudioRingBuf
 	volume      atomic.Int32 // 0-200
 	running     bool
-	playbackBuf []float32 // pre-alokovaný buffer pro malgo callback
-	wasUnderrun bool      // sledování underrunu pro fade-in
+	playbackBuf []float32 // pre-allocated buffer for malgo callback
+	wasUnderrun bool      // underrun tracking for fade-in
 }
 
 func NewAudioPlayer() *AudioPlayer {
@@ -147,7 +147,7 @@ func NewAudioPlayer() *AudioPlayer {
 	return ap
 }
 
-// Start spustí malgo playback device.
+// Start starts the malgo playback device.
 func (ap *AudioPlayer) Start() error {
 	ap.mu.Lock()
 	defer ap.mu.Unlock()
@@ -207,7 +207,7 @@ func (ap *AudioPlayer) onPlaybackData(outputSamples []byte, frameCount uint32) {
 
 	read := ap.ring.Read(samples)
 
-	// Aplikovat volume
+	// Apply volume
 	vol := float32(ap.volume.Load()) / 100.0
 	for i := 0; i < read; i++ {
 		s := samples[i] * vol
@@ -219,7 +219,7 @@ func (ap *AudioPlayer) onPlaybackData(outputSamples []byte, frameCount uint32) {
 		samples[i] = s
 	}
 
-	// Fade-in po underrunu — plynulý přechod z ticha na audio
+	// Fade-in after underrun — smooth transition from silence to audio
 	if ap.wasUnderrun && read > 0 {
 		fadeLen := audioFadeLen
 		if fadeLen > read {
@@ -230,7 +230,7 @@ func (ap *AudioPlayer) onPlaybackData(outputSamples []byte, frameCount uint32) {
 		}
 	}
 
-	// Fade-out před underrunem — plynulý přechod na ticho (ne abruptní ořez)
+	// Fade-out before underrun — smooth transition to silence (no abrupt cutoff)
 	if read > 0 && read < n {
 		fadeLen := audioFadeLen
 		if fadeLen > read {
@@ -244,12 +244,12 @@ func (ap *AudioPlayer) onPlaybackData(outputSamples []byte, frameCount uint32) {
 
 	ap.wasUnderrun = read < n
 
-	// Ticho pro zbytek
+	// Silence for the remainder
 	for i := read; i < n; i++ {
 		samples[i] = 0
 	}
 
-	// Konvertovat float32 → bytes (little-endian)
+	// Convert float32 -> bytes (little-endian)
 	for i := 0; i < n; i++ {
 		off := i * 4
 		if off+3 >= len(outputSamples) {
@@ -263,32 +263,32 @@ func (ap *AudioPlayer) onPlaybackData(outputSamples []byte, frameCount uint32) {
 	}
 }
 
-// Write zapíše audio samply do ring bufferu (bez blokování).
+// Write writes audio samples to the ring buffer (non-blocking).
 func (ap *AudioPlayer) Write(samples []float32) {
 	ap.ring.Write(samples)
 }
 
-// WriteBlocking zapíše samply a čeká dokud není v bufferu místo.
-// Používá notifikace z malgo callbacku místo pollingu.
+// WriteBlocking writes samples and waits until there is space in the buffer.
+// Uses notifications from the malgo callback instead of polling.
 func (ap *AudioPlayer) WriteBlocking(ctx context.Context, samples []float32) bool {
 	for {
 		if ap.ring.Free() >= len(samples) {
 			ap.ring.Write(samples)
 			return true
 		}
-		// Čekat na signál od Read (malgo callback) nebo timeout
+		// Wait for signal from Read (malgo callback) or timeout
 		select {
 		case <-ctx.Done():
 			return false
 		case <-ap.ring.notify:
-			// Malgo spotřebovalo data, zkusit znovu
+			// Malgo consumed data, try again
 		case <-time.After(100 * time.Millisecond):
-			// Fallback timeout pro případ že notify přišlo dřív
+			// Fallback timeout in case notify arrived earlier
 		}
 	}
 }
 
-// SetVolume nastaví hlasitost (0.0 - 2.0).
+// SetVolume sets the volume (0.0 - 2.0).
 func (ap *AudioPlayer) SetVolume(v float32) {
 	iv := int32(v * 100)
 	if iv < 0 {
@@ -300,7 +300,7 @@ func (ap *AudioPlayer) SetVolume(v float32) {
 	ap.volume.Store(iv)
 }
 
-// Stop zastaví playback.
+// Stop stops playback.
 func (ap *AudioPlayer) Stop() {
 	ap.mu.Lock()
 	defer ap.mu.Unlock()
@@ -322,7 +322,7 @@ func (ap *AudioPlayer) Stop() {
 	ap.wasUnderrun = false
 }
 
-// Destroy uvolní všechny resources.
+// Destroy releases all resources.
 func (ap *AudioPlayer) Destroy() {
 	ap.Stop()
 }

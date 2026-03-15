@@ -92,7 +92,7 @@ func (d *Deps) UpdateMe(w http.ResponseWriter, r *http.Request) {
 			}
 			statusText = *req.StatusText
 		}
-		// Načíst existující status pokud jen jeden parametr
+		// Load existing status if only one parameter provided
 		existing, _ := d.Users.GetByID(u.ID)
 		if existing != nil {
 			if req.Status == nil {
@@ -120,7 +120,7 @@ func (d *Deps) UpdateMe(w http.ResponseWriter, r *http.Request) {
 }
 
 type timeoutRequest struct {
-	Duration int    `json:"duration"` // sekundy
+	Duration int    `json:"duration"` // seconds
 	Reason   string `json:"reason"`
 }
 
@@ -142,7 +142,7 @@ func (d *Deps) KickUser(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Hierarchická kontrola
+	// Hierarchy check
 	if err := d.canActOn(user, targetID); err != nil {
 		util.Error(w, http.StatusForbidden, "cannot timeout a user with higher or equal rank")
 		return
@@ -167,10 +167,10 @@ func (d *Deps) KickUser(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Invalidovat refresh tokeny — vynutí re-auth
+	// Invalidate refresh tokens — force re-auth
 	d.RefreshTokens.DeleteByUserID(targetID)
 
-	// Broadcast odpojení
+	// Broadcast disconnect
 	timeoutEvt, _ := ws.NewEvent(ws.EventMemberTimeout, map[string]string{"id": targetID})
 	d.Hub.Broadcast(timeoutEvt)
 
@@ -192,7 +192,7 @@ func (d *Deps) UploadAvatar(w http.ResponseWriter, r *http.Request) {
 	}
 	defer file.Close()
 
-	// MIME detekce
+	// MIME detection
 	buf := make([]byte, 512)
 	n, _ := file.Read(buf)
 	mimeType := http.DetectContentType(buf[:n])
@@ -203,7 +203,7 @@ func (d *Deps) UploadAvatar(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Smazat předchozí avatar soubor
+	// Delete previous avatar file
 	entries, _ := os.ReadDir(d.UploadsDir)
 	prefix := "avatar_" + user.ID + "."
 	for _, e := range entries {
@@ -251,7 +251,7 @@ func (d *Deps) UploadAvatar(w http.ResponseWriter, r *http.Request) {
 func (d *Deps) DeleteAvatar(w http.ResponseWriter, r *http.Request) {
 	user := auth.GetUser(r)
 
-	// Smazat avatar soubor
+	// Delete avatar file
 	entries, _ := os.ReadDir(d.UploadsDir)
 	prefix := "avatar_" + user.ID + "."
 	for _, e := range entries {

@@ -19,8 +19,8 @@ const (
 	userAgent    = "NORA-Bot/1.0 (+link-preview)"
 )
 
-// safeTransport kontroluje cílovou IP při každém TCP spojení,
-// takže i po HTTP redirect se znovu ověří, že necílíme na privátní síť.
+// safeTransport checks the target IP on every TCP connection,
+// so even after HTTP redirects it re-verifies we're not targeting a private network.
 var safeTransport = &http.Transport{
 	DialContext: func(ctx context.Context, network, addr string) (net.Conn, error) {
 		host, port, err := net.SplitHostPort(addr)
@@ -68,8 +68,8 @@ type Result struct {
 	SiteName    string
 }
 
-// Fetch stáhne OpenGraph metadata z dané URL.
-// Vrátí nil pokud URL není validní, je privátní, nebo neobsahuje žádná metadata.
+// Fetch downloads OpenGraph metadata from the given URL.
+// Returns nil if the URL is invalid, is private, or contains no metadata.
 func Fetch(rawURL string) (*Result, error) {
 	u, err := url.Parse(rawURL)
 	if err != nil {
@@ -79,7 +79,7 @@ func Fetch(rawURL string) (*Result, error) {
 		return nil, fmt.Errorf("unsupported scheme: %s", u.Scheme)
 	}
 
-	// SSRF ochrana: safeClient kontroluje IP při každém TCP spojení (včetně redirectů)
+	// SSRF protection: safeClient checks IP on every TCP connection (including redirects)
 	ctx, cancel := context.WithTimeout(context.Background(), fetchTimeout)
 	defer cancel()
 
@@ -126,7 +126,7 @@ func parseOG(r io.Reader, rawURL string) (*Result, error) {
 			tag := string(tn)
 
 			if tag == "body" {
-				// Přestat parsovat po konci <head>
+				// Stop parsing after end of <head>
 				goto done
 			}
 			if tag == "/head" {
@@ -182,17 +182,17 @@ func parseOG(r io.Reader, rawURL string) (*Result, error) {
 	}
 
 done:
-	// Fallback na <title> tag pokud og:title chybí
+	// Fallback to <title> tag if og:title is missing
 	if res.Title == "" {
 		res.Title = strings.TrimSpace(titleTag.String())
 	}
 
-	// Nic nenalezeno
+	// Nothing found
 	if res.Title == "" && res.Description == "" {
 		return nil, nil
 	}
 
-	// Zkrátit description
+	// Truncate description
 	if len(res.Description) > 300 {
 		res.Description = res.Description[:300] + "…"
 	}

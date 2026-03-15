@@ -18,7 +18,7 @@ type ContextMenuItem struct {
 	Selected bool
 	Action   func()
 	IsSep    bool
-	Children []ContextMenuItem // submenu položky (rozbalí se klikem)
+	Children []ContextMenuItem // submenu items (expanded on click)
 }
 
 type ContextMenu struct {
@@ -29,8 +29,8 @@ type ContextMenu struct {
 	posY      int
 	Items     []ContextMenuItem
 	itemBtns  []widget.Clickable
-	childBtns []widget.Clickable // sdílený pool pro children
-	expanded  map[int]bool       // které top-level položky jsou rozbalené
+	childBtns []widget.Clickable // shared pool for children
+	expanded  map[int]bool       // which top-level items are expanded
 	bgBtn     widget.Clickable
 }
 
@@ -70,7 +70,7 @@ func (m *ContextMenu) Layout(gtx layout.Context) layout.Dimensions {
 		return layout.Dimensions{}
 	}
 
-	// Zpracovat kliky na items PŘED bgBtn
+	// Handle item clicks BEFORE bgBtn
 	itemClicked := false
 	childIdx := 0
 	for i, item := range m.Items {
@@ -92,7 +92,7 @@ func (m *ContextMenu) Layout(gtx layout.Context) layout.Dimensions {
 					if child.Action != nil {
 						child.Action()
 					}
-					// Aktualizovat Selected flagy — kliknutý = true, ostatní = false
+					// Update Selected flags — clicked = true, others = false
 					for k := range m.Items[i].Children {
 						m.Items[i].Children[k].Selected = (k == j)
 					}
@@ -104,7 +104,7 @@ func (m *ContextMenu) Layout(gtx layout.Context) layout.Dimensions {
 		}
 	}
 
-	// Klik na pozadí zavře menu
+	// Click on background closes the menu
 	if m.bgBtn.Clicked(gtx) && !itemClicked {
 		m.Hide()
 		return layout.Dimensions{Size: gtx.Constraints.Max}
@@ -115,7 +115,7 @@ func (m *ContextMenu) Layout(gtx layout.Context) layout.Dimensions {
 	headerHeight := gtx.Dp(28)
 	sepHeight := gtx.Dp(9)
 
-	// Spočítat výšku
+	// Calculate height
 	totalHeight := 0
 	if m.Title != "" {
 		totalHeight += headerHeight + sepHeight
@@ -258,7 +258,7 @@ func (m *ContextMenu) Layout(gtx layout.Context) layout.Dimensions {
 	})
 }
 
-// layoutMenuItem renderuje jednu řádku menu — ikona + text, vertikálně vycentrované.
+// layoutMenuItem renders a single menu row — icon + text, vertically centered.
 func (m *ContextMenu) layoutMenuItem(gtx layout.Context, btn *widget.Clickable, label string, selected, hasChildren, isExpanded bool, w, h int, leftInset unit.Dp) {
 	itemGtx := gtx
 	itemGtx.Constraints.Min = image.Pt(w, h)

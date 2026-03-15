@@ -6,6 +6,7 @@ import (
 
 	"gioui.org/gesture"
 	"gioui.org/io/key"
+	"gioui.org/io/pointer"
 	"gioui.org/layout"
 	"gioui.org/op/clip"
 	"gioui.org/op/paint"
@@ -30,7 +31,7 @@ type LoginView struct {
 	initialized    bool
 	focusRequested bool
 
-	// Create mode — pro explicitní vytvoření nové identity
+	// Create mode — for explicitly creating a new identity
 	createMode     bool
 	hasIdentities  bool
 	toggleModeBtn  widget.Clickable
@@ -220,6 +221,7 @@ func (v *LoginView) layoutCard(gtx layout.Context) layout.Dimensions {
 								lbl := material.Caption(v.app.Theme.Material, text)
 								lbl.Color = ColorAccent
 								if v.toggleModeBtn.Hovered() {
+									pointer.CursorPointer.Add(gtx.Ops)
 									lbl.Color = ColorAccentHover
 								}
 								lbl.Alignment = 1
@@ -271,6 +273,7 @@ func (v *LoginView) layoutButton(gtx layout.Context) layout.Dimensions {
 			if v.loading {
 				c = ColorTextDim
 			} else if v.unlockBtn.Hovered() {
+				pointer.CursorPointer.Add(gtx.Ops)
 				c = ColorAccentHover
 			}
 			paint.FillShape(gtx.Ops, c, clip.RRect{

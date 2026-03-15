@@ -31,7 +31,7 @@ func (d *Deps) ToggleReaction(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Ověřit že zpráva existuje
+	// Verify the message exists
 	if _, err := d.Messages.GetOwnerID(messageID); err != nil {
 		util.Error(w, http.StatusNotFound, "message not found")
 		return
@@ -57,7 +57,7 @@ func (d *Deps) ToggleReaction(w http.ResponseWriter, r *http.Request) {
 		event, _ := ws.NewEvent(ws.EventReactionRemove, payload)
 		d.Hub.Broadcast(event)
 	} else {
-		// 👍/👎 jsou vzájemně exkluzivní — odeber opačný pokud existuje
+		// 👍/👎 are mutually exclusive — remove the opposite if it exists
 		opposites := map[string]string{"👍": "👎", "👎": "👍"}
 		if opp, ok := opposites[req.Emoji]; ok {
 			if has, _ := d.Reactions.Exists(messageID, user.ID, opp); has {

@@ -8,7 +8,7 @@ import (
 )
 
 func TestLoadDefaults(t *testing.T) {
-	// Neexistující soubor → vrátí defaults
+	// Non-existent file → returns defaults
 	cfg, err := Load("/tmp/nonexistent-nora-config-test.toml")
 	if err != nil {
 		t.Fatalf("Load: %v", err)
@@ -137,7 +137,7 @@ func TestLoadPartialOverride(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "partial.toml")
 
-	// Jen server port — zbytek by měly být defaults
+	// Only server port — the rest should be defaults
 	content := `
 [server]
 port = 3000
@@ -154,7 +154,7 @@ port = 3000
 	if cfg.Server.Port != 3000 {
 		t.Errorf("Port: got %d, want 3000", cfg.Server.Port)
 	}
-	// Default host by měl zůstat
+	// Default host should remain
 	if cfg.Server.Host != "0.0.0.0" {
 		t.Errorf("Host should keep default, got %q", cfg.Server.Host)
 	}

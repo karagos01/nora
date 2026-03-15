@@ -134,7 +134,7 @@ func (h *DMHistory) GetMessages(convID string) []StoredDMMessage {
 	return result
 }
 
-// DeleteOlderThan smaže zprávy starší než maxAge. Vrátí počet smazaných.
+// DeleteOlderThan deletes messages older than maxAge. Returns the number of deleted messages.
 func (h *DMHistory) DeleteOlderThan(maxAge time.Duration) int {
 	h.mu.Lock()
 	defer h.mu.Unlock()
@@ -162,7 +162,7 @@ func (h *DMHistory) DeleteOlderThan(maxAge time.Duration) int {
 	return deleted
 }
 
-// MessageCount vrátí celkový počet zpráv přes všechny konverzace.
+// MessageCount returns the total number of messages across all conversations.
 func (h *DMHistory) MessageCount() int {
 	h.mu.Lock()
 	defer h.mu.Unlock()

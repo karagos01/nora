@@ -13,9 +13,9 @@ func mapDrivePreferred(webdavURL string, preferred string) (string, error) {
 }
 
 func unmapDrive(letter string) {
-	// No-op na non-Windows
+	// No-op on non-Windows
 }
 
 func renameDrive(letter, label string) {
-	// No-op na non-Windows
+	// No-op on non-Windows
 }

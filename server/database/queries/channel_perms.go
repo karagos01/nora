@@ -6,12 +6,12 @@ import (
 	"strings"
 )
 
-// ChannelPermQueries spravuje per-channel permission overrides.
+// ChannelPermQueries manages per-channel permission overrides.
 type ChannelPermQueries struct {
 	DB *sql.DB
 }
 
-// Set vytvoří nebo aktualizuje override pro daný kanál a target (role/user).
+// Set creates or updates an override for a given channel and target (role/user).
 func (q *ChannelPermQueries) Set(o models.ChannelPermOverride) error {
 	_, err := q.DB.Exec(
 		`INSERT INTO channel_permission_overrides (channel_id, target_type, target_id, allow, deny)
@@ -23,7 +23,7 @@ func (q *ChannelPermQueries) Set(o models.ChannelPermOverride) error {
 	return err
 }
 
-// Delete smaže override pro daný kanál a target.
+// Delete removes an override for a given channel and target.
 func (q *ChannelPermQueries) Delete(channelID, targetType, targetID string) error {
 	_, err := q.DB.Exec(
 		`DELETE FROM channel_permission_overrides WHERE channel_id = ? AND target_type = ? AND target_id = ?`,
@@ -32,7 +32,7 @@ func (q *ChannelPermQueries) Delete(channelID, targetType, targetID string) erro
 	return err
 }
 
-// GetForChannel vrátí všechny overrides pro daný kanál.
+// GetForChannel returns all overrides for a given channel.
 func (q *ChannelPermQueries) GetForChannel(channelID string) ([]models.ChannelPermOverride, error) {
 	rows, err := q.DB.Query(
 		`SELECT channel_id, target_type, target_id, allow, deny
@@ -55,13 +55,13 @@ func (q *ChannelPermQueries) GetForChannel(channelID string) ([]models.ChannelPe
 	return overrides, rows.Err()
 }
 
-// GetForChannelAndUser spočítá efektivní allow/deny pro uživatele v kanálu.
-// Nejdřív se aplikují role overrides (OR přes allow, OR přes deny),
-// pak user override přepíše (pokud existuje).
+// GetForChannelAndUser computes effective allow/deny for a user in a channel.
+// First, role overrides are applied (OR across allow, OR across deny),
+// then user override overwrites (if it exists).
 func (q *ChannelPermQueries) GetForChannelAndUser(channelID, userID string, roleIDs []string) (allow, deny int64, err error) {
-	// Speciální případ: uživatel nemá žádné role a nemá user override
+	// Special case: user has no roles and no user override
 	if len(roleIDs) == 0 {
-		// Jen user override
+		// Only user override
 		err = q.DB.QueryRow(
 			`SELECT allow, deny FROM channel_permission_overrides
 			 WHERE channel_id = ? AND target_type = 'user' AND target_id = ?`,
@@ -73,10 +73,10 @@ func (q *ChannelPermQueries) GetForChannelAndUser(channelID, userID string, role
 		return allow, deny, err
 	}
 
-	// Everyone role je vždy přítomná — zahrnout ji do roleIDs pokud tam není
-	// (volající z permissions.go dodá kompletní seznam)
+	// Everyone role is always present — include it in roleIDs if not already there
+	// (caller from permissions.go provides the complete list)
 
-	// Role overrides: OR přes všechny role
+	// Role overrides: OR across all roles
 	placeholders := make([]string, len(roleIDs))
 	args := make([]any, 0, len(roleIDs)+1)
 	args = append(args, channelID)
@@ -108,7 +108,7 @@ func (q *ChannelPermQueries) GetForChannelAndUser(channelID, userID string, role
 		return 0, 0, err
 	}
 
-	// User override (přepíše role overrides)
+	// User override (overwrites role overrides)
 	var userAllow, userDeny int64
 	err = q.DB.QueryRow(
 		`SELECT allow, deny FROM channel_permission_overrides
@@ -119,7 +119,7 @@ func (q *ChannelPermQueries) GetForChannelAndUser(channelID, userID string, role
 		return 0, 0, err
 	}
 
-	// Finální: role overrides + user override
+	// Final: role overrides + user override
 	allow = roleAllow | userAllow
 	deny = roleDeny | userDeny
 

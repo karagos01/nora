@@ -6,11 +6,11 @@ import (
 	"time"
 )
 
-// notifCooldown je minimální interval mezi notifikacemi ze stejného zdroje.
+// notifCooldown is the minimum interval between notifications from the same source.
 const notifCooldown = 5 * time.Second
 
-// inputIdleThreshold — pokud proběhl uživatelský input v posledních 2 sekundách,
-// okno se považuje za aktivní a notifikace se neposílají.
+// inputIdleThreshold — if user input occurred in the last 2 seconds,
+// the window is considered active and notifications are not sent.
 const inputIdleThreshold = 2 * time.Second
 
 // NotifManager spravuje desktop notifikace s cooldownem a focus trackingem.
@@ -22,12 +22,12 @@ type NotifManager struct {
 	lastNotif map[string]time.Time
 	mu        sync.Mutex
 
-	// Focus tracking — čas posledního uživatelského inputu (klik, klávesa).
-	// Gio nemá spolehlivý "window focus" event, takže sledujeme input aktivitu.
+	// Focus tracking — time of last user input (click, keystroke).
+	// Gio does not have a reliable "window focus" event, so we track input activity.
 	lastInputTime time.Time
 }
 
-// NewNotifManager vytvoří nový NotifManager.
+// NewNotifManager creates a new NotifManager.
 func NewNotifManager(a *App) *NotifManager {
 	return &NotifManager{
 		app:       a,
@@ -36,15 +36,15 @@ func NewNotifManager(a *App) *NotifManager {
 	}
 }
 
-// RecordInput zaznamená, že proběhl uživatelský input (klik, klávesa, scroll).
-// Volat z main event loop při zpracování FrameEvent.
+// RecordInput records that user input occurred (click, keystroke, scroll).
+// Call from the main event loop when processing FrameEvent.
 func (nm *NotifManager) RecordInput() {
 	nm.mu.Lock()
 	nm.lastInputTime = time.Now()
 	nm.mu.Unlock()
 }
 
-// isWindowActive vrátí true pokud proběhl uživatelský input v posledních 2 sekundách.
+// isWindowActive returns true if user input occurred in the last 2 seconds.
 func (nm *NotifManager) isWindowActive() bool {
 	nm.mu.Lock()
 	active := time.Since(nm.lastInputTime) < inputIdleThreshold
@@ -52,7 +52,7 @@ func (nm *NotifManager) isWindowActive() bool {
 	return active
 }
 
-// shouldNotify ověří: enabled + okno není aktivní + cooldown (5s per source).
+// shouldNotify verifies: enabled + window not active + cooldown (5s per source).
 func (nm *NotifManager) shouldNotify(source string) bool {
 	if !nm.enabled {
 		return false
@@ -73,7 +73,7 @@ func (nm *NotifManager) shouldNotify(source string) bool {
 	return true
 }
 
-// NotifyMessage odešle desktop notifikaci pro novou zprávu (channel/DM/group).
+// NotifyMessage sends a desktop notification for a new message (channel/DM/group).
 func (nm *NotifManager) NotifyMessage(serverName, channelOrUser, content, senderName string) {
 	source := serverName + ":" + channelOrUser
 	if !nm.shouldNotify(source) {
@@ -93,7 +93,7 @@ func (nm *NotifManager) NotifyMessage(serverName, channelOrUser, content, sender
 	}()
 }
 
-// NotifyFriendRequest odešle desktop notifikaci pro friend request.
+// NotifyFriendRequest sends a desktop notification for a friend request.
 func (nm *NotifManager) NotifyFriendRequest(serverName, fromUser string) {
 	source := "friend:" + fromUser
 	if !nm.shouldNotify(source) {
@@ -113,7 +113,7 @@ func (nm *NotifManager) NotifyFriendRequest(serverName, fromUser string) {
 	}()
 }
 
-// NotifyCalendarReminder odešle desktop notifikaci pro calendar reminder.
+// NotifyCalendarReminder sends a desktop notification for a calendar reminder.
 func (nm *NotifManager) NotifyCalendarReminder(serverName, eventTitle string) {
 	source := "calendar:" + eventTitle
 	if !nm.shouldNotify(source) {

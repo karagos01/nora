@@ -22,7 +22,7 @@ func (d *Deps) CreateScheduledMessage(w http.ResponseWriter, r *http.Request) {
 	user := auth.GetUser(r)
 	channelID := r.PathValue("id")
 
-	// Ověřit kanál
+	// Verify channel
 	_, err := d.Channels.GetByID(channelID)
 	if err != nil {
 		util.Error(w, http.StatusNotFound, "channel not found")
@@ -45,7 +45,7 @@ func (d *Deps) CreateScheduledMessage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Validace scheduled_at — min +1 min, max 7 dní
+	// Validate scheduled_at — min +1 min, max 7 days
 	now := time.Now().UTC()
 	if req.ScheduledAt.Before(now.Add(1 * time.Minute)) {
 		util.Error(w, http.StatusBadRequest, "scheduled_at must be at least 1 minute in the future")
@@ -67,7 +67,7 @@ func (d *Deps) CreateScheduledMessage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Reply validace
+	// Reply validation
 	var replyToID *string
 	if req.ReplyToID != "" {
 		replyMsg, err := d.Messages.GetByID(req.ReplyToID)
@@ -124,42 +124,42 @@ func (d *Deps) DeleteScheduledMessage(w http.ResponseWriter, r *http.Request) {
 	util.JSON(w, http.StatusOK, map[string]string{"status": "ok"})
 }
 
-// DispatchScheduledMessages odesílá naplánované zprávy, které dosáhly scheduled_at.
-// Voláno z ticker goroutiny v main.go.
+// DispatchScheduledMessages sends scheduled messages that have reached their scheduled_at time.
+// Called from a ticker goroutine in main.go.
 func (d *Deps) DispatchScheduledMessages() {
 	due, err := d.Scheduled.ListDue(time.Now().UTC())
 	if err != nil {
-		slog.Error("scheduled: výpis splatných zpráv selhal", "error", err)
+		slog.Error("scheduled: listing due messages failed", "error", err)
 		return
 	}
 
 	for _, sm := range due {
-		// Ověřit že kanál stále existuje
+		// Verify the channel still exists
 		_, chErr := d.Channels.GetByID(sm.ChannelID)
 		if chErr != nil {
 			d.Scheduled.DeleteByID(sm.ID)
 			continue
 		}
 
-		// Ověřit že uživatel není banned
+		// Verify the user is not banned
 		banned := d.Bans.IsBanned(sm.UserID)
 		if banned {
 			d.Scheduled.DeleteByID(sm.ID)
 			continue
 		}
 
-		// Ověřit že uživatel nemá timeout
+		// Verify the user does not have a timeout
 		if t, _ := d.Timeouts.GetActive(sm.UserID); t != nil {
-			// Timeout je dočasný — neodesílat, ale nesmazat (pošle se po expiraci)
+			// Timeout is temporary — do not send, but do not delete either (will be sent after expiration)
 			continue
 		}
 
-		// Ověřit že uživatel není v karanténě
+		// Verify the user is not in quarantine
 		if err := d.checkQuarantine(sm.UserID, "send_messages"); err != nil {
 			continue
 		}
 
-		// Vytvořit zprávu
+		// Create message
 		msgID, _ := uuid.NewV7()
 		msg := &models.Message{
 			ID:        msgID.String(),
@@ -171,11 +171,11 @@ func (d *Deps) DispatchScheduledMessages() {
 		}
 
 		if err := d.Messages.Create(msg); err != nil {
-			slog.Error("scheduled: vytvoření zprávy selhalo", "scheduled_id", sm.ID, "error", err)
+			slog.Error("scheduled: message creation failed", "scheduled_id", sm.ID, "error", err)
 			continue
 		}
 
-		// Načíst autora pro broadcast
+		// Load author for broadcast
 		author, _ := d.Users.GetByID(sm.UserID)
 		if author != nil {
 			msg.Author = author
@@ -198,7 +198,7 @@ func (d *Deps) DispatchScheduledMessages() {
 		// Link preview
 		go d.fetchAndStoreLinkPreview(msg.ID, msg.Content)
 
-		// Smazat ze scheduled
+		// Delete from scheduled
 		d.Scheduled.DeleteByID(sm.ID)
 	}
 }

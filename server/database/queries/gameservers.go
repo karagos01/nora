@@ -69,7 +69,7 @@ func (q *GameServerQueries) Delete(id string) error {
 	return err
 }
 
-// JoinMember přidá uživatele do game server roomu
+// JoinMember adds a user to a game server room
 func (q *GameServerQueries) JoinMember(gsID, userID string) error {
 	_, err := q.DB.Exec(
 		`INSERT OR IGNORE INTO game_server_members (game_server_id, user_id) VALUES (?, ?)`,
@@ -78,7 +78,7 @@ func (q *GameServerQueries) JoinMember(gsID, userID string) error {
 	return err
 }
 
-// LeaveMember odebere uživatele z game server roomu
+// LeaveMember removes a user from a game server room
 func (q *GameServerQueries) LeaveMember(gsID, userID string) error {
 	_, err := q.DB.Exec(
 		`DELETE FROM game_server_members WHERE game_server_id = ? AND user_id = ?`,
@@ -87,7 +87,7 @@ func (q *GameServerQueries) LeaveMember(gsID, userID string) error {
 	return err
 }
 
-// IsMember vrátí true pokud je uživatel členem roomu
+// IsMember returns true if the user is a member of the room
 func (q *GameServerQueries) IsMember(gsID, userID string) bool {
 	var count int
 	q.DB.QueryRow(
@@ -97,7 +97,7 @@ func (q *GameServerQueries) IsMember(gsID, userID string) bool {
 	return count > 0
 }
 
-// GetMembers vrátí seznam členů game server roomu
+// GetMembers returns the list of game server room members
 func (q *GameServerQueries) GetMembers(gsID string) ([]models.GameServerMember, error) {
 	rows, err := q.DB.Query(
 		`SELECT m.game_server_id, m.user_id, u.username, m.joined_at
@@ -120,7 +120,7 @@ func (q *GameServerQueries) GetMembers(gsID string) ([]models.GameServerMember, 
 	return members, rows.Err()
 }
 
-// GetMemberIPs vrátí IP adresy členů roomu (pro iptables allowlist)
+// GetMemberIPs returns IP addresses of room members (for iptables allowlist)
 func (q *GameServerQueries) GetMemberIPs(gsID string) ([]string, error) {
 	rows, err := q.DB.Query(
 		`SELECT DISTINCT u.last_ip FROM game_server_members m
@@ -143,13 +143,13 @@ func (q *GameServerQueries) GetMemberIPs(gsID string) ([]string, error) {
 	return ips, rows.Err()
 }
 
-// RemoveAllMembers smaže všechny členy roomu
+// RemoveAllMembers deletes all members from a room
 func (q *GameServerQueries) RemoveAllMembers(gsID string) error {
 	_, err := q.DB.Exec(`DELETE FROM game_server_members WHERE game_server_id = ?`, gsID)
 	return err
 }
 
-// GetRunningRoomServers vrátí běžící servery s access_mode="room"
+// GetRunningRoomServers returns running servers with access_mode="room"
 func (q *GameServerQueries) GetRunningRoomServers() ([]models.GameServerInstance, error) {
 	rows, err := q.DB.Query(
 		`SELECT id, name, status, container_id, creator_id, created_at, error_msg, access_mode

@@ -14,7 +14,7 @@ import (
 	"gioui.org/widget/material"
 )
 
-// Durace ban (sekundy)
+// Ban durations (seconds)
 var banDurations = []struct {
 	Label    string
 	Seconds  int
@@ -42,7 +42,7 @@ type BanDialog struct {
 	deleteMsgsBtn  widget.Clickable
 	deleteMessages bool
 	durationBtns   [4]widget.Clickable
-	durationIdx    int // index do banDurations
+	durationIdx    int // index into banDurations
 	confirmBtn     widget.Clickable
 	cancelBtn      widget.Clickable
 	overlayBtn     widget.Clickable
@@ -247,11 +247,11 @@ func (d *BanDialog) Layout(gtx layout.Context) layout.Dimensions {
 								layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 									return layout.Flex{Spacing: layout.SpaceStart}.Layout(gtx,
 										layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-											return d.layoutBtn(gtx, &d.cancelBtn, "Cancel", ColorInput, ColorText)
+											return layoutDialogBtn(gtx, d.app.Theme, &d.cancelBtn, "Cancel", ColorInput, ColorText)
 										}),
 										layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 											return layout.Inset{Left: unit.Dp(8)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-												return d.layoutBtn(gtx, &d.confirmBtn, "Ban", ColorDanger, color.NRGBA{R: 255, G: 255, B: 255, A: 255})
+												return layoutDialogBtn(gtx, d.app.Theme, &d.confirmBtn, "Ban", ColorDanger, color.NRGBA{R: 255, G: 255, B: 255, A: 255})
 											})
 										}),
 									)
@@ -341,34 +341,3 @@ func (d *BanDialog) layoutCheckbox(gtx layout.Context, btn *widget.Clickable, ch
 	})
 }
 
-func (d *BanDialog) layoutBtn(gtx layout.Context, btn *widget.Clickable, text string, bg, fg color.NRGBA) layout.Dimensions {
-	return btn.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-		hoverBg := bg
-		if btn.Hovered() {
-			hoverBg = color.NRGBA{
-				R: min8(bg.R + 20),
-				G: min8(bg.G + 20),
-				B: min8(bg.B + 20),
-				A: 255,
-			}
-		}
-		return layout.Background{}.Layout(gtx,
-			func(gtx layout.Context) layout.Dimensions {
-				bounds := image.Rect(0, 0, gtx.Constraints.Min.X, gtx.Constraints.Min.Y)
-				rr := gtx.Dp(6)
-				paint.FillShape(gtx.Ops, hoverBg, clip.RRect{
-					Rect: bounds,
-					NE:   rr, NW: rr, SE: rr, SW: rr,
-				}.Op(gtx.Ops))
-				return layout.Dimensions{Size: bounds.Max}
-			},
-			func(gtx layout.Context) layout.Dimensions {
-				return layout.Inset{Top: unit.Dp(8), Bottom: unit.Dp(8), Left: unit.Dp(16), Right: unit.Dp(16)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-					lbl := material.Body2(d.app.Theme.Material, text)
-					lbl.Color = fg
-					return lbl.Layout(gtx)
-				})
-			},
-		)
-	})
-}

@@ -16,7 +16,7 @@ func (w *statusWriter) WriteHeader(code int) {
 	w.ResponseWriter.WriteHeader(code)
 }
 
-// Unwrap umožní knihovnám (např. websocket) přistoupit k původnímu ResponseWriteru
+// Unwrap allows libraries (e.g. websocket) to access the original ResponseWriter
 func (w *statusWriter) Unwrap() http.ResponseWriter {
 	return w.ResponseWriter
 }

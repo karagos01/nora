@@ -12,18 +12,18 @@ import (
 	"nora-client/api"
 )
 
-// DownloadFunc — callback pro stažení souboru do cache.
-// Blokující — vrací se až po dokončení stahování.
+// DownloadFunc — callback for downloading a file to cache.
+// Blocking — returns only after download is complete.
 type DownloadFunc func(shareID, fileID, savePath string) error
 
-// UploadFunc — callback pro nahrání souboru do share přes P2P.
-// Blokující — vrací se až po dokončení uploadu.
+// UploadFunc — callback for uploading a file to share via P2P.
+// Blocking — returns only after upload is complete.
 type UploadFunc func(shareID, fileName, relativePath, stagedPath string, fileSize int64) error
 
-// DeleteFunc — callback pro smazání souboru ze share přes server API.
+// DeleteFunc — callback for deleting a file from share via server API.
 type DeleteFunc func(shareID, relativePath, fileName string) error
 
-// ShareFS implementuje virtuální filesystem nad sdíleným adresářem.
+// ShareFS implements a virtual filesystem over a shared directory.
 type ShareFS struct {
 	mu        sync.RWMutex
 	shareID   string
@@ -32,42 +32,42 @@ type ShareFS struct {
 	serverAddr string
 	client    *api.Client
 
-	// Cache listingů: path → []SharedFileEntry
+	// Listing cache: path → []SharedFileEntry
 	listings map[string][]api.SharedFileEntry
-	// Čas posledního refreshe listingu
+	// Time of last listing refresh
 	listingTime map[string]time.Time
 
-	// Callback pro stažení souboru
+	// Callback for downloading a file
 	downloadFn DownloadFunc
 
-	// Callback pro nahrání souboru
+	// Callback for uploading a file
 	uploadFn UploadFunc
 
-	// Callback pro smazání souboru
+	// Callback for deleting a file
 	deleteFn DeleteFunc
 
-	// Oprávnění — pokud false, filesystem je read-only (file modes 0444/0555)
+	// Permissions — if false, filesystem is read-only (file modes 0444/0555)
 	canWrite bool
 
-	// Lokálně vytvořené adresáře (Mkdir z mount klienta)
+	// Locally created directories (Mkdir from mount client)
 	pendingDirs map[string]bool
 
-	// Deduplikace concurrent downloadů — path → done channel
+	// Deduplication of concurrent downloads — path → done channel
 	pendingMu        sync.Mutex
 	pendingDownloads map[string]chan struct{}
 }
 
-// FSName vrátí název share pro logy a UI.
+// FSName returns the share name for logs and UI.
 func (fs *ShareFS) FSName() string {
 	return fs.shareName
 }
 
-// CanWrite vrátí true pokud uživatel má write oprávnění.
+// CanWrite returns true if the user has write permissions.
 func (fs *ShareFS) CanWrite() bool {
 	return fs.canWrite
 }
 
-// SetCanWrite nastaví write oprávnění.
+// SetCanWrite sets write permissions.
 func (fs *ShareFS) SetCanWrite(v bool) {
 	fs.canWrite = v
 }
@@ -89,13 +89,13 @@ func NewShareFS(shareID, shareName, serverAddr string, client *api.Client, cache
 	}
 }
 
-// StagingDir vrátí cestu ke staging adresáři pro dočasné soubory.
+// StagingDir returns the path to the staging directory for temporary files.
 func StagingDir() string {
 	home, _ := os.UserHomeDir()
 	return fmt.Sprintf("%s/.nora/staging", home)
 }
 
-// DeleteFile smaže soubor ze share přes deleteFn. Po úspěchu refreshne listing.
+// DeleteFile deletes a file from share via deleteFn. Refreshes listing on success.
 func (fs *ShareFS) DeleteFile(relativePath, fileName string) error {
 	if fs.deleteFn == nil {
 		return fmt.Errorf("delete not available")
@@ -107,7 +107,7 @@ func (fs *ShareFS) DeleteFile(relativePath, fileName string) error {
 	return nil
 }
 
-// PutFile nahraje soubor do share přes uploadFn. Po úspěchu refreshne listing.
+// PutFile uploads a file to share via uploadFn. Refreshes listing on success.
 func (fs *ShareFS) PutFile(path string, tempPath string, size int64) error {
 	if fs.uploadFn == nil {
 		return fmt.Errorf("upload not available")
@@ -119,20 +119,20 @@ func (fs *ShareFS) PutFile(path string, tempPath string, size int64) error {
 		return err
 	}
 
-	// Refresh listing po úspěšném uploadu
+	// Refresh listing after successful upload
 	fs.refreshListing(parent)
 	return nil
 }
 
-// MkDir vytvoří virtuální adresář (lokální pending + entry v listings cache).
+// MkDir creates a virtual directory (local pending + entry in listings cache).
 func (fs *ShareFS) MkDir(path string) error {
 	fs.mu.Lock()
 	fs.pendingDirs[path] = true
 
-	// Přidat do listings cache jako virtuální entry
+	// Add to listings cache as a virtual entry
 	parent, name := splitPath(path)
 	entries := fs.listings[parent]
-	// Kontrola duplicity
+	// Check for duplicate
 	for _, e := range entries {
 		if e.FileName == name && e.IsDir {
 			fs.mu.Unlock()
@@ -147,7 +147,7 @@ func (fs *ShareFS) MkDir(path string) error {
 	return nil
 }
 
-// ListDir vrátí obsah adresáře z cache listingů (nebo ze serveru).
+// ListDir returns directory contents from listing cache (or from server).
 func (fs *ShareFS) ListDir(path string) ([]FSEntry, error) {
 	if path == "" {
 		path = "/"
@@ -158,12 +158,12 @@ func (fs *ShareFS) ListDir(path string) ([]FSEntry, error) {
 	t := fs.listingTime[path]
 	fs.mu.RUnlock()
 
-	// Refresh pokud starší než 30 sekund
+	// Refresh if older than 30 seconds
 	if !ok || time.Since(t) > 30*time.Second {
 		var err error
 		entries, err = fs.refreshListing(path)
 		if err != nil {
-			// Vrátit starý cache pokud máme
+			// Return old cache if available
 			if ok {
 				return shareEntriesToFS(entries), nil
 			}
@@ -174,7 +174,7 @@ func (fs *ShareFS) ListDir(path string) ([]FSEntry, error) {
 	return shareEntriesToFS(entries), nil
 }
 
-// Stat vrátí informace o souboru/adresáři.
+// Stat returns information about a file/directory.
 func (fs *ShareFS) Stat(path string) (*FSEntry, error) {
 	if path == "/" || path == "" {
 		return &FSEntry{
@@ -198,7 +198,7 @@ func (fs *ShareFS) Stat(path string) (*FSEntry, error) {
 	return nil, fmt.Errorf("not found: %s", path)
 }
 
-// statRaw vrátí raw SharedFileEntry pro interní potřeby (cache, download).
+// statRaw returns a raw SharedFileEntry for internal use (cache, download).
 func (fs *ShareFS) statRaw(path string) (*api.SharedFileEntry, error) {
 	if path == "/" || path == "" {
 		return &api.SharedFileEntry{FileName: fs.shareName, IsDir: true}, nil
@@ -220,7 +220,7 @@ func (fs *ShareFS) statRaw(path string) (*api.SharedFileEntry, error) {
 		entries, err = fs.refreshListing(parent)
 		if err != nil {
 			if ok {
-				// Použít starý cache
+				// Use old cache
 			} else {
 				return nil, err
 			}
@@ -235,8 +235,8 @@ func (fs *ShareFS) statRaw(path string) (*api.SharedFileEntry, error) {
 	return nil, fmt.Errorf("not found: %s", path)
 }
 
-// GetFile vrátí ReadSeekCloser pro soubor. Pokud není v cache, stáhne ho.
-// Concurrent GETs na stejný soubor čekají na jeden download (deduplikace).
+// GetFile returns a ReadSeekCloser for a file. If not cached, downloads it.
+// Concurrent GETs on the same file wait for a single download (deduplication).
 func (fs *ShareFS) GetFile(path string) (io.ReadSeekCloser, int64, error) {
 	entry, err := fs.statRaw(path)
 	if err != nil {
@@ -248,7 +248,7 @@ func (fs *ShareFS) GetFile(path string) (io.ReadSeekCloser, int64, error) {
 
 	parent, _ := splitPath(path)
 
-	// Zkusit cache
+	// Try cache
 	if fs.cache.Has(fs.serverAddr, fs.shareID, parent, entry.FileName, entry.FileSize) {
 		f, err := fs.cache.Open(fs.serverAddr, fs.shareID, parent, entry.FileName)
 		if err == nil {
@@ -257,18 +257,18 @@ func (fs *ShareFS) GetFile(path string) (io.ReadSeekCloser, int64, error) {
 		}
 	}
 
-	// Stáhnout — s deduplikací concurrent downloadů
+	// Download — with concurrent download deduplication
 	if fs.downloadFn == nil {
 		return nil, 0, fmt.Errorf("download not available")
 	}
 
-	// Čekat pokud jiný goroutine už stahuje stejný soubor
+	// Wait if another goroutine is already downloading the same file
 	fs.pendingMu.Lock()
 	if ch, ok := fs.pendingDownloads[path]; ok {
 		fs.pendingMu.Unlock()
 		log.Printf("ShareFS: waiting for pending download of %s", path)
-		<-ch // Čekat na dokončení
-		// Zkusit cache znovu
+		<-ch // Wait for completion
+		// Try cache znovu
 		if fs.cache.Has(fs.serverAddr, fs.shareID, parent, entry.FileName, entry.FileSize) {
 			f, err := fs.cache.Open(fs.serverAddr, fs.shareID, parent, entry.FileName)
 			if err == nil {
@@ -278,7 +278,7 @@ func (fs *ShareFS) GetFile(path string) (io.ReadSeekCloser, int64, error) {
 		}
 		return nil, 0, fmt.Errorf("download failed for %s", path)
 	}
-	// Zaregistrovat pending download
+	// Register pending download
 	done := make(chan struct{})
 	fs.pendingDownloads[path] = done
 	fs.pendingMu.Unlock()
@@ -300,7 +300,7 @@ func (fs *ShareFS) GetFile(path string) (io.ReadSeekCloser, int64, error) {
 		return nil, 0, fmt.Errorf("download: %w", err)
 	}
 
-	// Ověřit velikost staženého souboru
+	// Verify downloaded file size
 	if fi, serr := os.Stat(savePath); serr == nil {
 		log.Printf("ShareFS: downloaded %s (%d bytes, expected %d)", path, fi.Size(), entry.FileSize)
 	}
@@ -312,7 +312,7 @@ func (fs *ShareFS) GetFile(path string) (io.ReadSeekCloser, int64, error) {
 	return f, entry.FileSize, nil
 }
 
-// RefreshListing obnoví listing ze serveru pro danou cestu.
+// RefreshListing refreshes the listing from server for the given path.
 func (fs *ShareFS) RefreshListing(path string) error {
 	_, err := fs.refreshListing(path)
 	return err
@@ -333,7 +333,7 @@ func (fs *ShareFS) refreshListing(path string) ([]api.SharedFileEntry, error) {
 	return entries, nil
 }
 
-// RefreshAll obnoví všechny cachované listingy.
+// RefreshAll refreshes all cached listings.
 func (fs *ShareFS) RefreshAll() {
 	fs.mu.RLock()
 	paths := make([]string, 0, len(fs.listings))
@@ -347,7 +347,7 @@ func (fs *ShareFS) RefreshAll() {
 	}
 }
 
-// shareEntriesToFS konvertuje []api.SharedFileEntry na []FSEntry.
+// shareEntriesToFS converts []api.SharedFileEntry to []FSEntry.
 func shareEntriesToFS(entries []api.SharedFileEntry) []FSEntry {
 	result := make([]FSEntry, len(entries))
 	for i, e := range entries {
@@ -365,7 +365,7 @@ func shareEntriesToFS(entries []api.SharedFileEntry) []FSEntry {
 	return result
 }
 
-// splitPath rozdělí cestu na parent a name.
+// splitPath splits a path into parent and name.
 func splitPath(path string) (parent, name string) {
 	path = strings.TrimSuffix(path, "/")
 	if path == "" || path == "/" {

@@ -17,7 +17,7 @@ type createBanRequest struct {
 	BanIP          bool   `json:"ban_ip"`
 	BanDevice      bool   `json:"ban_device"`
 	RevokeInvites  bool   `json:"revoke_invites"`
-	Duration       int    `json:"duration"` // sekundy, 0 = permanent
+	Duration       int    `json:"duration"` // seconds, 0 = permanent
 	DeleteMessages bool   `json:"delete_messages"`
 }
 
@@ -57,7 +57,7 @@ func (d *Deps) CreateBan(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Nelze banovat ownera
+	// Cannot ban the owner
 	target, err := d.Users.GetByID(req.UserID)
 	if err != nil {
 		util.Error(w, http.StatusNotFound, "user not found")
@@ -68,13 +68,13 @@ func (d *Deps) CreateBan(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Hierarchická kontrola
+	// Hierarchical check
 	if err := d.canActOn(user, req.UserID); err != nil {
 		util.Error(w, http.StatusForbidden, "cannot ban a user with higher or equal rank")
 		return
 	}
 
-	// Vypočítat expires_at
+	// Calculate expires_at
 	var expiresAt *time.Time
 	if req.Duration > 0 {
 		t := time.Now().Add(time.Duration(req.Duration) * time.Second)
@@ -95,12 +95,12 @@ func (d *Deps) CreateBan(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// IP ban pokud požadováno
+	// IP ban if requested
 	if req.BanIP && target.LastIP != "" {
 		d.IPBans.Create(target.LastIP, req.Reason, user.ID, req.UserID)
 	}
 
-	// Device ban — zabanovat všechna zařízení uživatele
+	// Device ban — ban all user's devices
 	if req.BanDevice && d.UserDevices != nil && d.DeviceBans != nil {
 		devices, _ := d.UserDevices.GetByUser(req.UserID)
 		for _, dev := range devices {
@@ -117,28 +117,28 @@ func (d *Deps) CreateBan(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	// Smazat invite kódy (podmíněně)
+	// Delete invite codes (conditionally)
 	if req.RevokeInvites {
 		d.Invites.DeleteByCreatorID(req.UserID)
 	}
 
-	// Smazat zprávy
+	// Delete messages
 	if req.DeleteMessages {
 		d.Messages.DeleteByUserID(req.UserID)
 	}
 
-	// Smazat scheduled messages (vždy — zabanovaný uživatel je nemá posílat)
+	// Delete scheduled messages (always — banned user should not send them)
 	d.Scheduled.DeleteByUserID(req.UserID)
 
-	// Invalidovat refresh tokeny
+	// Invalidate refresh tokens
 	d.RefreshTokens.DeleteByUserID(req.UserID)
 
-	// Broadcast member.leave a odpojit uživatele z WS
+	// Broadcast member.leave and disconnect user from WS
 	event, _ := ws.NewEvent(ws.EventMemberLeave, map[string]string{"id": req.UserID})
 	d.Hub.Broadcast(event)
 	d.Hub.DisconnectUser(req.UserID)
 
-	// Broadcast ban.created pro adminy
+	// Broadcast ban.created for admins
 	banEvent, _ := ws.NewEvent(ws.EventBanCreated, map[string]string{
 		"user_id":  req.UserID,
 		"username": target.Username,
@@ -160,10 +160,10 @@ func (d *Deps) DeleteBan(w http.ResponseWriter, r *http.Request) {
 
 	userID := r.PathValue("userId")
 
-	// Smazat i IP bany spojené s tímto uživatelem
+	// Also delete IP bans associated with this user
 	d.IPBans.DeleteByRelatedUser(userID)
 
-	// Smazat device bany pro tohoto uživatele
+	// Delete device bans for this user
 	if d.DeviceBans != nil {
 		d.DeviceBans.DeleteByRelatedUser(userID)
 	}

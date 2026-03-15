@@ -15,7 +15,7 @@ func newTestHistory() *GroupHistory {
 	}
 }
 
-// --- Zprávy ---
+// --- Messages ---
 
 func TestAddAndGetMessages(t *testing.T) {
 	h := newTestHistory()
@@ -43,8 +43,8 @@ func TestAddMessageDedup(t *testing.T) {
 
 	msg := StoredGroupMessage{ID: "msg1", GroupID: "grp1", Content: "first"}
 	h.AddMessage(msg)
-	h.AddMessage(msg) // duplikát
-	msg2 := StoredGroupMessage{ID: "msg1", GroupID: "grp1", Content: "second"} // stejné ID
+	h.AddMessage(msg) // duplicate
+	msg2 := StoredGroupMessage{ID: "msg1", GroupID: "grp1", Content: "second"} // same ID
 	h.AddMessage(msg2)
 
 	msgs := h.GetMessages("grp1")
@@ -80,7 +80,7 @@ func TestDeleteGroup(t *testing.T) {
 	}
 }
 
-// --- Klíče ---
+// --- Keys ---
 
 func TestSetGetKey(t *testing.T) {
 	h := newTestHistory()
@@ -94,7 +94,7 @@ func TestSetGetKey(t *testing.T) {
 	}
 }
 
-// --- Rotace ---
+// --- Rotation ---
 
 func TestRotateKey(t *testing.T) {
 	h := newTestHistory()
@@ -119,13 +119,13 @@ func TestRotateKeyMaxHistory(t *testing.T) {
 	h := newTestHistory()
 	h.SetKey("grp1", "key-0")
 
-	// 12 rotací — historie by měla mít max 10 starých klíčů
+	// 12 rotations — history should have max 10 old keys
 	for i := 1; i <= 12; i++ {
 		h.RotateKey("grp1", "key-"+string(rune('a'+i-1)))
 	}
 
 	allKeys := h.GetAllKeys("grp1")
-	// 1 aktuální + max 10 starých = max 11
+	// 1 current + max 10 old = max 11
 	if len(allKeys) > 11 {
 		t.Errorf("too many keys: %d (max 11)", len(allKeys))
 	}
@@ -146,7 +146,7 @@ func TestRotateKeyResetsCounter(t *testing.T) {
 	}
 }
 
-// --- Počítadlo ---
+// --- Counter ---
 
 func TestIncrementCount(t *testing.T) {
 	h := newTestHistory()
@@ -162,7 +162,7 @@ func TestIncrementCount(t *testing.T) {
 func TestNeedsRotation(t *testing.T) {
 	h := newTestHistory()
 
-	// Pod thresholdem
+	// Below threshold
 	for i := 0; i < keyRotationThreshold-1; i++ {
 		h.IncrementCount("grp1")
 	}
@@ -170,7 +170,7 @@ func TestNeedsRotation(t *testing.T) {
 		t.Error("should not need rotation before threshold")
 	}
 
-	// Na thresholdu
+	// At threshold
 	h.IncrementCount("grp1")
 	if !h.NeedsRotation("grp1") {
 		t.Error("should need rotation at threshold")
@@ -207,7 +207,7 @@ func TestGetAllKeysWithHistory(t *testing.T) {
 	if len(keys) != 3 {
 		t.Fatalf("expected 3 keys, got %d: %v", len(keys), keys)
 	}
-	// Pořadí: aktuální, pak staré (nejnovější první)
+	// Order: current, then old (newest first)
 	if keys[0] != "key3" || keys[1] != "key2" || keys[2] != "key1" {
 		t.Errorf("wrong key order: %v", keys)
 	}

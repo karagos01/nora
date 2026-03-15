@@ -6,23 +6,23 @@ import (
 	"time"
 )
 
-// AutoMod poskytuje word filter a spam detekci pro channel zprávy.
+// AutoMod provides word filter and spam detection for channel messages.
 type AutoMod struct {
 	Mu              sync.RWMutex
 	Enabled         bool
 	WordFilter      []string
 	wordFilterLower []string
 
-	SpamMaxMessages    int // max zpráv v okně (default 5)
-	SpamWindowSeconds  int // délka okna v sekundách (default 10)
-	SpamTimeoutSeconds int // timeout při spamu v sekundách (default 300)
+	SpamMaxMessages    int // max messages in window (default 5)
+	SpamWindowSeconds  int // window length in seconds (default 10)
+	SpamTimeoutSeconds int // timeout on spam in seconds (default 300)
 
-	OwnerID string // pro issued_by při auto-timeout
+	OwnerID string // for issued_by on auto-timeout
 
 	spamTracker map[string][]time.Time // userID → timestamps
 }
 
-// New vytvoří AutoMod s defaulty a spustí cleanup goroutinu.
+// New creates an AutoMod with defaults and starts a cleanup goroutine.
 func New() *AutoMod {
 	am := &AutoMod{
 		SpamMaxMessages:    5,
@@ -34,7 +34,7 @@ func New() *AutoMod {
 	return am
 }
 
-// SetWordFilter nastaví word filter a lowercase cache.
+// SetWordFilter sets the word filter and lowercase cache.
 func (am *AutoMod) SetWordFilter(words []string) {
 	am.Mu.Lock()
 	defer am.Mu.Unlock()
@@ -45,8 +45,8 @@ func (am *AutoMod) SetWordFilter(words []string) {
 	}
 }
 
-// CheckContent kontroluje zprávu proti word filtru.
-// Vrací (blocked, matchedWord).
+// CheckContent checks a message against the word filter.
+// Returns (blocked, matchedWord).
 func (am *AutoMod) CheckContent(content string) (bool, string) {
 	am.Mu.RLock()
 	defer am.Mu.RUnlock()
@@ -62,7 +62,7 @@ func (am *AutoMod) CheckContent(content string) (bool, string) {
 	return false, ""
 }
 
-// TrackMessage zaznamená zprávu uživatele a vrátí true pokud je spam.
+// TrackMessage records a user's message and returns true if it is spam.
 func (am *AutoMod) TrackMessage(userID string) bool {
 	am.Mu.Lock()
 	defer am.Mu.Unlock()
@@ -71,7 +71,7 @@ func (am *AutoMod) TrackMessage(userID string) bool {
 	window := time.Duration(am.SpamWindowSeconds) * time.Second
 	cutoff := now.Add(-window)
 
-	// Filtrovat staré záznamy
+	// Filter out old entries
 	timestamps := am.spamTracker[userID]
 	filtered := timestamps[:0]
 	for _, t := range timestamps {
@@ -85,7 +85,7 @@ func (am *AutoMod) TrackMessage(userID string) bool {
 	return len(filtered) > am.SpamMaxMessages
 }
 
-// cleanup každou minutu maže staré záznamy ze spam trackeru.
+// cleanup deletes old entries from the spam tracker every minute.
 func (am *AutoMod) cleanup() {
 	ticker := time.NewTicker(time.Minute)
 	defer ticker.Stop()

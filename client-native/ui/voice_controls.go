@@ -6,6 +6,7 @@ import (
 	"image/color"
 	"time"
 
+	"gioui.org/io/pointer"
 	"gioui.org/layout"
 	"gioui.org/op"
 	"gioui.org/op/clip"
@@ -79,7 +80,7 @@ func (vc *VoiceControls) Layout(gtx layout.Context) layout.Dimensions {
 		return layout.Dimensions{}
 	}
 
-	// DM call má prioritu
+	// DM call has priority
 	if conn.Call != nil && conn.Call.IsActive() {
 		return vc.layoutCallControls(gtx, conn)
 	}
@@ -108,7 +109,7 @@ func (vc *VoiceControls) Layout(gtx layout.Context) layout.Dimensions {
 					"sharing":    false,
 				})
 			} else {
-				// Aplikovat nastavení do manageru před startem
+				// Apply settings to manager before starting
 				conn.Voice.StreamFPS = vc.streamFPS
 				conn.Voice.StreamQuality = vc.streamQuality
 				if vc.streamMaxH == 720 {
@@ -189,7 +190,7 @@ func (vc *VoiceControls) Layout(gtx layout.Context) layout.Dimensions {
 
 	gtx.Constraints.Min.X = gtx.Constraints.Max.X
 	return layout.Flex{Axis: layout.Vertical}.Layout(gtx,
-		// Divider nahoře
+		// Top divider
 		layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 			size := image.Pt(gtx.Constraints.Max.X, gtx.Dp(1))
 			paint.FillShape(gtx.Ops, ColorDivider, clip.Rect{Max: size}.Op())
@@ -428,6 +429,7 @@ func (vc *VoiceControls) layoutOptionRow(gtx layout.Context, label string, items
 				return item.btn.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
 					hoverBg := bg
 					if item.btn.Hovered() {
+						pointer.CursorPointer.Add(gtx.Ops)
 						hoverBg = color.NRGBA{
 							R: min8(bg.R + 15),
 							G: min8(bg.G + 15),
@@ -487,7 +489,7 @@ func (vc *VoiceControls) layoutSliderRow(gtx layout.Context, label string, slide
 	)
 }
 
-// layoutCallControls renderuje stav DM hovoru ve voice controls baru.
+// layoutCallControls renders the DM call state in the voice controls bar.
 func (vc *VoiceControls) layoutCallControls(gtx layout.Context, conn *ServerConnection) layout.Dimensions {
 	call := conn.Call
 
@@ -534,7 +536,7 @@ func (vc *VoiceControls) layoutCallControls(gtx layout.Context, conn *ServerConn
 
 	gtx.Constraints.Min.X = gtx.Constraints.Max.X
 	return layout.Flex{Axis: layout.Vertical}.Layout(gtx,
-		// Divider nahoře
+		// Top divider
 		layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 			size := image.Pt(gtx.Constraints.Max.X, gtx.Dp(1))
 			paint.FillShape(gtx.Ops, ColorDivider, clip.Rect{Max: size}.Op())
@@ -611,7 +613,7 @@ func (vc *VoiceControls) layoutCallControls(gtx layout.Context, conn *ServerConn
 										}),
 									)
 								}
-								// Ringing — jen hangup/cancel
+								// Ringing — only hangup/cancel
 								return vc.layoutControlIconBtn(gtx, &vc.callHangupBtn, IconClose, withAlpha(ColorDanger, 60), ColorDanger)
 							})
 						}),
@@ -631,6 +633,7 @@ func (vc *VoiceControls) layoutControlIconLabelBtn(gtx layout.Context, btn *widg
 	return btn.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
 		hoverBg := bg
 		if btn.Hovered() {
+			pointer.CursorPointer.Add(gtx.Ops)
 			hoverBg = color.NRGBA{
 				R: min8(bg.R + 15),
 				G: min8(bg.G + 15),
@@ -683,6 +686,7 @@ func (vc *VoiceControls) layoutControlBtn(gtx layout.Context, btn *widget.Clicka
 	return btn.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
 		hoverBg := bg
 		if btn.Hovered() {
+			pointer.CursorPointer.Add(gtx.Ops)
 			hoverBg = color.NRGBA{
 				R: min8(bg.R + 15),
 				G: min8(bg.G + 15),

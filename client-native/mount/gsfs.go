@@ -12,7 +12,7 @@ import (
 	"nora-client/api"
 )
 
-// GameServerFS implementuje VirtualFS pro soubory game serveru přes HTTP API.
+// GameServerFS implements VirtualFS for game server files via HTTP API.
 type GameServerFS struct {
 	mu         sync.RWMutex
 	serverID   string
@@ -22,11 +22,11 @@ type GameServerFS struct {
 	cache      *Cache
 	canWrite   bool
 
-	// Cache listingů: path → []api.GameServerFileEntry
+	// Listing cache: path → []api.GameServerFileEntry
 	listings    map[string][]api.GameServerFileEntry
 	listingTime map[string]time.Time
 
-	// Deduplikace concurrent downloadů
+	// Deduplication of concurrent downloads
 	pendingMu        sync.Mutex
 	pendingDownloads map[string]chan struct{}
 }
@@ -101,7 +101,7 @@ func (fs *GameServerFS) Stat(path string) (*FSEntry, error) {
 }
 
 func (fs *GameServerFS) GetFile(path string) (io.ReadSeekCloser, int64, error) {
-	// Zjistit entry pro velikost
+	// Get entry for size
 	entry, err := fs.Stat(path)
 	if err != nil {
 		return nil, 0, err
@@ -116,10 +116,10 @@ func (fs *GameServerFS) GetFile(path string) (io.ReadSeekCloser, int64, error) {
 		parent = ""
 	}
 
-	// Cache ID — pro game servery použijeme "gs-{serverID}" jako shareID
+	// Cache ID — for game servers we use "gs-{serverID}" as shareID
 	cacheID := "gs-" + fs.serverID
 
-	// Zkusit cache
+	// Try cache
 	if fs.cache.Has(fs.serverAddr, cacheID, parent, name, entry.Size) {
 		f, err := fs.cache.Open(fs.serverAddr, cacheID, parent, name)
 		if err == nil {
@@ -128,7 +128,7 @@ func (fs *GameServerFS) GetFile(path string) (io.ReadSeekCloser, int64, error) {
 		}
 	}
 
-	// Deduplikace concurrent downloadů
+	// Deduplication of concurrent downloads
 	fs.pendingMu.Lock()
 	if ch, ok := fs.pendingDownloads[path]; ok {
 		fs.pendingMu.Unlock()
@@ -222,7 +222,7 @@ func (fs *GameServerFS) MkDir(path string) error {
 		return fmt.Errorf("read-only filesystem")
 	}
 
-	// Odstranit leading slash — game server API nechce leading slash
+	// Remove leading slash — game server API does not want leading slash
 	cleanPath := path
 	if len(cleanPath) > 0 && cleanPath[0] == '/' {
 		cleanPath = cleanPath[1:]
@@ -260,7 +260,7 @@ func (fs *GameServerFS) refreshListing(path string) ([]api.GameServerFileEntry, 
 	return entries, nil
 }
 
-// gsEntriesToFS konvertuje []api.GameServerFileEntry na []FSEntry.
+// gsEntriesToFS converts []api.GameServerFileEntry to []FSEntry.
 func gsEntriesToFS(entries []api.GameServerFileEntry) []FSEntry {
 	result := make([]FSEntry, len(entries))
 	for i, e := range entries {

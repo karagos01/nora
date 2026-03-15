@@ -13,7 +13,7 @@ import (
 	"github.com/google/uuid"
 )
 
-// logAudit zaloguje akci do audit_log. Fire-and-forget.
+// logAudit logs an action to the audit_log. Fire-and-forget.
 func (d *Deps) logAudit(userID, action, targetType, targetID string, details any) {
 	go func() {
 		detailsJSON := "{}"
@@ -33,7 +33,7 @@ func (d *Deps) logAudit(userID, action, targetType, targetID string, details any
 			Details:    detailsJSON,
 		}
 		if err := d.AuditLog.Create(entry); err != nil {
-			slog.Error("zápis do audit logu selhal", "action", action, "error", err)
+			slog.Error("failed to write audit log", "action", action, "error", err)
 		}
 	}()
 }
@@ -55,9 +55,12 @@ func (d *Deps) ListUserActivity(w http.ResponseWriter, r *http.Request) {
 	before := r.URL.Query().Get("before")
 	limit := 50
 	if l := r.URL.Query().Get("limit"); l != "" {
-		if n, err := strconv.Atoi(l); err == nil {
+		if n, err := strconv.Atoi(l); err == nil && n > 0 {
 			limit = n
 		}
+	}
+	if limit > 200 {
+		limit = 200
 	}
 
 	entries, err := d.AuditLog.ListByUser(targetID, before, limit)
@@ -89,9 +92,12 @@ func (d *Deps) ListUserMessages(w http.ResponseWriter, r *http.Request) {
 	before := r.URL.Query().Get("before")
 	limit := 50
 	if l := r.URL.Query().Get("limit"); l != "" {
-		if n, err := strconv.Atoi(l); err == nil {
+		if n, err := strconv.Atoi(l); err == nil && n > 0 {
 			limit = n
 		}
+	}
+	if limit > 200 {
+		limit = 200
 	}
 
 	messages, err := d.AuditLog.ListUserMessages(d.DB.DB, targetID, before, limit)
@@ -103,7 +109,7 @@ func (d *Deps) ListUserMessages(w http.ResponseWriter, r *http.Request) {
 		messages = []models.Message{}
 	}
 
-	// Načíst přílohy
+	// Load attachments
 	if len(messages) > 0 {
 		ids := make([]string, len(messages))
 		for i, m := range messages {

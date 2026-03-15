@@ -86,7 +86,7 @@ func (q *WhiteboardQueries) DeleteStroke(id, userID string) error {
 	return err
 }
 
-// DeleteLastStrokeByUser smaže poslední stroke daného uživatele na boardu a vrátí jeho ID.
+// DeleteLastStrokeByUser deletes the last stroke of a given user on a board and returns its ID.
 func (q *WhiteboardQueries) DeleteLastStrokeByUser(boardID, userID string) (string, error) {
 	var strokeID string
 	err := q.DB.QueryRow(

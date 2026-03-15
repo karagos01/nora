@@ -28,8 +28,8 @@ type ConfirmDialog struct {
 	onConfirm    func()
 	onCancel     func()
 	ConfirmText  string
-	CancelText   string     // prázdný → "Cancel"
-	confirmColor color.NRGBA // barva confirm tlačítka (default ColorDanger)
+	CancelText   string     // empty → "Cancel"
+	confirmColor color.NRGBA // confirm button color (default ColorDanger)
 }
 
 func NewConfirmDialog(a *App) *ConfirmDialog {
@@ -66,7 +66,7 @@ func (d *ConfirmDialog) ShowWithCancel(title, message, confirmText string, onCon
 	d.onCancel = onCancel
 }
 
-// ShowConfirm zobrazí dialog s Cancel/Yes (accent barva, ne červená).
+// ShowConfirm shows a dialog with Cancel/Yes (accent color, not red).
 func (d *ConfirmDialog) ShowConfirm(title, message string, onConfirm func()) {
 	d.Visible = true
 	d.Title = title
@@ -161,7 +161,7 @@ func (d *ConfirmDialog) Layout(gtx layout.Context) layout.Dimensions {
 												if cancelText == "" {
 													cancelText = "Cancel"
 												}
-												return d.layoutBtn(gtx, &d.cancelBtn, cancelText, ColorInput, ColorText)
+												return layoutDialogBtn(gtx, d.app.Theme, &d.cancelBtn, cancelText, ColorInput, ColorText)
 										}),
 										layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 											return layout.Inset{Left: unit.Dp(8)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
@@ -173,7 +173,7 @@ func (d *ConfirmDialog) Layout(gtx layout.Context) layout.Dimensions {
 											if btnColor == (color.NRGBA{}) {
 												btnColor = ColorDanger
 											}
-											return d.layoutBtn(gtx, &d.confirmBtn, confirmText, btnColor, color.NRGBA{R: 255, G: 255, B: 255, A: 255})
+											return layoutDialogBtn(gtx, d.app.Theme, &d.confirmBtn, confirmText, btnColor, color.NRGBA{R: 255, G: 255, B: 255, A: 255})
 											})
 										}),
 									)
@@ -187,37 +187,6 @@ func (d *ConfirmDialog) Layout(gtx layout.Context) layout.Dimensions {
 	)
 }
 
-func (d *ConfirmDialog) layoutBtn(gtx layout.Context, btn *widget.Clickable, text string, bg, fg color.NRGBA) layout.Dimensions {
-	return btn.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-		hoverBg := bg
-		if btn.Hovered() {
-			hoverBg = color.NRGBA{
-				R: min8(bg.R+20),
-				G: min8(bg.G+20),
-				B: min8(bg.B+20),
-				A: 255,
-			}
-		}
-		return layout.Background{}.Layout(gtx,
-			func(gtx layout.Context) layout.Dimensions {
-				bounds := image.Rect(0, 0, gtx.Constraints.Min.X, gtx.Constraints.Min.Y)
-				rr := gtx.Dp(6)
-				paint.FillShape(gtx.Ops, hoverBg, clip.RRect{
-					Rect: bounds,
-					NE:   rr, NW: rr, SE: rr, SW: rr,
-				}.Op(gtx.Ops))
-				return layout.Dimensions{Size: bounds.Max}
-			},
-			func(gtx layout.Context) layout.Dimensions {
-				return layout.Inset{Top: unit.Dp(8), Bottom: unit.Dp(8), Left: unit.Dp(16), Right: unit.Dp(16)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-					lbl := material.Body2(d.app.Theme.Material, text)
-					lbl.Color = fg
-					return lbl.Layout(gtx)
-				})
-			},
-		)
-	})
-}
 
 func min8(v uint8) uint8 {
 	if v < 20 { // overflow protection

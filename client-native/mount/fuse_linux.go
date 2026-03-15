@@ -14,14 +14,14 @@ import (
 	"github.com/hanwen/go-fuse/v2/fuse"
 )
 
-// FuseMount drží stav FUSE mountu.
+// FuseMount holds the state of a FUSE mount.
 type FuseMount struct {
 	server    *fuse.Server
 	mountPath string
 	vfs       VirtualFS
 }
 
-// MountFUSE připojí virtuální filesystem jako FUSE mount.
+// MountFUSE mounts a virtual filesystem as a FUSE mount.
 func MountFUSE(vfs VirtualFS, mountPath string) (*FuseMount, error) {
 	if err := os.MkdirAll(mountPath, 0700); err != nil {
 		return nil, err
@@ -48,7 +48,7 @@ func MountFUSE(vfs VirtualFS, mountPath string) (*FuseMount, error) {
 	}, nil
 }
 
-// Unmount odpojí FUSE mount.
+// Unmount unmounts the FUSE mount.
 func (m *FuseMount) Unmount() error {
 	if m.server != nil {
 		err := m.server.Unmount()
@@ -58,14 +58,14 @@ func (m *FuseMount) Unmount() error {
 	return nil
 }
 
-// Path vrátí cestu mountu.
+// Path returns the mount path.
 func (m *FuseMount) Path() string {
 	return m.mountPath
 }
 
 // --- FUSE nodes ---
 
-// fuseRoot — kořenový uzel FUSE filesystem.
+// fuseRoot — root node of FUSE filesystem.
 type fuseRoot struct {
 	fs.Inode
 	vfs VirtualFS
@@ -83,7 +83,7 @@ func (r *fuseRoot) Lookup(ctx context.Context, name string, out *fuse.EntryOut) 
 	return lookup(r, r.vfs, "/", name, out)
 }
 
-// fuseDir — adresářový uzel.
+// fuseDir — directory node.
 type fuseDir struct {
 	fs.Inode
 	vfs  VirtualFS
@@ -139,11 +139,11 @@ func (d *fuseDir) Unlink(ctx context.Context, name string) syscall.Errno {
 	return 0
 }
 
-// fuseFile — souborový uzel.
+// fuseFile — file node.
 type fuseFile struct {
 	fs.Inode
 	vfs  VirtualFS
-	path string // plná cesta v share (relativní)
+	path string // full path in share (relative)
 	size int64
 }
 
@@ -215,7 +215,7 @@ func (r *fuseRoot) Unlink(ctx context.Context, name string) syscall.Errno {
 	return 0
 }
 
-// --- fuseWriteNode — uzel pro zápis souboru ---
+// --- fuseWriteNode — node for writing a file ---
 
 type fuseWriteNode struct {
 	fs.Inode
@@ -231,7 +231,7 @@ func (n *fuseWriteNode) Getattr(ctx context.Context, fh fs.FileHandle, out *fuse
 	return 0
 }
 
-// --- fuseWriteHandle — file handle pro zápis ---
+// --- fuseWriteHandle — file handle for writing ---
 
 type fuseWriteHandle struct {
 	vfs     VirtualFS
@@ -269,7 +269,7 @@ func (h *fuseWriteHandle) Release(ctx context.Context) syscall.Errno {
 	return 0
 }
 
-// --- Společné helpery ---
+// --- Common helpers ---
 
 func fuseCreate(parent fs.InodeEmbedder, vfs VirtualFS, parentPath string, ctx context.Context, name string, out *fuse.EntryOut) (*fs.Inode, fs.FileHandle, uint32, syscall.Errno) {
 	staging := StagingDir()
@@ -386,7 +386,7 @@ func lookup(parent fs.InodeEmbedder, vfs VirtualFS, parentPath, name string, out
 	}
 	out.Size = uint64(entry.Size)
 
-	// Nastavit ModifiedAt pokud je dostupný
+	// Set ModifiedAt if available
 	if !entry.ModifiedAt.IsZero() {
 		t := entry.ModifiedAt
 		out.SetTimes(nil, &t, nil)
@@ -395,7 +395,7 @@ func lookup(parent fs.InodeEmbedder, vfs VirtualFS, parentPath, name string, out
 	return parent.EmbeddedInode().NewInode(context.Background(), child, fs.StableAttr{Mode: syscall.S_IFREG}), 0
 }
 
-// DefaultMountPath vrátí výchozí cestu pro FUSE mount.
+// DefaultMountPath returns the default path for a FUSE mount.
 func DefaultMountPath(serverAddr, shareName string) string {
 	home, _ := os.UserHomeDir()
 	safe := strings.ReplaceAll(serverAddr, ":", "_")

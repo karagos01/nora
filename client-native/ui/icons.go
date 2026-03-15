@@ -15,11 +15,11 @@ import (
 	"golang.org/x/exp/shiny/materialdesign/icons"
 )
 
-// NIcon je vlastní icon typ, který obchází Gio widget.Icon.
-// widget.Icon používá f32color.NRGBAToLinearRGBA pro barvy,
-// což způsobuje double gamma korekci (linearizace + GPU sRGB decode)
-// a ikony jsou pak neviditelné na tmavém pozadí.
-// NIcon používá sRGB barvy přímo a má multi-key cache.
+// NIcon is a custom icon type that bypasses Gio widget.Icon.
+// widget.Icon uses f32color.NRGBAToLinearRGBA for colors,
+// which causes double gamma correction (linearization + GPU sRGB decode)
+// and icons become invisible on dark backgrounds.
+// NIcon uses sRGB colors directly and has a multi-key cache.
 type NIcon struct {
 	src   []byte
 	mu    sync.Mutex
@@ -32,7 +32,7 @@ type iconKey struct {
 }
 
 func newIcon(data []byte) *NIcon {
-	// Ověření že data jsou validní IconVG
+	// Verify that data is valid IconVG
 	if _, err := iconvg.DecodeMetadata(data); err != nil {
 		panic(err)
 	}
@@ -61,7 +61,7 @@ func (ic *NIcon) imageOp(sz int, clr color.NRGBA) paint.ImageOp {
 	img := image.NewRGBA(image.Rectangle{Max: image.Point{X: sz, Y: h}})
 	var r iconvg.Rasterizer
 	r.SetDstImage(img, img.Bounds(), draw.Src)
-	// Barva v sRGB — žádná linearizace, GPU ji zobrazí správně
+	// Color in sRGB — no linearization, GPU displays it correctly
 	m.Palette[0] = color.RGBA{R: clr.R, G: clr.G, B: clr.B, A: clr.A}
 	iconvg.Decode(&r, ic.src, &iconvg.DecodeOptions{Palette: &m.Palette})
 
@@ -186,7 +186,7 @@ func init() {
 	IconRepeat         = newIcon(icons.AVRepeat)
 }
 
-// layoutIcon renderuje ikonu v dané velikosti a barvě.
+// layoutIcon renders an icon at the given size and color.
 func layoutIcon(gtx layout.Context, icon *NIcon, sizeDp unit.Dp, clr color.NRGBA) layout.Dimensions {
 	sz := gtx.Dp(sizeDp)
 	if sz == 0 {

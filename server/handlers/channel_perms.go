@@ -7,8 +7,8 @@ import (
 	"nora/util"
 )
 
-// ListChannelPermOverrides vrátí všechny permission overrides pro daný kanál.
-// Vyžaduje PermManageChannels.
+// ListChannelPermOverrides returns all permission overrides for the given channel.
+// Requires PermManageChannels.
 func (d *Deps) ListChannelPermOverrides(w http.ResponseWriter, r *http.Request) {
 	user := auth.GetUser(r)
 	channelID := r.PathValue("id")
@@ -18,7 +18,7 @@ func (d *Deps) ListChannelPermOverrides(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	// Ověřit že kanál existuje
+	// Verify that the channel exists
 	if _, err := d.Channels.GetByID(channelID); err != nil {
 		util.Error(w, http.StatusNotFound, "channel not found")
 		return
@@ -36,8 +36,8 @@ func (d *Deps) ListChannelPermOverrides(w http.ResponseWriter, r *http.Request) 
 	util.JSON(w, http.StatusOK, overrides)
 }
 
-// SetChannelPermOverride nastaví (nebo aktualizuje) permission override pro kanál.
-// Vyžaduje PermManageChannels.
+// SetChannelPermOverride sets (or updates) a permission override for a channel.
+// Requires PermManageChannels.
 func (d *Deps) SetChannelPermOverride(w http.ResponseWriter, r *http.Request) {
 	user := auth.GetUser(r)
 	channelID := r.PathValue("id")
@@ -47,7 +47,7 @@ func (d *Deps) SetChannelPermOverride(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Ověřit že kanál existuje
+	// Verify that the channel exists
 	if _, err := d.Channels.GetByID(channelID); err != nil {
 		util.Error(w, http.StatusNotFound, "channel not found")
 		return
@@ -59,7 +59,7 @@ func (d *Deps) SetChannelPermOverride(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Validace
+	// Validation
 	if req.TargetType != "role" && req.TargetType != "user" {
 		util.Error(w, http.StatusBadRequest, "target_type must be 'role' or 'user'")
 		return
@@ -73,7 +73,7 @@ func (d *Deps) SetChannelPermOverride(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Ověřit existenci targetu
+	// Verify target existence
 	if req.TargetType == "role" {
 		if _, err := d.Roles.GetByID(req.TargetID); err != nil {
 			util.Error(w, http.StatusBadRequest, "role not found")
@@ -96,8 +96,8 @@ func (d *Deps) SetChannelPermOverride(w http.ResponseWriter, r *http.Request) {
 	util.JSON(w, http.StatusOK, req)
 }
 
-// DeleteChannelPermOverride smaže permission override pro kanál.
-// Vyžaduje PermManageChannels.
+// DeleteChannelPermOverride deletes a permission override for a channel.
+// Requires PermManageChannels.
 func (d *Deps) DeleteChannelPermOverride(w http.ResponseWriter, r *http.Request) {
 	user := auth.GetUser(r)
 	channelID := r.PathValue("id")

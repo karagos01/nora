@@ -5,12 +5,12 @@ import (
 	"testing"
 )
 
-// generateSilence vytvoří frame s ticho (nulové vzorky).
+// generateSilence creates a frame of silence (zero samples).
 func generateSilence(n int) []int16 {
 	return make([]int16, n)
 }
 
-// generateTone vytvoří sinusový tón dané amplitudy.
+// generateTone creates a sine tone of given amplitude.
 func generateTone(n int, amplitude float64, freq float64, sampleRate float64) []int16 {
 	samples := make([]int16, n)
 	for i := range samples {
@@ -26,18 +26,18 @@ func generateTone(n int, amplitude float64, freq float64, sampleRate float64) []
 	return samples
 }
 
-// generateNoise vytvoří nízko-úrovňový šum (simulace mikrofonu).
+// generateNoise creates low-level noise (microphone simulation).
 func generateNoise(n int, amplitude float64) []int16 {
 	samples := make([]int16, n)
 	for i := range samples {
-		// Deterministický "šum" pro reprodukovatelnost
+		// Deterministic "noise" for reproducibility
 		val := amplitude * math.Sin(float64(i)*0.7+float64(i*i)*0.003)
 		samples[i] = int16(val)
 	}
 	return samples
 }
 
-// rms spočítá RMS hodnotu vzorků.
+// rms calculates the RMS value of samples.
 func rms(samples []int16) float64 {
 	var sumSq float64
 	for _, s := range samples {
@@ -54,7 +54,7 @@ func TestNoiseGate_SilenceStaysSilent(t *testing.T) {
 
 	for i, s := range result {
 		if s != 0 {
-			t.Fatalf("vzorek %d by měl být 0, je %d", i, s)
+			t.Fatalf("sample %d should be 0, got %d", i, s)
 		}
 	}
 }
@@ -62,47 +62,47 @@ func TestNoiseGate_SilenceStaysSilent(t *testing.T) {
 func TestNoiseGate_LoudSignalPassesThrough(t *testing.T) {
 	ng := NewNoiseGate()
 
-	// Nejdřív pár tichých framů pro kalibraci noise floor
+	// First a few silent frames for noise floor calibration
 	for i := 0; i < 30; i++ {
 		ng.Process(generateSilence(FrameSize))
 	}
 
-	// Hlasitý tón — měl by projít (po attack)
+	// Loud tone — should pass through (after attack)
 	tone := generateTone(FrameSize, 8000, 440, float64(SampleRate))
 	originalRMS := rms(tone)
 
-	// Procesovat několik framů aby se gate otevřel
+	// Process several frames for the gate to open
 	for i := 0; i < 5; i++ {
 		ng.Process(generateTone(FrameSize, 8000, 440, float64(SampleRate)))
 	}
 
-	// Teď by měl gate být plně otevřený
+	// Now the gate should be fully open
 	result := ng.Process(generateTone(FrameSize, 8000, 440, float64(SampleRate)))
 	resultRMS := rms(result)
 
-	// RMS by se nemělo výrazně lišit (gate je plně otevřený)
+	// RMS should not differ significantly (gate is fully open)
 	ratio := resultRMS / originalRMS
 	if ratio < 0.9 {
-		t.Fatalf("hlasitý signál by měl projít beze změny, ratio=%.3f", ratio)
+		t.Fatalf("loud signal should pass through unchanged, ratio=%.3f", ratio)
 	}
 }
 
 func TestNoiseGate_LowNoiseIsSuppressed(t *testing.T) {
 	ng := NewNoiseGate()
 
-	// Kalibrační fáze — ticho
+	// Calibration phase — silence
 	for i := 0; i < 50; i++ {
 		ng.Process(generateSilence(FrameSize))
 	}
 
-	// Nízký šum pod thresholdem
-	noise := generateNoise(FrameSize, 50) // velmi tichý
+	// Low noise below threshold
+	noise := generateNoise(FrameSize, 50) // very quiet
 	result := ng.Process(noise)
 
-	// Výstup by měl být ztlumený (gate uzavřený)
+	// Output should be muted (gate closed)
 	resultRMS := rms(result)
 	if resultRMS > 0.001 {
-		t.Fatalf("nízký šum by měl být potlačen, resultRMS=%.6f", resultRMS)
+		t.Fatalf("low noise should be suppressed, resultRMS=%.6f", resultRMS)
 	}
 }
 
@@ -118,7 +118,7 @@ func TestNoiseGate_DisabledPassesThrough(t *testing.T) {
 
 	for i, s := range result {
 		if s != original[i] {
-			t.Fatalf("při vypnutém gate by se vzorky neměly měnit, index %d: %d != %d", i, s, original[i])
+			t.Fatalf("with disabled gate samples should not change, index %d: %d != %d", i, s, original[i])
 		}
 	}
 }
@@ -126,75 +126,75 @@ func TestNoiseGate_DisabledPassesThrough(t *testing.T) {
 func TestNoiseGate_GateOpensAndCloses(t *testing.T) {
 	ng := NewNoiseGate()
 
-	// Inicializace noise floor — ticho
+	// Noise floor initialization — silence
 	for i := 0; i < 50; i++ {
 		ng.Process(generateSilence(FrameSize))
 	}
 
 	if ng.IsOpen() {
-		t.Fatal("gate by měl být zavřený po tichu")
+		t.Fatal("gate should be closed after silence")
 	}
 
-	// Hlasitý signál — gate se otevře
+	// Loud signal — gate opens
 	for i := 0; i < 5; i++ {
 		ng.Process(generateTone(FrameSize, 10000, 440, float64(SampleRate)))
 	}
 
 	if !ng.IsOpen() {
-		t.Fatal("gate by měl být otevřený po hlasitém signálu")
+		t.Fatal("gate should be open after loud signal")
 	}
 
-	// Ticho — gate se zavře (po hold + release)
+	// Silence — gate closes (after hold + release)
 	for i := 0; i < 30; i++ {
 		ng.Process(generateSilence(FrameSize))
 	}
 
 	if ng.IsOpen() {
-		t.Fatal("gate by měl být zavřený po 30 tichých framech")
+		t.Fatal("gate should be closed after 30 silent frames")
 	}
 }
 
 func TestNoiseGate_Reset(t *testing.T) {
 	ng := NewNoiseGate()
 
-	// Otevřít gate
+	// Open the gate
 	for i := 0; i < 10; i++ {
 		ng.Process(generateTone(FrameSize, 10000, 440, float64(SampleRate)))
 	}
 
 	if !ng.IsOpen() {
-		t.Fatal("gate by měl být otevřený")
+		t.Fatal("gate should be open")
 	}
 
 	ng.Reset()
 
 	if ng.IsOpen() {
-		t.Fatal("gate by měl být zavřený po resetu")
+		t.Fatal("gate should be closed after reset")
 	}
 	if ng.frameCount != 0 {
-		t.Fatal("frameCount by měl být 0 po resetu")
+		t.Fatal("frameCount should be 0 after reset")
 	}
 }
 
 func TestCalcFrameRMS(t *testing.T) {
-	// Ticho
+	// Silence
 	silence := generateSilence(160)
 	if r := calcFrameRMS(silence); r != 0 {
-		t.Fatalf("RMS ticha by mělo být 0, je %f", r)
+		t.Fatalf("RMS of silence should be 0, got %f", r)
 	}
 
-	// Plná hlasitost
+	// Full volume
 	full := make([]int16, 160)
 	for i := range full {
 		full[i] = 32767
 	}
 	r := calcFrameRMS(full)
 	if r < 0.99 {
-		t.Fatalf("RMS plné hlasitosti by mělo být ~1.0, je %f", r)
+		t.Fatalf("RMS of full volume should be ~1.0, got %f", r)
 	}
 
-	// Prázdný slice
+	// Empty slice
 	if r := calcFrameRMS(nil); r != 0 {
-		t.Fatalf("RMS prázdného slice by mělo být 0, je %f", r)
+		t.Fatalf("RMS of empty slice should be 0, got %f", r)
 	}
 }

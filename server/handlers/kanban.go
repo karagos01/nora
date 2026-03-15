@@ -87,7 +87,7 @@ func (d *Deps) CreateKanbanBoard(w http.ResponseWriter, r *http.Request) {
 		d.KanbanQ.CreateColumn(col)
 	}
 
-	// Vrátit board s columns
+	// Return board with columns
 	fullBoard, _ := d.KanbanQ.GetBoard(board.ID)
 	if fullBoard == nil {
 		fullBoard = board
@@ -123,7 +123,7 @@ func (d *Deps) DeleteKanbanBoard(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Jen creator nebo admin/owner
+	// Only creator or admin/owner
 	if board.CreatorID != user.ID {
 		if err := d.requirePermission(user, models.PermManageChannels); err != nil {
 			util.Error(w, http.StatusForbidden, "only creator or admin can delete board")
@@ -348,7 +348,7 @@ func (d *Deps) CreateKanbanCard(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Ověřit že sloupec patří boardu
+	// Verify the column belongs to this board
 	col, err := d.KanbanQ.GetColumn(req.ColumnID)
 	if err != nil || col.BoardID != boardID {
 		util.Error(w, http.StatusBadRequest, "column not found in this board")
@@ -375,7 +375,7 @@ func (d *Deps) CreateKanbanCard(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Přidat author info
+	// Add author info
 	card.Author = &models.User{
 		ID:       user.ID,
 		Username: user.Username,
@@ -510,7 +510,7 @@ func (d *Deps) DeleteKanbanCard(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Creator karty nebo admin
+	// Card creator or admin
 	if card.CreatedBy != user.ID {
 		if err := d.requirePermission(user, models.PermManageChannels); err != nil {
 			util.Error(w, http.StatusForbidden, "only creator or admin can delete card")

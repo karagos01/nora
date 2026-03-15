@@ -9,7 +9,7 @@ type ShareQueries struct {
 	DB *sql.DB
 }
 
-// --- Sdílené adresáře ---
+// --- Shared directories ---
 
 func (q *ShareQueries) CreateDirectory(d *models.SharedDirectory) error {
 	_, err := q.DB.Exec(
@@ -81,7 +81,7 @@ func (q *ShareQueries) SetAllActive(ownerID string) error {
 	return err
 }
 
-// ListByOwner — adresáře vlastněné uživatelem
+// ListByOwner — directories owned by the user
 func (q *ShareQueries) ListByOwner(ownerID string) ([]models.SharedDirectory, error) {
 	rows, err := q.DB.Query(
 		`SELECT sd.id, sd.owner_id, sd.path_hash, sd.display_name, sd.is_active,
@@ -112,7 +112,7 @@ func (q *ShareQueries) ListByOwner(ownerID string) ([]models.SharedDirectory, er
 	return dirs, rows.Err()
 }
 
-// ListAccessible — adresáře kde má uživatel přístup (globální read NEBO per-uživatel read, ne blokovaný)
+// ListAccessible — directories where the user has access (global read OR per-user read, not blocked)
 func (q *ShareQueries) ListAccessible(userID string) ([]models.SharedDirectory, error) {
 	rows, err := q.DB.Query(
 		`SELECT DISTINCT sd.id, sd.owner_id, sd.path_hash, sd.display_name, sd.is_active,
@@ -124,10 +124,10 @@ func (q *ShareQueries) ListAccessible(userID string) ([]models.SharedDirectory, 
 		 LEFT JOIN share_permissions sp_user ON sp_user.directory_id = sd.id AND sp_user.grantee_id = ?
 		 WHERE sd.owner_id != ?
 		   AND (
-		     -- Per-uživatel přepis existuje a není blokovaný a má read
+		     -- Per-user override exists and is not blocked and has read
 		     (sp_user.id IS NOT NULL AND sp_user.is_blocked = 0 AND sp_user.can_read = 1)
 		     OR
-		     -- Globální read a neexistuje per-uživatel blokace
+		     -- Global read and no per-user block exists
 		     (sp_global.id IS NOT NULL AND sp_global.can_read = 1
 		      AND (sp_user.id IS NULL OR (sp_user.is_blocked = 0 AND sp_user.can_read = 1))
 		     )
@@ -154,7 +154,7 @@ func (q *ShareQueries) ListAccessible(userID string) ([]models.SharedDirectory, 
 	return dirs, rows.Err()
 }
 
-// --- Oprávnění ---
+// --- Permissions ---
 
 func (q *ShareQueries) SetPermission(p *models.SharePermission) error {
 	_, err := q.DB.Exec(
@@ -223,9 +223,9 @@ func (q *ShareQueries) ListPermissions(directoryID string) ([]models.SharePermis
 	return perms, rows.Err()
 }
 
-// GetEffectivePermission — vrátí efektivní oprávnění pro uživatele (per-uživatel přepisuje globální)
+// GetEffectivePermission — returns effective permission for a user (per-user overrides global)
 func (q *ShareQueries) GetEffectivePermission(directoryID, userID string) (*models.SharePermission, error) {
-	// Zkusit per-uživatel
+	// Try per-user
 	p := &models.SharePermission{}
 	var canRead, canWrite, canDelete, isBlocked int
 	err := q.DB.QueryRow(
@@ -241,7 +241,7 @@ func (q *ShareQueries) GetEffectivePermission(directoryID, userID string) (*mode
 		return p, nil
 	}
 
-	// Fallback na globální
+	// Fallback to global
 	err = q.DB.QueryRow(
 		`SELECT id, directory_id, grantee_id, can_read, can_write, can_delete, is_blocked, granted_at
 		 FROM share_permissions WHERE directory_id = ? AND grantee_id IS NULL`,
@@ -257,7 +257,7 @@ func (q *ShareQueries) GetEffectivePermission(directoryID, userID string) (*mode
 	return p, nil
 }
 
-// GetShareStats — vrátí celkovou velikost a počet souborů v share (bez adresářů)
+// GetShareStats — returns total size and file count in a share (excluding directories)
 func (q *ShareQueries) GetShareStats(directoryID string) (totalSize int64, filesCount int, err error) {
 	err = q.DB.QueryRow(
 		`SELECT COALESCE(SUM(file_size), 0), COUNT(*)

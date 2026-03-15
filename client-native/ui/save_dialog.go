@@ -28,7 +28,7 @@ type dirEntry struct {
 	size  int64
 }
 
-// SaveDialog je vlastní Gio save-file dialog s procházením souborů.
+// SaveDialog is a custom Gio save-file dialog with file browsing.
 type SaveDialog struct {
 	app     *App
 	Visible bool
@@ -43,10 +43,10 @@ type SaveDialog struct {
 
 	// Editable path + autocomplete
 	pathEditor   widget.Editor
-	pathHints    []string // plné cesty
+	pathHints    []string // full paths
 	pathHintBtns [maxPathHints]widget.Clickable
-	selectedHint int  // -1 = žádný
-	showHints    bool // zobrazit dropdown
+	selectedHint int  // -1 = none
+	showHints    bool // show dropdown
 	lastPathText string
 
 	filenameEditor widget.Editor
@@ -79,10 +79,10 @@ func (d *SaveDialog) Show(defaultName string, onSave func(string)) {
 	d.onSave = onSave
 	d.needsFocus = true
 
-	// Načíst historii adresářů
+	// Load directory history
 	d.recentDirs = loadRecentDirs()
 
-	// Výchozí adresář: poslední použitý, nebo ~/Downloads, nebo ~
+	// Default directory: last used, or ~/Downloads, or ~
 	home, _ := os.UserHomeDir()
 	if len(d.recentDirs) > 0 {
 		if info, err := os.Stat(d.recentDirs[0]); err == nil && info.IsDir() {
@@ -172,7 +172,7 @@ func (d *SaveDialog) doSave() {
 	}
 	fullPath := filepath.Join(d.currentDir, name)
 
-	// Soubor už existuje → potvrdit přepsání
+	// File already exists — confirm overwrite
 	if _, err := os.Stat(fullPath); err == nil {
 		saveFn := d.onSave
 		dir := d.currentDir
@@ -198,7 +198,7 @@ func (d *SaveDialog) doSave() {
 	fn(fullPath)
 }
 
-// expandPath nahradí ~ za home adresář.
+// expandPath replaces ~ with the home directory.
 func expandPath(text string) string {
 	if strings.HasPrefix(text, "~/") {
 		home, _ := os.UserHomeDir()
@@ -211,7 +211,7 @@ func expandPath(text string) string {
 	return text
 }
 
-// computePathHints spočítá autocomplete návrhy pro aktuální text v path editoru.
+// computePathHints computes autocomplete suggestions for the current text in the path editor.
 func (d *SaveDialog) computePathHints() {
 	text := strings.TrimSpace(d.pathEditor.Text())
 	text = expandPath(text)
@@ -219,7 +219,7 @@ func (d *SaveDialog) computePathHints() {
 	d.pathHints = nil
 	d.selectedHint = -1
 
-	// Pokud text končí na "/" a je to existující adresář → zobrazit podsložky
+	// If text ends with "/" and it's an existing directory — show subdirectories
 	if strings.HasSuffix(text, "/") || strings.HasSuffix(text, string(os.PathSeparator)) {
 		text = strings.TrimRight(text, "/"+string(os.PathSeparator))
 		if info, err := os.Stat(text); err == nil && info.IsDir() {
@@ -229,7 +229,7 @@ func (d *SaveDialog) computePathHints() {
 		return
 	}
 
-	// Jinak: parent + partial match
+	// Otherwise: parent + partial match
 	parent := filepath.Dir(text)
 	partial := filepath.Base(text)
 	if info, err := os.Stat(parent); err == nil && info.IsDir() {
@@ -238,7 +238,7 @@ func (d *SaveDialog) computePathHints() {
 	d.showHints = len(d.pathHints) > 0
 }
 
-// listSubdirs naplní pathHints podsložkami parent matchujícími prefix.
+// listSubdirs populates pathHints with subdirectories of parent matching the prefix.
 func (d *SaveDialog) listSubdirs(parent, prefix string) {
 	entries, err := os.ReadDir(parent)
 	if err != nil {
@@ -258,10 +258,10 @@ func (d *SaveDialog) listSubdirs(parent, prefix string) {
 	}
 }
 
-// applyHint naviguje do vybraného hintu a aktualizuje editor.
+// applyHint navigates to the selected hint and updates the editor.
 func (d *SaveDialog) applyHint(path string) {
 	d.navigateTo(path)
-	// Přidat "/" na konec pro další completování
+	// Append "/" for further completion
 	d.pathEditor.SetText(path + "/")
 	d.lastPathText = path + "/"
 	text := d.pathEditor.Text()
@@ -274,13 +274,13 @@ func (d *SaveDialog) Layout(gtx layout.Context) layout.Dimensions {
 		return layout.Dimensions{}
 	}
 
-	// Focus na filename editor při otevření
+	// Focus the filename editor on open
 	if d.needsFocus {
 		d.needsFocus = false
 		gtx.Execute(key.FocusCmd{Tag: &d.filenameEditor})
 	}
 
-	// Detekce změny textu v path editoru → přepočítat hinty
+	// Detect text change in path editor — recompute hints
 	currentPathText := d.pathEditor.Text()
 	if currentPathText != d.lastPathText {
 		d.lastPathText = currentPathText
@@ -318,7 +318,7 @@ func (d *SaveDialog) Layout(gtx layout.Context) layout.Dimensions {
 		}
 	}
 
-	// Arrow keys + Tab + Escape pro path editor hinty
+	// Arrow keys + Tab + Escape for path editor hints
 	for {
 		ev, ok := gtx.Event(
 			key.Filter{Focus: &d.pathEditor, Name: key.NameDownArrow},
@@ -666,7 +666,7 @@ func (d *SaveDialog) layoutPathHints(gtx layout.Context) layout.Dimensions {
 					idx := i
 					hintPath := hint
 
-					// Zobrazit zkráceně
+					// Display shortened
 					display := hintPath
 					if strings.HasPrefix(display, home) {
 						display = "~" + display[len(home):]
@@ -810,47 +810,16 @@ func (d *SaveDialog) layoutFilenameEditor(gtx layout.Context) layout.Dimensions 
 func (d *SaveDialog) layoutButtons(gtx layout.Context) layout.Dimensions {
 	return layout.Flex{Spacing: layout.SpaceStart, Alignment: layout.Middle}.Layout(gtx,
 		layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-			return d.layoutBtn(gtx, &d.cancelBtn, "Cancel", ColorInput, ColorText)
+			return layoutDialogBtn(gtx, d.app.Theme, &d.cancelBtn, "Cancel", ColorInput, ColorText)
 		}),
 		layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 			return layout.Inset{Left: unit.Dp(8)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-				return d.layoutBtn(gtx, &d.saveBtn, "Save", ColorAccent, color.NRGBA{R: 255, G: 255, B: 255, A: 255})
+				return layoutDialogBtn(gtx, d.app.Theme, &d.saveBtn, "Save", ColorAccent, color.NRGBA{R: 255, G: 255, B: 255, A: 255})
 			})
 		}),
 	)
 }
 
-func (d *SaveDialog) layoutBtn(gtx layout.Context, btn *widget.Clickable, text string, bg, fg color.NRGBA) layout.Dimensions {
-	return btn.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-		hoverBg := bg
-		if btn.Hovered() {
-			hoverBg = color.NRGBA{
-				R: min8(bg.R + 20),
-				G: min8(bg.G + 20),
-				B: min8(bg.B + 20),
-				A: 255,
-			}
-		}
-		return layout.Background{}.Layout(gtx,
-			func(gtx layout.Context) layout.Dimensions {
-				bounds := image.Rect(0, 0, gtx.Constraints.Min.X, gtx.Constraints.Min.Y)
-				rr := gtx.Dp(6)
-				paint.FillShape(gtx.Ops, hoverBg, clip.RRect{
-					Rect: bounds,
-					NE:   rr, NW: rr, SE: rr, SW: rr,
-				}.Op(gtx.Ops))
-				return layout.Dimensions{Size: bounds.Max}
-			},
-			func(gtx layout.Context) layout.Dimensions {
-				return layout.Inset{Top: unit.Dp(8), Bottom: unit.Dp(8), Left: unit.Dp(16), Right: unit.Dp(16)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-					lbl := material.Body2(d.app.Theme.Material, text)
-					lbl.Color = fg
-					return lbl.Layout(gtx)
-				})
-			},
-		)
-	})
-}
 
 // --- Persistence: ~/.nora/save_dirs.json ---
 

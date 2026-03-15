@@ -360,7 +360,7 @@ func (v *SettingsView) layoutBlockedSection(gtx layout.Context, blocks []blockIn
 func (v *SettingsView) layoutNotificationsSection(gtx layout.Context) layout.Dimensions {
 	a := v.app
 
-	// Zpracovat kliky
+	// Handle clicks
 	if v.notifyAllBtn.Clicked(gtx) {
 		a.GlobalNotifyLevel = store.NotifyAll
 		go store.UpdateGlobalNotifyLevel(a.PublicKey, store.NotifyAll)
@@ -504,7 +504,7 @@ func (v *SettingsView) layoutNotificationsSection(gtx layout.Context) layout.Dim
 	return layout.Flex{Axis: layout.Vertical}.Layout(gtx, items...)
 }
 
-// layoutSoundRow renderuje řádek se zvukem (label, stav, upload, reset).
+// layoutSoundRow renders a sound row (label, state, upload, reset).
 func (v *SettingsView) layoutSoundRow(gtx layout.Context, label, customPath string, uploadBtn, resetBtn *widget.Clickable) layout.Dimensions {
 	return layout.Inset{Bottom: unit.Dp(6)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
 		return layout.Flex{Alignment: layout.Middle}.Layout(gtx,
@@ -618,7 +618,7 @@ func (v *SettingsView) layoutNotifyRadio(gtx layout.Context, btn *widget.Clickab
 func (v *SettingsView) layoutStorageSection(gtx layout.Context) layout.Dimensions {
 	a := v.app
 
-	// Auto-scan při prvním zobrazení
+	// Auto-scan on first display
 	if !v.storageScanned && !v.storageScanning {
 		v.storageScanning = true
 		go func() {
@@ -627,7 +627,7 @@ func (v *SettingsView) layoutStorageSection(gtx layout.Context) layout.Dimension
 			v.storageScanned = true
 			v.storageScanning = false
 
-			// Načíst uložená nastavení
+			// Load saved settings
 			maxCache, maxDays := store.GetStorageSettings(a.PublicKey)
 			if maxCache > 0 {
 				v.storageCacheSlider.Value = float32(maxCache) / float32(1<<30) // bytes → GB
@@ -640,12 +640,12 @@ func (v *SettingsView) layoutStorageSection(gtx layout.Context) layout.Dimension
 		}()
 	}
 
-	// Rescan klik
+	// Rescan click
 	if v.storageRescanBtn.Clicked(gtx) {
 		v.storageScanned = false
 	}
 
-	// Save klik
+	// Save click
 	if v.storageSaveBtn.Clicked(gtx) {
 		maxCache := int64(v.storageCacheSlider.Value * float32(1<<30))
 		maxDays := 0
@@ -657,7 +657,7 @@ func (v *SettingsView) layoutStorageSection(gtx layout.Context) layout.Dimension
 		go store.UpdateStorageSettings(a.PublicKey, maxCache, maxDays)
 	}
 
-	// Clear cache klik
+	// Clear cache click
 	if v.clearCacheBtn.Clicked(gtx) {
 		a.ConfirmDlg.ShowConfirm("Clear Cache", fmt.Sprintf("Delete all cached files (%s)?", FormatBytes(v.storageUsage.Cache)), func() {
 			go func() {
@@ -668,7 +668,7 @@ func (v *SettingsView) layoutStorageSection(gtx layout.Context) layout.Dimension
 		})
 	}
 
-	// Clear history klik
+	// Clear history click
 	if v.clearHistoryBtn.Clicked(gtx) {
 		a.ConfirmDlg.ShowConfirm("Clear Message History", "Delete all local DM and group message history?\nEncryption keys will be preserved.", func() {
 			go func() {
@@ -897,7 +897,7 @@ func (v *SettingsView) layoutStorageSection(gtx layout.Context) layout.Dimension
 func (v *SettingsView) layoutAppearanceSection(gtx layout.Context) layout.Dimensions {
 	a := v.app
 
-	// Zpracovat slider změnu
+	// Handle slider change
 	if v.fontScaleSlider.Changed() {
 		scale := v.fontScaleSlider.Value
 		a.Theme.ApplyFontScale(scale)
@@ -1120,7 +1120,7 @@ func (v *SettingsView) layoutPinboardItem(gtx layout.Context, idx int, bk store.
 			func(gtx layout.Context) layout.Dimensions {
 				return layout.Inset{Top: unit.Dp(8), Bottom: unit.Dp(8), Left: unit.Dp(10), Right: unit.Dp(10)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
 					return layout.Flex{Axis: layout.Vertical}.Layout(gtx,
-						// Řádek 1: #channel — autor — datum
+						// Row 1: #channel — author — date
 						layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 							return layout.Flex{Alignment: layout.Middle}.Layout(gtx,
 								layout.Rigid(func(gtx layout.Context) layout.Dimensions {
@@ -1144,7 +1144,7 @@ func (v *SettingsView) layoutPinboardItem(gtx layout.Context, idx int, bk store.
 								}),
 							)
 						}),
-						// Řádek 2: snippet obsahu
+						// Row 2: content snippet
 						layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 							content := bk.Content
 							if len(content) > 100 {
@@ -1157,7 +1157,7 @@ func (v *SettingsView) layoutPinboardItem(gtx layout.Context, idx int, bk store.
 								return lbl.Layout(gtx)
 							})
 						}),
-						// Řádek 3: note (pokud existuje)
+						// Row 3: note (if exists)
 						layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 							if bk.Note == "" {
 								return layout.Dimensions{}
@@ -1169,7 +1169,7 @@ func (v *SettingsView) layoutPinboardItem(gtx layout.Context, idx int, bk store.
 								return lbl.Layout(gtx)
 							})
 						}),
-						// Řádek 4: akce
+						// Row 4: actions
 						layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 							return layout.Inset{Top: unit.Dp(4)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
 								return layout.Flex{}.Layout(gtx,

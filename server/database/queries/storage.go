@@ -6,10 +6,10 @@ type StorageQueries struct {
 	DB *sql.DB
 }
 
-// TrimChannelHistory smaže zprávy nad keepCount v daném kanálu.
-// Vrátí filepaths příloh smazaných zpráv (pro smazání z disku).
+// TrimChannelHistory deletes messages exceeding keepCount in a given channel.
+// Returns filepaths of attachments from deleted messages (for disk cleanup).
 func (q *StorageQueries) TrimChannelHistory(channelID string, keepCount int) ([]string, error) {
-	// Najít filepaths příloh zpráv, které budou smazány (pinned zprávy přeskočit)
+	// Find filepaths of attachments for messages that will be deleted (skip pinned messages)
 	rows, err := q.DB.Query(
 		`SELECT a.filepath FROM attachments a
 		 JOIN messages m ON m.id = a.message_id
@@ -35,7 +35,7 @@ func (q *StorageQueries) TrimChannelHistory(channelID string, keepCount int) ([]
 		return nil, err
 	}
 
-	// Smazat zprávy (CASCADE smaže attachments z DB), pinned zprávy přeskočit
+	// Delete messages (CASCADE deletes attachments from DB), skip pinned messages
 	_, err = q.DB.Exec(
 		`DELETE FROM messages WHERE channel_id = ? AND is_pinned = 0 AND id NOT IN (
 			SELECT id FROM messages WHERE channel_id = ? ORDER BY created_at DESC LIMIT ?
@@ -45,8 +45,8 @@ func (q *StorageQueries) TrimChannelHistory(channelID string, keepCount int) ([]
 	return paths, err
 }
 
-// OldestAttachmentPaths vrátí filepaths nejstarších příloh (pro size-based cleanup).
-// Vrací páry (message_id, filepath) seřazené od nejstarší zprávy.
+// OldestAttachmentPaths returns filepaths of the oldest attachments (for size-based cleanup).
+// Returns pairs (message_id, filepath) sorted from oldest message.
 func (q *StorageQueries) OldestAttachmentPaths(limit int) ([]string, error) {
 	rows, err := q.DB.Query(
 		`SELECT a.filepath FROM attachments a
@@ -70,8 +70,8 @@ func (q *StorageQueries) OldestAttachmentPaths(limit int) ([]string, error) {
 	return paths, rows.Err()
 }
 
-// DeleteMessagesWithAttachments smaže zprávy jejichž přílohy odpovídají daným filepaths.
-// Vrací počet smazaných zpráv.
+// DeleteMessagesWithAttachments deletes messages whose attachments match the given filepaths.
+// Returns the number of deleted messages.
 func (q *StorageQueries) DeleteMessagesWithAttachments(filepaths []string) (int64, error) {
 	if len(filepaths) == 0 {
 		return 0, nil
@@ -95,7 +95,7 @@ func (q *StorageQueries) DeleteMessagesWithAttachments(filepaths []string) (int6
 	return res.RowsAffected()
 }
 
-// AllChannelIDs vrátí ID všech kanálů.
+// AllChannelIDs returns IDs of all channels.
 func (q *StorageQueries) AllChannelIDs() ([]string, error) {
 	rows, err := q.DB.Query(`SELECT id FROM channels`)
 	if err != nil {
@@ -114,7 +114,7 @@ func (q *StorageQueries) AllChannelIDs() ([]string, error) {
 	return ids, rows.Err()
 }
 
-// AttachmentsDiskUsage vrátí celkovou velikost všech příloh v DB (v bajtech).
+// AttachmentsDiskUsage returns the total size of all attachments in DB (in bytes).
 func (q *StorageQueries) AttachmentsDiskUsage() (int64, error) {
 	var total sql.NullInt64
 	err := q.DB.QueryRow(`SELECT COALESCE(SUM(size), 0) FROM attachments`).Scan(&total)
@@ -124,7 +124,7 @@ func (q *StorageQueries) AttachmentsDiskUsage() (int64, error) {
 	return 0, err
 }
 
-// TotalAttachmentCount vrátí počet příloh v DB.
+// TotalAttachmentCount returns the number of attachments in DB.
 func (q *StorageQueries) TotalAttachmentCount() (int, error) {
 	var count int
 	err := q.DB.QueryRow(`SELECT COUNT(*) FROM attachments`).Scan(&count)

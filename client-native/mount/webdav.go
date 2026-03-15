@@ -16,22 +16,22 @@ import (
 	"golang.org/x/net/webdav"
 )
 
-// WebDAVServer — lokální WebDAV server pro mapování jako síťový disk.
+// WebDAVServer — local WebDAV server for mapping as a network drive.
 type WebDAVServer struct {
 	server      *http.Server
 	listener    net.Listener
 	port        int
 	vfs         VirtualFS
-	DriveLetter string // Windows: mapované písmeno disku (např. "Z:")
+	DriveLetter string // Windows: mapped drive letter (e.g. "Z:")
 }
 
-// StartWebDAV spustí WebDAV server na localhost s automaticky přiřazeným portem.
+// StartWebDAV starts a WebDAV server on localhost with an automatically assigned port.
 func StartWebDAV(vfs VirtualFS) (*WebDAVServer, error) {
 	return startWebDAVListener(vfs, "127.0.0.1:0")
 }
 
-// StartWebDAVOnPort zkusí spustit WebDAV na konkrétním portu (reuse z předchozí session).
-// Pokud port není volný, fallback na random.
+// StartWebDAVOnPort tries to start WebDAV on a specific port (reuse from previous session).
+// If the port is busy, falls back to random.
 func StartWebDAVOnPort(vfs VirtualFS, port int) (*WebDAVServer, error) {
 	if port > 0 {
 		ws, err := startWebDAVListener(vfs, fmt.Sprintf("127.0.0.1:%d", port))
@@ -87,9 +87,9 @@ func startWebDAVListener(vfs VirtualFS, addr string) (*WebDAVServer, error) {
 	return ws, nil
 }
 
-// Stop zastaví WebDAV server a odpojí síťový disk.
+// Stop stops the WebDAV server and disconnects the network drive.
 func (w *WebDAVServer) Stop() error {
-	// Nejdřív odpojit drive letter (pokud namapovaný)
+	// First disconnect drive letter (if mapped)
 	if w.DriveLetter != "" {
 		unmapDrive(w.DriveLetter)
 		w.DriveLetter = ""
@@ -103,7 +103,7 @@ func (w *WebDAVServer) Stop() error {
 	return nil
 }
 
-// MapDrive namapuje WebDAV server jako síťový disk na Windows.
+// MapDrive maps the WebDAV server as a network drive on Windows.
 func (w *WebDAVServer) MapDrive() error {
 	letter, err := mapDrive(w.URL())
 	if err != nil {
@@ -114,7 +114,7 @@ func (w *WebDAVServer) MapDrive() error {
 	return nil
 }
 
-// MapDrivePreferred namapuje WebDAV server s preferovaným drive letterem.
+// MapDrivePreferred maps the WebDAV server with a preferred drive letter.
 func (w *WebDAVServer) MapDrivePreferred(preferred string) error {
 	letter, err := mapDrivePreferred(w.URL(), preferred)
 	if err != nil {
@@ -125,17 +125,17 @@ func (w *WebDAVServer) MapDrivePreferred(preferred string) error {
 	return nil
 }
 
-// Port vrátí port na kterém WebDAV server poslouchá.
+// Port returns the port the WebDAV server is listening on.
 func (w *WebDAVServer) Port() int {
 	return w.port
 }
 
-// URL vrátí URL WebDAV serveru.
+// URL returns the URL of the WebDAV server.
 func (w *WebDAVServer) URL() string {
 	return fmt.Sprintf("http://127.0.0.1:%d/", w.port)
 }
 
-// --- WebDAV FileSystem implementace ---
+// --- WebDAV FileSystem implementation ---
 
 type webdavFS struct {
 	vfs VirtualFS
@@ -158,7 +158,7 @@ func (wfs *webdavFS) RemoveAll(ctx context.Context, name string) error {
 	name = normalizePath(name)
 	parent, fileName := splitPath(name)
 	if fileName == "" {
-		return os.ErrPermission // nelze smazat root
+		return os.ErrPermission // cannot delete root
 	}
 	if err := wfs.vfs.DeleteFile(parent, fileName); err != nil {
 		log.Printf("WebDAV RemoveAll %s: %v", name, err)
@@ -179,7 +179,7 @@ func (wfs *webdavFS) OpenFile(ctx context.Context, name string, flag int, perm o
 		if !wfs.vfs.CanWrite() {
 			return nil, os.ErrPermission
 		}
-		// Write mode — staging temp soubor
+		// Write mode — staging temp file
 		staging := StagingDir()
 		if err := os.MkdirAll(staging, 0700); err != nil {
 			return nil, err
@@ -302,8 +302,8 @@ func (f *webdavFile) Readdir(count int) ([]os.FileInfo, error) {
 	return nil, os.ErrInvalid
 }
 
-// ContentType implementuje webdav.ContentTyper na File.
-// Bez toho webdav handler volá Read() pro content sniffing → triggeruje download.
+// ContentType implements webdav.ContentTyper on File.
+// Without this, webdav handler calls Read() for content sniffing → triggers download.
 func (f *webdavFile) ContentType(ctx context.Context) (string, error) {
 	ext := path.Ext(f.entry.Name)
 	ct := mime.TypeByExtension(ext)
@@ -313,7 +313,7 @@ func (f *webdavFile) ContentType(ctx context.Context) (string, error) {
 	return ct, nil
 }
 
-// ETag implementuje webdav.ETager na File.
+// ETag implements webdav.ETager on File.
 func (f *webdavFile) ETag(ctx context.Context) (string, error) {
 	return fmt.Sprintf(`"%x-%x"`, f.entry.Size, f.entry.ModifiedAt.UnixNano()), nil
 }
@@ -382,7 +382,7 @@ func (fi *writeFileInfo) ModTime() time.Time  { return time.Now() }
 func (fi *writeFileInfo) IsDir() bool         { return false }
 func (fi *writeFileInfo) Sys() interface{}    { return nil }
 
-// --- os.FileInfo implementace ---
+// --- os.FileInfo implementation ---
 
 type fsEntryInfo struct {
 	entry    *FSEntry
@@ -421,9 +421,9 @@ func (fi *fsEntryInfo) IsDir() bool { return fi.entry.IsDir }
 
 func (fi *fsEntryInfo) Sys() interface{} { return nil }
 
-// ContentType implementuje webdav.ContentTyper na os.FileInfo.
-// Bez toho webdav handler volá Read() na soubor pro content sniffing,
-// což triggeruje download při pouhém PROPFIND.
+// ContentType implements webdav.ContentTyper on os.FileInfo.
+// Without this, webdav handler calls Read() on the file for content sniffing,
+// which triggers download on a mere PROPFIND.
 func (fi *fsEntryInfo) ContentType(ctx context.Context) (string, error) {
 	if fi.entry.IsDir {
 		return "", webdav.ErrNotImplemented

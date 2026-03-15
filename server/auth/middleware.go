@@ -17,7 +17,7 @@ type ContextUser struct {
 	IsOwner  bool
 }
 
-// BanChecker kontroluje zda je uživatel zabanovaný
+// BanChecker checks whether the user is banned
 type BanChecker func(userID string) bool
 
 func Middleware(jwtSvc *JWTService, isBanned BanChecker) func(http.Handler) http.Handler {

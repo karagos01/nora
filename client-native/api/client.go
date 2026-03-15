@@ -20,7 +20,7 @@ type Client struct {
 	BaseURL        string
 	AccessToken    string
 	RefreshToken   string
-	OnTokenRefresh func(access, refresh string) // callback po auto-refresh
+	OnTokenRefresh func(access, refresh string) // callback after auto-refresh
 	http           *http.Client
 	mu             sync.RWMutex
 	refreshMu      sync.Mutex
@@ -59,8 +59,8 @@ func (c *Client) GetRefreshToken() string {
 	return c.RefreshToken
 }
 
-// tryRefresh zkusí obnovit access token pomocí refresh tokenu.
-// Vrátí true pokud se podařilo.
+// tryRefresh attempts to refresh the access token using the refresh token.
+// Returns true if successful.
 func (c *Client) tryRefresh() bool {
 	c.refreshMu.Lock()
 	defer c.refreshMu.Unlock()
@@ -136,7 +136,7 @@ func (c *Client) doJSON(method, path string, body any, result any) error {
 
 		resp, err := c.http.Do(req)
 		if err != nil {
-			return fmt.Errorf("HTTP chyba: %w", err)
+			return fmt.Errorf("HTTP error: %w", err)
 		}
 
 		respBody, err := io.ReadAll(resp.Body)
@@ -145,7 +145,7 @@ func (c *Client) doJSON(method, path string, body any, result any) error {
 			return err
 		}
 
-		// Auto-refresh při 401 (ne pro auth endpointy)
+		// Auto-refresh on 401 (not for auth endpoints)
 		if resp.StatusCode == 401 && attempt == 0 && !strings.HasPrefix(path, "/api/auth/") {
 			if c.tryRefresh() {
 				continue
@@ -164,8 +164,8 @@ func (c *Client) doJSON(method, path string, body any, result any) error {
 	return fmt.Errorf("request failed after retry")
 }
 
-// doHTTP vykoná HTTP request s auto-refresh při 401.
-// buildReq musí vracet nový request při každém volání (body se spotřebuje).
+// doHTTP executes an HTTP request with auto-refresh on 401.
+// buildReq must return a new request on each call (body gets consumed).
 func (c *Client) doHTTP(buildReq func(token string) (*http.Request, error)) (int, []byte, error) {
 	for attempt := 0; attempt < 2; attempt++ {
 		token := c.GetAccessToken()
@@ -396,7 +396,7 @@ func (c *Client) GetMessageThread(messageID string) ([]Message, error) {
 	return messages, err
 }
 
-// GetMessageEditHistory vrátí historii editací zprávy.
+// GetMessageEditHistory returns the edit history of a message.
 func (c *Client) GetMessageEditHistory(msgID string) ([]MessageEdit, error) {
 	var edits []MessageEdit
 	err := c.doJSON("GET", fmt.Sprintf("/api/messages/%s/history", msgID), nil, &edits)
@@ -629,7 +629,7 @@ func (c *Client) RelayGroupMessage(groupID, encryptedContent string) error {
 	return c.doJSON("POST", fmt.Sprintf("/api/groups/%s/messages", groupID), body, nil)
 }
 
-// GroupAttachmentPayload pro odesílání group zpráv s přílohami.
+// GroupAttachmentPayload for sending group messages with attachments.
 type GroupAttachmentPayload struct {
 	Filename string `json:"filename"`
 	URL      string `json:"url"`
@@ -758,7 +758,7 @@ func (c *Client) DeleteEmoji(id string) error {
 	return c.doJSON("DELETE", fmt.Sprintf("/api/emojis/%s", id), nil, nil)
 }
 
-// UploadResult je výsledek uploadu (odpovídá serveru).
+// UploadResult is the upload result (matches server response).
 type UploadResult struct {
 	Filename    string `json:"filename"`
 	Original    string `json:"original"`
@@ -768,7 +768,7 @@ type UploadResult struct {
 	ContentHash string `json:"content_hash"`
 }
 
-// InitChunkedUpload zahájí chunked upload session.
+// InitChunkedUpload initiates a chunked upload session.
 func (c *Client) InitChunkedUpload(filename string, size int64) (uploadID string, chunkSize int, err error) {
 	body := map[string]interface{}{"filename": filename, "size": size}
 	var resp struct {
@@ -779,7 +779,7 @@ func (c *Client) InitChunkedUpload(filename string, size int64) (uploadID string
 	return resp.UploadID, resp.ChunkSize, err
 }
 
-// UploadChunk pošle jeden chunk; vrátí nový offset a pokud hotovo, UploadResult.
+// UploadChunk sends a single chunk; returns new offset and, if completed, UploadResult.
 func (c *Client) UploadChunk(uploadID string, offset int64, data []byte) (newOffset int64, result *UploadResult, err error) {
 	status, respBody, err := c.doHTTP(func(token string) (*http.Request, error) {
 		req, err := http.NewRequest("PATCH", c.BaseURL+fmt.Sprintf("/api/upload/%s", uploadID), bytes.NewReader(data))
@@ -817,7 +817,7 @@ func (c *Client) UploadChunk(uploadID string, offset int64, data []byte) (newOff
 	return partial.Offset, nil, nil
 }
 
-// UploadFileChunked — high-level wrapper: init + loop chunků + progress callback.
+// UploadFileChunked — high-level wrapper: init + chunk loop + progress callback.
 func (c *Client) UploadFileChunked(filename string, data []byte, onProgress func(sent, total int64)) (*UploadResult, error) {
 	size := int64(len(data))
 
@@ -858,7 +858,7 @@ func (c *Client) UploadFileChunked(filename string, data []byte, onProgress func
 	return nil, fmt.Errorf("upload completed without final response")
 }
 
-// PollCreateRequest popisuje anketu pro odeslání se zprávou.
+// PollCreateRequest describes a poll to be sent with a message.
 type PollCreateRequest struct {
 	Question  string     `json:"question"`
 	PollType  string     `json:"poll_type"`
@@ -1066,7 +1066,7 @@ func (c *Client) GetVoiceState() (*VoiceStateResponse, error) {
 	return &resp, err
 }
 
-// VoiceMove přesune uživatele do jiného voice kanálu (vyžaduje PermKick)
+// VoiceMove moves a user to a different voice channel (requires PermKick)
 func (c *Client) VoiceMove(userID, channelID string) error {
 	return c.doJSON("POST", "/api/voice/move", map[string]string{
 		"user_id":    userID,
@@ -1332,7 +1332,7 @@ func (c *Client) UploadGameServerFile(id, filePath, filename string, data []byte
 	return nil
 }
 
-// DownloadGameServerFile stáhne soubor z game serveru do lokálního souboru.
+// DownloadGameServerFile downloads a file from the game server to a local file.
 func (c *Client) DownloadGameServerFile(gsID, filePath, savePath string) error {
 	endpoint := c.BaseURL + c.GameServerFileDownloadURL(gsID, filePath)
 	for attempt := 0; attempt < 2; attempt++ {
@@ -1392,7 +1392,7 @@ func (c *Client) SetGameServerAccess(id, mode string) error {
 	return c.doJSON("PUT", "/api/gameservers/"+id+"/access", map[string]string{"mode": mode}, nil)
 }
 
-// GameServerRCON vykoná RCON příkaz na běžícím game serveru (Source RCON protokol)
+// GameServerRCON executes an RCON command on a running game server (Source RCON protocol)
 func (c *Client) GameServerRCON(id, command string) (string, error) {
 	var resp struct {
 		Response string `json:"response"`
@@ -1609,7 +1609,7 @@ func (c *Client) DeleteKanbanCard(cardID string) error {
 	return c.doJSON("DELETE", fmt.Sprintf("/api/kanban/cards/%s", cardID), nil, nil)
 }
 
-// Device bany
+// Device bans
 
 func (c *Client) GetDeviceBans() ([]DeviceBan, error) {
 	var bans []DeviceBan
@@ -1635,7 +1635,7 @@ func (c *Client) GetInviteChain() ([]InviteChainNode, error) {
 	return nodes, err
 }
 
-// Karanténa
+// Quarantine
 
 func (c *Client) GetQuarantine() ([]QuarantineEntry, error) {
 	var entries []QuarantineEntry
@@ -1747,7 +1747,7 @@ func (c *Client) DeleteChannelPermission(channelID, targetType, targetID string)
 	return c.doJSON("DELETE", fmt.Sprintf("/api/channels/%s/permissions/%s/%s", channelID, targetType, targetID), nil, nil)
 }
 
-// BackupInfo vrátí informace o databázi serveru.
+// BackupInfo returns information about the server database.
 func (c *Client) BackupInfo() (*BackupInfo, error) {
 	var info BackupInfo
 	if err := c.doJSON("GET", "/api/admin/backup/info", nil, &info); err != nil {
@@ -1756,7 +1756,7 @@ func (c *Client) BackupInfo() (*BackupInfo, error) {
 	return &info, nil
 }
 
-// BackupDownload stáhne zálohu databáze a uloží na disk.
+// BackupDownload downloads a database backup and saves it to disk.
 func (c *Client) BackupDownload(savePath string) error {
 	req, err := http.NewRequest("GET", c.BaseURL+"/api/admin/backup", nil)
 	if err != nil {
@@ -1784,7 +1784,7 @@ func (c *Client) BackupDownload(savePath string) error {
 	return err
 }
 
-// RestoreDatabase nahraje .db soubor na server jako obnovu.
+// RestoreDatabase uploads a .db file to the server as a restore.
 func (c *Client) RestoreDatabase(filePath string) error {
 	f, err := os.Open(filePath)
 	if err != nil {

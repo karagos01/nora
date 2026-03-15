@@ -18,7 +18,7 @@ import (
 	"nora-client/api"
 )
 
-// CardEditDialog je overlay dialog pro editaci kanban karty.
+// CardEditDialog is an overlay dialog for editing a kanban card.
 type CardEditDialog struct {
 	app     *App
 	Visible bool
@@ -89,7 +89,7 @@ func (d *CardEditDialog) Open(card api.KanbanCard, board *api.KanbanBoard) {
 	d.moveExpanded = false
 	d.assignExpanded = false
 
-	// Najít color index
+	// Find color index
 	d.colorIdx = 0
 	for i, c := range cardColors {
 		if c.hex == card.Color {
@@ -98,7 +98,7 @@ func (d *CardEditDialog) Open(card api.KanbanCard, board *api.KanbanBoard) {
 		}
 	}
 
-	// Nastavit due date editor
+	// Set due date editor
 	if card.DueDate != nil {
 		d.dueDateEd.SetText(card.DueDate.Format("2006-01-02"))
 	} else {
@@ -166,10 +166,10 @@ func (d *CardEditDialog) Layout(gtx layout.Context) layout.Dimensions {
 		}
 	}
 
-	// Scrim (tmavé pozadí)
+	// Scrim (dark background)
 	paint.FillShape(gtx.Ops, color.NRGBA{A: 180}, clip.Rect{Max: gtx.Constraints.Max}.Op())
 
-	// Dialog box (centrovaný, 420px široký)
+	// Dialog box (centered, 420px wide)
 	return layout.Center.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
 		maxW := gtx.Dp(420)
 		if gtx.Constraints.Max.X < maxW {
@@ -348,7 +348,7 @@ func (d *CardEditDialog) layoutColorPicker(gtx layout.Context) layout.Dimensions
 						Rect: image.Rect(0, 0, sz, sz),
 						NE: rr, NW: rr, SE: rr, SW: rr,
 					}.Op(gtx.Ops))
-					// Checkmark pro vybranou barvu
+					// Checkmark for selected color
 					if i == d.colorIdx {
 						return layout.Stack{Alignment: layout.Center}.Layout(gtx,
 							layout.Stacked(func(gtx layout.Context) layout.Dimensions {
@@ -367,9 +367,9 @@ func (d *CardEditDialog) layoutColorPicker(gtx layout.Context) layout.Dimensions
 	return layout.Flex{Alignment: layout.Middle}.Layout(gtx, children...)
 }
 
-// layoutDueDateEditor vykreslí due date sekci — text input (YYYY-MM-DD) + preset tlačítka.
+// layoutDueDateEditor renders the due date section — text input (YYYY-MM-DD) + preset buttons.
 func (d *CardEditDialog) layoutDueDateEditor(gtx layout.Context) layout.Dimensions {
-	// Preset tlačítka — nastavení data
+	// Preset buttons — date setting
 	if d.dueTodayBtn.Clicked(gtx) {
 		d.dueDateEd.SetText(time.Now().Format("2006-01-02"))
 	}
@@ -400,7 +400,7 @@ func (d *CardEditDialog) layoutDueDateEditor(gtx layout.Context) layout.Dimensio
 				return ed.Layout(gtx)
 			})
 		}),
-		// Preset tlačítka
+		// Preset buttons
 		layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 			return layout.Inset{Top: unit.Dp(4)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
 				return layout.Flex{Alignment: layout.Middle}.Layout(gtx,
@@ -428,7 +428,7 @@ func (d *CardEditDialog) layoutDueDateEditor(gtx layout.Context) layout.Dimensio
 	)
 }
 
-// layoutDuePresetBtn vykreslí jedno preset tlačítko pro due date.
+// layoutDuePresetBtn renders a single preset button for due date.
 func (d *CardEditDialog) layoutDuePresetBtn(gtx layout.Context, btn *widget.Clickable, label string) layout.Dimensions {
 	return btn.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
 		rr := gtx.Dp(4)
@@ -460,7 +460,7 @@ func (d *CardEditDialog) layoutMoveDropdown(gtx layout.Context) layout.Dimension
 		return layout.Dimensions{}
 	}
 
-	// Zjistit aktuální sloupec
+	// Determine current column
 	currentCol := ""
 	for _, col := range d.Board.Columns {
 		if col.ID == d.Card.ColumnID {
@@ -697,12 +697,12 @@ func (d *CardEditDialog) save() {
 		updates["clear_assign"] = true
 	}
 
-	// Due date — parsovat z editoru nebo vymazat
+	// Due date — parse from editor or clear
 	dueTxt := strings.TrimSpace(d.dueDateEd.Text())
 	if dueTxt == "" {
 		updates["clear_due"] = true
 	} else {
-		// Poslat jako RFC3339 pro server (přidat T00:00:00Z)
+		// Send as RFC3339 for server (add T00:00:00Z)
 		if _, err := time.Parse("2006-01-02", dueTxt); err == nil {
 			updates["due_date"] = dueTxt + "T00:00:00Z"
 		}

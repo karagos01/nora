@@ -92,8 +92,8 @@ type SharesView struct {
 
 	// State
 	ActiveShareID string
-	BrowsePath    string // aktuální cesta v prohlíženém adresáři
-	ShowPerms     bool   // zobrazení permission editoru
+	BrowsePath    string // current path in browsed directory
+	ShowPerms     bool   // show permission editor
 	Files         []api.SharedFileEntry
 	Permissions   []api.SharePermission
 }
@@ -108,7 +108,7 @@ func NewSharesView(a *App) *SharesView {
 	return v
 }
 
-// LayoutSidebar — levý panel se seznamem sdílených adresářů
+// LayoutSidebar — left panel with the list of shared directories
 func (v *SharesView) LayoutSidebar(gtx layout.Context) layout.Dimensions {
 	paint.FillShape(gtx.Ops, ColorCard, clip.Rect{Max: gtx.Constraints.Max}.Op())
 
@@ -122,7 +122,7 @@ func (v *SharesView) LayoutSidebar(gtx layout.Context) layout.Dimensions {
 	sharedWithMe := conn.SharedWithMe
 	v.app.mu.RUnlock()
 
-	// P2P registrované soubory
+	// P2P registered files
 	var p2pFiles []p2p.RegisteredFile
 	if conn.P2P != nil {
 		p2pFiles = conn.P2P.GetRegisteredFiles()
@@ -351,7 +351,7 @@ func (v *SharesView) LayoutSidebar(gtx layout.Context) layout.Dimensions {
 	return layout.Flex{Axis: layout.Vertical}.Layout(gtx, children...)
 }
 
-// LayoutMain — hlavní oblast s prohlížením souborů
+// LayoutMain — main area with file browsing
 func (v *SharesView) LayoutMain(gtx layout.Context) layout.Dimensions {
 	paint.FillShape(gtx.Ops, ColorBg, clip.Rect{Max: gtx.Constraints.Max}.Op())
 
@@ -364,7 +364,7 @@ func (v *SharesView) LayoutMain(gtx layout.Context) layout.Dimensions {
 		return layoutCentered(gtx, v.app.Theme, "Select a shared folder from the left panel", ColorTextDim)
 	}
 
-	// Najít aktivní share
+	// Find active share
 	v.app.mu.RLock()
 	var activeShare *api.SharedDirectory
 	for i := range conn.MyShares {
@@ -471,7 +471,7 @@ func (v *SharesView) LayoutMain(gtx layout.Context) layout.Dimensions {
 	for i, f := range v.Files {
 		if i < len(v.fileBtns) && v.fileBtns[i].Clicked(gtx) {
 			if f.IsDir {
-				// Validace: přeskočit nebezpečné názvy
+				// Validation: skip dangerous names
 				if strings.Contains(f.FileName, "..") || strings.ContainsAny(f.FileName, "/\\") {
 					continue
 				}
@@ -524,7 +524,7 @@ func (v *SharesView) LayoutMain(gtx layout.Context) layout.Dimensions {
 				)
 			})
 		}),
-		// File list nebo Permission editor nebo Limits editor
+		// File list or Permission editor or Limits editor
 		layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
 			if v.ShowLimits {
 				return v.layoutLimits(gtx, activeShare)
@@ -544,7 +544,7 @@ func (v *SharesView) layoutHeader(gtx layout.Context, share *api.SharedDirectory
 			layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 				return layoutIcon(gtx, IconFolder, 24, ColorAccent)
 			}),
-			// Název
+			// Name
 			layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
 				return layout.Inset{Left: unit.Dp(8)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
 					return layout.Flex{Axis: layout.Vertical}.Layout(gtx,
@@ -588,7 +588,7 @@ func (v *SharesView) layoutHeader(gtx layout.Context, share *api.SharedDirectory
 					)
 				})
 			}),
-			// Set Path (owner — lokální cesta chybí)
+			// Set Path (owner — local path missing)
 			layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 				if !isOwner {
 					return layout.Dimensions{}
@@ -610,7 +610,7 @@ func (v *SharesView) layoutHeader(gtx layout.Context, share *api.SharedDirectory
 					})
 				})
 			}),
-			// Limits (jen pro ownera)
+			// Limits (owner only)
 			layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 				if !isOwner {
 					return layout.Dimensions{}
@@ -625,7 +625,7 @@ func (v *SharesView) layoutHeader(gtx layout.Context, share *api.SharedDirectory
 					})
 				})
 			}),
-			// Permissions (jen pro ownera)
+			// Permissions (owner only)
 			layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 				if !isOwner {
 					return layout.Dimensions{}
@@ -648,7 +648,7 @@ func (v *SharesView) layoutHeader(gtx layout.Context, share *api.SharedDirectory
 					})
 				})
 			}),
-			// Delete (jen pro ownera)
+			// Delete (owner only)
 			layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 				if !isOwner {
 					return layout.Dimensions{}
@@ -845,7 +845,7 @@ func (v *SharesView) loadPermissions() {
 		}
 		v.app.mu.Lock()
 		v.Permissions = perms
-		// Najít globální nastavení a nastavit checkboxy
+		// Find global settings and set checkboxes
 		for _, p := range perms {
 			if p.GranteeID == nil {
 				v.globalReadCheck.Value = p.CanRead
@@ -893,7 +893,7 @@ func (v *SharesView) layoutPermissions(gtx layout.Context) layout.Dimensions {
 		if i < len(v.Permissions) && v.permDelBtns[i].Clicked(gtx) {
 			perm := v.Permissions[i]
 			if perm.GranteeID == nil {
-				continue // nedovolit smazat globální
+				continue // don't allow deleting global
 			}
 			permID := perm.ID
 			shareID := v.ActiveShareID
@@ -910,7 +910,7 @@ func (v *SharesView) layoutPermissions(gtx layout.Context) layout.Dimensions {
 		}
 	}
 
-	// Add permission pro člena serveru (member picker click handlery)
+	// Add permission for a server member (member picker click handlers)
 	// Handled v layoutAddMembersSection
 
 	// Write implikuje Read (per-user)
@@ -944,7 +944,7 @@ func (v *SharesView) layoutPermissions(gtx layout.Context) layout.Dimensions {
 		v.editPermIdx = -1
 	}
 
-	// Rozdělit permissions na globální a per-user
+	// Split permissions into global and per-user
 	var globalPerm *api.SharePermission
 	var userPerms []api.SharePermission
 	for i := range v.Permissions {
@@ -955,7 +955,7 @@ func (v *SharesView) layoutPermissions(gtx layout.Context) layout.Dimensions {
 		}
 	}
 
-	// Zajistit dostatek tlačítek
+	// Ensure enough buttons
 	if len(v.permEditBtns) < len(v.Permissions)+1 {
 		v.permEditBtns = make([]widget.Clickable, len(v.Permissions)+10)
 	}
@@ -979,7 +979,7 @@ func (v *SharesView) layoutPermissions(gtx layout.Context) layout.Dimensions {
 			items = append(items, permListItem{kind: "user_row", idx: i})
 		}
 	}
-	// Sestavit seznam členů bez per-user práv (pro member picker)
+	// Build a list of members without per-user permissions (for member picker)
 	hasPermSet := make(map[string]bool)
 	for _, p := range userPerms {
 		if p.GranteeID != nil {
@@ -1222,7 +1222,7 @@ func (v *SharesView) layoutEditPermRow(gtx layout.Context) layout.Dimensions {
 						}),
 					)
 				}),
-				// Save/Cancel/Delete tlačítka
+				// Save/Cancel/Delete buttons
 				layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 					return layout.Inset{Top: unit.Dp(6)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
 						return layout.Flex{Alignment: layout.Middle}.Layout(gtx,
@@ -1374,7 +1374,7 @@ func (v *SharesView) layoutFileItem(gtx layout.Context, clickable, downloadBtn *
 					}
 					return layoutIcon(gtx, icon, 20, clr)
 				}),
-				// Název
+				// Name
 				layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
 					return layout.Inset{Left: unit.Dp(8)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
 						lbl := material.Body2(v.app.Theme.Material, f.FileName)
@@ -1394,7 +1394,7 @@ func (v *SharesView) layoutFileItem(gtx layout.Context, clickable, downloadBtn *
 						return lbl.Layout(gtx)
 					})
 				}),
-				// Velikost (jen soubory)
+				// Size (files only)
 				layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 					if f.IsDir {
 						return layout.Dimensions{}
@@ -1405,7 +1405,7 @@ func (v *SharesView) layoutFileItem(gtx layout.Context, clickable, downloadBtn *
 						return lbl.Layout(gtx)
 					})
 				}),
-				// Swarm download button (jen pokud swarmEnabled a seeders > 0)
+				// Swarm download button (only if swarmEnabled and seeders > 0)
 				layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 					if f.IsDir || swarmBtn == nil || seedCount <= 0 {
 						return layout.Dimensions{}
@@ -1418,7 +1418,7 @@ func (v *SharesView) layoutFileItem(gtx layout.Context, clickable, downloadBtn *
 						})
 					})
 				}),
-				// Download button (jen soubory)
+				// Download button (files only)
 				layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 					if f.IsDir {
 						return layout.Dimensions{}
@@ -1474,7 +1474,7 @@ func (v *SharesView) layoutShareItem(gtx layout.Context, btn *widget.Clickable, 
 						return lbl.Layout(gtx)
 					})
 				}),
-				// Online indikátor
+				// Online indicator
 				layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 					sz := gtx.Dp(8)
 					clr := color.NRGBA{R: 100, G: 100, B: 100, A: 255}
@@ -1505,7 +1505,7 @@ func (v *SharesView) layoutShareItemWithMount(gtx layout.Context, btn *widget.Cl
 
 		return layout.Inset{Top: unit.Dp(4), Bottom: unit.Dp(4), Left: unit.Dp(12), Right: unit.Dp(8)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
 			return layout.Flex{Axis: layout.Vertical}.Layout(gtx,
-				// Hlavní řádek (klikatelný)
+				// Main row (clickable)
 				layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 					return btn.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
 						return layout.Flex{Alignment: layout.Middle}.Layout(gtx,
@@ -1548,7 +1548,7 @@ func (v *SharesView) layoutShareItemWithMount(gtx layout.Context, btn *widget.Cl
 						)
 					})
 				}),
-				// Mount/Unmount tlačítko
+				// Mount/Unmount button
 				layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 					return layout.Inset{Left: unit.Dp(26), Top: unit.Dp(2)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
 						if mounted && unmountBtn != nil {
@@ -1671,7 +1671,7 @@ func (v *SharesView) loadFiles() {
 
 func (v *SharesView) addShare() {
 	go func() {
-		// Otevřít native dialog pro výběr adresáře
+		// Open native dialog for directory selection
 		dir, err := pickDirectory()
 		if err != nil || dir == "" {
 			return
@@ -1682,10 +1682,10 @@ func (v *SharesView) addShare() {
 			return
 		}
 
-		// Hash cesty (server nezná skutečnou cestu)
+		// Hash the path (server does not know the actual path)
 		hash := fmt.Sprintf("%x", sha256.Sum256([]byte(dir)))
 
-		// Zobrazovaný název = poslední komponenta cesty
+		// Display name = last path component
 		name := filepath.Base(dir)
 		if name == "." || name == "/" {
 			name = "Shared Folder"
@@ -1742,7 +1742,7 @@ func (v *SharesView) syncShareFiles(shareID, localPath string) {
 			return nil // skip errors
 		}
 
-		// Přeskočit symlinky (bezpečnost — nechceme servírovat /etc/shadow atd.)
+		// Skip symlinks (security — we do not want to serve /etc/shadow etc.)
 		if info.Mode()&os.ModeSymlink != 0 {
 			return nil
 		}
@@ -1752,7 +1752,7 @@ func (v *SharesView) syncShareFiles(shareID, localPath string) {
 			return nil
 		}
 
-		// Path traversal ochrana
+		// Path traversal protection
 		if strings.Contains(rel, "..") {
 			return nil
 		}
@@ -1828,7 +1828,7 @@ func (v *SharesView) requestDownload(f api.SharedFileEntry) {
 			return
 		}
 
-		// Najít ownerID
+		// Find ownerID
 		v.app.mu.RLock()
 		var ownerID string
 		for _, s := range conn.MyShares {
@@ -1857,7 +1857,7 @@ func (v *SharesView) requestDownload(f api.SharedFileEntry) {
 			return
 		}
 
-		// Připravit save path do cache
+		// Prepare save path to cache
 		cache := mount.NewCache()
 		if err := cache.EnsureDir(conn.URL, shareID, browsePath); err != nil {
 			log.Printf("EnsureDir error: %v", err)
@@ -1867,10 +1867,10 @@ func (v *SharesView) requestDownload(f api.SharedFileEntry) {
 
 		log.Printf("Download: transfer_id=%s, owner=%s, save=%s", transferID, ownerID, savePath)
 
-		// Drobná prodleva — owner musí zpracovat transfer.request a registrovat soubor
+		// Small delay — owner must process transfer.request and register the file
 		time.Sleep(500 * time.Millisecond)
 
-		// Zahájit P2P download (pošle file.request ownerovi)
+		// Start P2P download (sends file.request to owner)
 		if conn.P2P != nil && ownerID != "" {
 			conn.P2P.RequestDownload(ownerID, transferID, savePath)
 		}
@@ -1881,7 +1881,7 @@ func (v *SharesView) requestSwarmDownload(f api.SharedFileEntry) {
 	shareID := v.ActiveShareID
 	browsePath := v.BrowsePath
 
-	// C21 fix: kontrola prázdného shareID
+	// C21 fix: check for empty shareID
 	if shareID == "" {
 		return
 	}
@@ -1903,7 +1903,7 @@ func (v *SharesView) requestSwarmDownload(f api.SharedFileEntry) {
 			return
 		}
 
-		// Připravit save path do cache
+		// Prepare save path to cache
 		cache := mount.NewCache()
 		if err := cache.EnsureDir(conn.URL, shareID, browsePath); err != nil {
 			log.Printf("EnsureDir error: %v", err)
@@ -1911,7 +1911,7 @@ func (v *SharesView) requestSwarmDownload(f api.SharedFileEntry) {
 		}
 		savePath := cache.FilePath(conn.URL, shareID, browsePath, f.FileName)
 
-		// C13 fix: path traversal ochrana — savePath musí být uvnitř cache dir
+		// C13 fix: path traversal protection — savePath must be inside cache dir
 		cacheBase := cache.Dir()
 		cleanSave := filepath.Clean(savePath)
 		cleanBase := filepath.Clean(cacheBase)
@@ -1942,7 +1942,7 @@ func (v *SharesView) requestSwarmDownload(f api.SharedFileEntry) {
 			return
 		}
 
-		// C6 fix: po dokončení zaregistrovat se jako seeder; max 5min timeout
+		// C6 fix: after completion register as seeder; max 5min timeout
 		transferID := resp.TransferID
 		go func() {
 			for i := 0; i < 150; i++ { // max 5 minut (150 × 2s)
@@ -1988,7 +1988,7 @@ func (v *SharesView) loadSwarmCounts() {
 	}()
 }
 
-// persistSharePaths uloží SharePaths do identities.json
+// persistSharePaths saves SharePaths to identities.json
 func (v *SharesView) persistSharePaths() {
 	conn := v.app.Conn()
 	if conn == nil {
@@ -2001,7 +2001,7 @@ func (v *SharesView) persistSharePaths() {
 	store.UpdateSharePaths(v.app.PublicKey, conn.URL, paths)
 }
 
-// persistMountedShares uloží aktuálně mountnuté shares do identities.json
+// persistMountedShares saves currently mounted shares to identities.json
 func (v *SharesView) persistMountedShares(conn *ServerConnection) {
 	if conn == nil || conn.Mounts == nil {
 		return

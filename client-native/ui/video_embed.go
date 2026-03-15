@@ -8,6 +8,7 @@ import (
 	"sync"
 
 	"gioui.org/f32"
+	"gioui.org/io/pointer"
 	"gioui.org/layout"
 	"gioui.org/op"
 	"gioui.org/op/clip"
@@ -20,12 +21,12 @@ import (
 	"nora-client/video"
 )
 
-// isVideoMIME vrátí true pro video/* MIME typy.
+// isVideoMIME returns true for video/* MIME types.
 func isVideoMIME(mime string) bool {
 	return strings.HasPrefix(mime, "video/")
 }
 
-// videoThumbnailCache drží generované thumbnaily (NRGBA frames z ffmpeg).
+// videoThumbnailCache holds generated thumbnails (NRGBA frames from ffmpeg).
 var videoThumbnailCache struct {
 	mu      sync.RWMutex
 	thumbs  map[string]*videoThumb
@@ -43,7 +44,7 @@ func init() {
 	videoThumbnailCache.pending = make(map[string]bool)
 }
 
-// getVideoThumbnail vrátí thumbnail pro video URL, nebo nil pokud ještě není ready.
+// getVideoThumbnail returns a thumbnail for the video URL, or nil if not yet ready.
 func getVideoThumbnail(url string, invalidate func()) *videoThumb {
 	videoThumbnailCache.mu.RLock()
 	if t, ok := videoThumbnailCache.thumbs[url]; ok {
@@ -86,7 +87,7 @@ func getVideoThumbnail(url string, invalidate func()) *videoThumb {
 	return nil
 }
 
-// layoutVideoPreview renderuje video thumbnail s play ikonou overlay.
+// layoutVideoPreview renders a video thumbnail with a play icon overlay.
 func (v *MessageView) layoutVideoPreview(gtx layout.Context, msgIdx, attIdx int, att api.Attachment, serverURL string) layout.Dimensions {
 	url := serverURL + att.URL
 	btn := &v.actions[msgIdx].attBtns[attIdx]
@@ -103,12 +104,15 @@ func (v *MessageView) layoutVideoPreview(gtx layout.Context, msgIdx, attIdx int,
 	}
 
 	if !thumb.ok {
-		// Thumbnail failed — zobrazit jako link
+		// Thumbnail failed — display as a link
 		return btn.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+			if btn.Hovered() {
+				pointer.CursorPointer.Add(gtx.Ops)
+			}
 			return layout.Inset{Top: unit.Dp(4)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
 				return layout.Flex{Alignment: layout.Middle}.Layout(gtx,
 					layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-						return layoutIcon(gtx, IconVideocam, 16, ColorAccent)
+						return layoutIcon(gtx, IconPlayArrow, 16, ColorAccent)
 					}),
 					layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 						return layout.Inset{Left: unit.Dp(4)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
@@ -122,7 +126,7 @@ func (v *MessageView) layoutVideoPreview(gtx layout.Context, msgIdx, attIdx int,
 		})
 	}
 
-	// Thumbnail s play overlay
+	// Thumbnail with play overlay
 	imgBounds := thumb.img.Bounds()
 	imgW := imgBounds.Dx()
 	imgH := imgBounds.Dy()
@@ -138,9 +142,12 @@ func (v *MessageView) layoutVideoPreview(gtx layout.Context, msgIdx, attIdx int,
 		imgH = maxH
 	}
 
-	return btn.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-		return layout.Flex{Axis: layout.Vertical}.Layout(gtx,
-			layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+	return layout.Flex{Axis: layout.Vertical}.Layout(gtx,
+		layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+			return btn.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+				if btn.Hovered() {
+					pointer.CursorPointer.Add(gtx.Ops)
+				}
 				origW := float32(thumb.img.Bounds().Dx())
 				origH := float32(thumb.img.Bounds().Dy())
 				scaleX := float32(imgW) / origW
@@ -159,46 +166,82 @@ func (v *MessageView) layoutVideoPreview(gtx layout.Context, msgIdx, attIdx int,
 					paint.PaintOp{}.Add(gtx.Ops)
 				}()
 
-				// Semi-transparentní overlay
+				// Semi-transparent overlay
 				paint.FillShape(gtx.Ops, color.NRGBA{A: 80}, clip.Rect{Max: image.Pt(imgW, imgH)}.Op())
 
-				// Play trojúhelník uprostřed
-				cx := imgW / 2
-				cy := imgH / 2
-				triR := gtx.Dp(20)
+				// Dark circle in center
+				cx := float32(imgW) / 2
+				cy := float32(imgH) / 2
+				circR := float32(gtx.Dp(28))
+				circRect := image.Rect(int(cx-circR), int(cy-circR), int(cx+circR), int(cy+circR))
+				paint.FillShape(gtx.Ops, color.NRGBA{A: 180}, clip.Ellipse{Min: circRect.Min, Max: circRect.Max}.Op(gtx.Ops))
 
-				// Tmavý kruh
-				circR := triR + gtx.Dp(8)
-				circRect := image.Rect(cx-circR, cy-circR, cx+circR, cy+circR)
-				paint.FillShape(gtx.Ops, color.NRGBA{A: 160}, clip.Ellipse{Min: circRect.Min, Max: circRect.Max}.Op(gtx.Ops))
-
-				// Play ikona
-				iconSize := unit.Dp(32)
-				sz := gtx.Dp(iconSize)
-				iconOff := op.Offset(image.Pt(cx-sz/2+gtx.Dp(2), cy-sz/2)).Push(gtx.Ops)
-				layoutIcon(gtx, IconPlayArrow, iconSize, color.NRGBA{R: 255, G: 255, B: 255, A: 230})
-				iconOff.Pop()
+				// Play triangle (drawn as path — more reliable than icon image)
+				triR := float32(gtx.Dp(14))
+				var p clip.Path
+				p.Begin(gtx.Ops)
+				p.MoveTo(f32.Pt(cx-triR*0.6, cy-triR))
+				p.LineTo(f32.Pt(cx+triR, cy))
+				p.LineTo(f32.Pt(cx-triR*0.6, cy+triR))
+				p.Close()
+				paint.FillShape(gtx.Ops, color.NRGBA{R: 255, G: 255, B: 255, A: 255},
+					clip.Outline{Path: p.End()}.Op())
 
 				return layout.Dimensions{Size: image.Pt(imgW, imgH)}
-			}),
-			layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-				lbl := material.Caption(v.app.Theme.Material, att.Filename+" ("+FormatBytes(att.Size)+")")
-				lbl.Color = ColorTextDim
-				return lbl.Layout(gtx)
-			}),
-		)
-	})
+			})
+		}),
+		// Filename + Save button row
+		layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+			return layout.Flex{Alignment: layout.Middle}.Layout(gtx,
+				layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+					lbl := material.Caption(v.app.Theme.Material, att.Filename+" ("+FormatBytes(att.Size)+")")
+					lbl.Color = ColorTextDim
+					return lbl.Layout(gtx)
+				}),
+				layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+					if attIdx >= len(v.actions[msgIdx].vidSaveBtns) {
+						return layout.Dimensions{}
+					}
+					saveBtn := &v.actions[msgIdx].vidSaveBtns[attIdx]
+					return layout.Inset{Left: unit.Dp(8)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+						return saveBtn.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+							if saveBtn.Hovered() {
+								pointer.CursorPointer.Add(gtx.Ops)
+							}
+							return layout.Flex{Alignment: layout.Middle}.Layout(gtx,
+								layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+									return layoutIcon(gtx, IconSave, 14, ColorAccent)
+								}),
+								layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+									return layout.Inset{Left: unit.Dp(3)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+										lbl := material.Caption(v.app.Theme.Material, "Save")
+										lbl.Color = ColorAccent
+										if saveBtn.Hovered() {
+											lbl.Color = ColorAccentHover
+										}
+										return lbl.Layout(gtx)
+									})
+								}),
+							)
+						})
+					})
+				}),
+			)
+		}),
+	)
 }
 
-// YouTubeEmbedState drží stav pro YouTube embed v rámci zprávy.
+// YouTubeEmbedState holds the state for a YouTube embed within a message.
 type YouTubeEmbedState struct {
-	btn     widget.Clickable
-	videoID string
-	loading bool
-	failed  bool
+	btn       widget.Clickable
+	videoID   string
+	loading   bool
+	failed    bool
+	info      *video.YouTubeInfo // prefetched info (nil until ready)
+	fetching  bool               // true while prefetch is running
 }
 
-// youtubeEmbedCache — cache pro YouTube embed stavy per message
+// youtubeEmbedCache — cache for YouTube embed states per message
 var youtubeEmbedStates struct {
 	mu     sync.Mutex
 	states map[string]*YouTubeEmbedState // key = messageID
@@ -208,44 +251,67 @@ func init() {
 	youtubeEmbedStates.states = make(map[string]*YouTubeEmbedState)
 }
 
-func getYouTubeEmbedState(msgID, videoID string) *YouTubeEmbedState {
+func getYouTubeEmbedState(msgID, videoID string, invalidate func()) *YouTubeEmbedState {
 	youtubeEmbedStates.mu.Lock()
 	defer youtubeEmbedStates.mu.Unlock()
 	if s, ok := youtubeEmbedStates.states[msgID]; ok {
 		return s
 	}
-	s := &YouTubeEmbedState{videoID: videoID}
+	s := &YouTubeEmbedState{videoID: videoID, fetching: true}
 	youtubeEmbedStates.states[msgID] = s
+	// Prefetch info in background so click is instant
+	go func() {
+		info, err := video.FetchYouTubeInfo(videoID)
+		if err != nil {
+			log.Printf("video: youtube prefetch failed: %v", err)
+			s.fetching = false
+			if invalidate != nil {
+				invalidate()
+			}
+			return
+		}
+		s.info = info
+		s.fetching = false
+		if invalidate != nil {
+			invalidate()
+		}
+	}()
 	return s
 }
 
-// layoutYouTubeEmbed renderuje YouTube thumbnail + play button pod zprávou.
+// layoutYouTubeEmbed renders a YouTube thumbnail + play button below the message.
 func layoutYouTubeEmbed(gtx layout.Context, app *App, msgID, ytURL string) layout.Dimensions {
 	videoID := video.YouTubeVideoID(ytURL)
 	if videoID == "" {
 		return layout.Dimensions{}
 	}
 
-	state := getYouTubeEmbedState(msgID, videoID)
+	state := getYouTubeEmbedState(msgID, videoID, func() { app.Window.Invalidate() })
 
 	// Click handler
 	if state.btn.Clicked(gtx) && !state.loading {
-		state.loading = true
-		go func() {
-			info, err := video.FetchYouTubeInfo(videoID)
-			if err != nil {
-				log.Printf("video: youtube fetch failed: %v", err)
-				state.failed = true
+		if state.info != nil {
+			// Prefetched — play immediately
+			app.VideoPlayer.PlayYouTube(state.info)
+		} else if !state.fetching {
+			// Prefetch failed — fetch now
+			state.loading = true
+			go func() {
+				info, err := video.FetchYouTubeInfo(videoID)
+				if err != nil {
+					log.Printf("video: youtube fetch failed: %v", err)
+					state.failed = true
+					state.loading = false
+					openURL(ytURL)
+					app.Window.Invalidate()
+					return
+				}
 				state.loading = false
-				// Fallback na browser
-				openURL(ytURL)
+				app.VideoPlayer.PlayYouTube(info)
 				app.Window.Invalidate()
-				return
-			}
-			state.loading = false
-			app.VideoPlayer.Play(info.StreamURL, info.Title)
-			app.Window.Invalidate()
-		}()
+			}()
+		}
+		// else: still fetching, ignore click (will be ready soon)
 	}
 
 	// YouTube thumbnail URL
@@ -256,6 +322,9 @@ func layoutYouTubeEmbed(gtx layout.Context, app *App, msgID, ytURL string) layou
 		if ci == nil {
 			// Loading thumbnail
 			return state.btn.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+				if state.btn.Hovered() {
+					pointer.CursorPointer.Add(gtx.Ops)
+				}
 				return layout.Flex{Alignment: layout.Middle}.Layout(gtx,
 					layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 						return layoutIcon(gtx, IconVideocam, 16, ColorDanger)
@@ -272,8 +341,11 @@ func layoutYouTubeEmbed(gtx layout.Context, app *App, msgID, ytURL string) layou
 		}
 
 		if !ci.ok {
-			// Thumbnail failed — jen text link
+			// Thumbnail failed — just a text link
 			return state.btn.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+				if state.btn.Hovered() {
+					pointer.CursorPointer.Add(gtx.Ops)
+				}
 				return layout.Flex{Alignment: layout.Middle}.Layout(gtx,
 					layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 						return layoutIcon(gtx, IconVideocam, 16, ColorDanger)
@@ -289,7 +361,7 @@ func layoutYouTubeEmbed(gtx layout.Context, app *App, msgID, ytURL string) layou
 			})
 		}
 
-		// Thumbnail s play overlay
+		// Thumbnail with play overlay
 		imgBounds := ci.img.Bounds()
 		imgW := imgBounds.Dx()
 		imgH := imgBounds.Dy()
@@ -306,6 +378,9 @@ func layoutYouTubeEmbed(gtx layout.Context, app *App, msgID, ytURL string) layou
 		}
 
 		return state.btn.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+			if state.btn.Hovered() {
+				pointer.CursorPointer.Add(gtx.Ops)
+			}
 			return layout.Flex{Axis: layout.Vertical}.Layout(gtx,
 				layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 					origW := float32(ci.img.Bounds().Dx())
@@ -326,10 +401,10 @@ func layoutYouTubeEmbed(gtx layout.Context, app *App, msgID, ytURL string) layou
 						paint.PaintOp{}.Add(gtx.Ops)
 					}()
 
-					// Semi-transparentní overlay
+					// Semi-transparent overlay
 					paint.FillShape(gtx.Ops, color.NRGBA{A: 60}, clip.Rect{Max: image.Pt(imgW, imgH)}.Op())
 
-					// Play ikona
+					// Play icon
 					cx := imgW / 2
 					cy := imgH / 2
 					circR := gtx.Dp(24)
@@ -342,7 +417,7 @@ func layoutYouTubeEmbed(gtx layout.Context, app *App, msgID, ytURL string) layou
 					layoutIcon(gtx, IconPlayArrow, iconSize, color.NRGBA{R: 255, G: 255, B: 255, A: 255})
 					iconOff.Pop()
 
-					// "YouTube" badge vlevo nahoře
+					// "YouTube" badge top left
 					badgeOff := op.Offset(image.Pt(gtx.Dp(6), gtx.Dp(6))).Push(gtx.Ops)
 					func() {
 						lbl := material.Caption(app.Theme.Material, "YouTube")
@@ -369,7 +444,7 @@ func layoutYouTubeEmbed(gtx layout.Context, app *App, msgID, ytURL string) layou
 	})
 }
 
-// findYouTubeURLInText hledá první YouTube URL v textu zprávy.
+// findYouTubeURLInText finds the first YouTube URL in the message text.
 func findYouTubeURLInText(text string) string {
 	for _, prefix := range []string{"https://www.youtube.com/watch?v=", "https://youtube.com/watch?v=", "https://youtu.be/", "https://www.youtube.com/shorts/", "http://www.youtube.com/watch?v=", "http://youtu.be/"} {
 		idx := strings.Index(text, prefix)

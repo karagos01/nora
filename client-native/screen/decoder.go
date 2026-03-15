@@ -10,7 +10,7 @@ import (
 	"time"
 )
 
-// Decoder obaluje ffmpeg process pro H.264 dekódování do raw RGBA framů.
+// Decoder wraps an ffmpeg process for H.264 decoding into raw RGBA frames.
 type Decoder struct {
 	cmd    *exec.Cmd
 	stdin  io.WriteCloser
@@ -22,8 +22,8 @@ type Decoder struct {
 	once   sync.Once
 }
 
-// NewDecoder spustí ffmpeg H.264 decoder.
-// Vstup: H.264 Annex-B data přes stdin, výstup: raw RGBA frames přes stdout.
+// NewDecoder starts an ffmpeg H.264 decoder.
+// Input: H.264 Annex-B data via stdin, output: raw RGBA frames via stdout.
 func NewDecoder(width, height int) (*Decoder, error) {
 	cmd := exec.Command("ffmpeg",
 		"-hide_banner", "-loglevel", "warning", "-nostats",
@@ -75,18 +75,18 @@ func NewDecoder(width, height int) (*Decoder, error) {
 	return d, nil
 }
 
-// WriteData posílá H.264 data do decoderu.
+// WriteData sends H.264 data to the decoder.
 func (d *Decoder) WriteData(data []byte) error {
 	_, err := d.stdin.Write(data)
 	return err
 }
 
-// Frames vrací channel s dekódovanými framy.
+// Frames returns a channel with decoded frames.
 func (d *Decoder) Frames() <-chan *image.NRGBA {
 	return d.frames
 }
 
-// Close ukončí ffmpeg decoder process a uvolní zdroje.
+// Close terminates the ffmpeg decoder process and releases resources.
 func (d *Decoder) Close() {
 	d.once.Do(func() {
 		d.stdin.Close()
@@ -101,7 +101,7 @@ func (d *Decoder) Close() {
 	})
 }
 
-// readLoop čte raw RGBA framy z ffmpeg stdout.
+// readLoop reads raw RGBA frames from ffmpeg stdout.
 func (d *Decoder) readLoop() {
 	defer close(d.done)
 	defer close(d.frames)
@@ -124,7 +124,7 @@ func (d *Decoder) readLoop() {
 		select {
 		case d.frames <- frame:
 		default:
-			// Dropnout starší frame — vzít nový
+			// Drop older frame — take the new one
 			select {
 			case <-d.frames:
 			default:

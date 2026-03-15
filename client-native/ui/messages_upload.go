@@ -45,7 +45,7 @@ func (v *MessageView) pickFiles() {
 		return
 	}
 
-	// Nabídnout ZIP / P2P dialog
+	// Offer ZIP / P2P dialog
 	if conn.P2P != nil {
 		v.app.ZipUploadDlg.Show(paths, v.startUploads, v.startP2PSend)
 	} else if len(paths) >= 2 {
@@ -67,7 +67,7 @@ func (v *MessageView) startUploads(paths []string) {
 		return
 	}
 
-	// Zachytit channelID pro auto-send
+	// Capture channelID for auto-send
 	v.app.mu.RLock()
 	chID := conn.ActiveChannelID
 	v.app.mu.RUnlock()
@@ -111,7 +111,7 @@ func (v *MessageView) startUploads(paths []string) {
 				pu.status = 2
 				pu.err = err.Error()
 
-				// P2P fallback: nabídnout přímý přenos pokud chyba vypadá jako size limit
+				// P2P fallback: offer direct transfer if the error looks like a size limit
 				errStr := err.Error()
 				if conn.P2P != nil && (strings.Contains(errStr, "413") || strings.Contains(errStr, "too large") || strings.Contains(errStr, "file size")) {
 					v.uploadMu.Unlock()
@@ -127,7 +127,7 @@ func (v *MessageView) startUploads(paths []string) {
 				pu.sent = pu.size
 			}
 
-			// Auto-send: zkontrolovat jestli jsou všechny hotové
+			// Auto-send: check if all uploads are done
 			if v.autoSend {
 				allDone := true
 				for _, other := range v.pendingUploads {
@@ -145,13 +145,13 @@ func (v *MessageView) startUploads(paths []string) {
 		}(u, name, data, path)
 	}
 
-	// Po přidání souborů otevřít popup
+	// Open popup after adding files
 	v.app.UploadDlg.Show()
 	v.app.Window.Invalidate()
 }
 
-// startP2PSend registruje soubory v P2P manageru a pošle zprávu s P2P linkem do kanálu.
-// Formát zprávy: [P2P:transferID:senderUserID:fileName:fileSize]
+// startP2PSend registers files in the P2P manager and sends a message with a P2P link to the channel.
+// Message format: [P2P:transferID:senderUserID:fileName:fileSize]
 func (v *MessageView) startP2PSend(paths []string) {
 	conn := v.app.Conn()
 	if conn == nil || conn.P2P == nil {
@@ -176,7 +176,7 @@ func (v *MessageView) startP2PSend(paths []string) {
 		fileName := info.Name()
 		fileSize := info.Size()
 
-		// Registrovat soubor — zůstane dostupný pro stahování
+		// Register file — remains available for download
 		isTemp := strings.HasPrefix(path, os.TempDir())
 		var transferID string
 		if isTemp {
@@ -185,7 +185,7 @@ func (v *MessageView) startP2PSend(paths []string) {
 			transferID = conn.P2P.RegisterFile(path, fileName, fileSize)
 		}
 
-		// Poslat zprávu s P2P odkazem do kanálu
+		// Send message with P2P link to the channel
 		msgText := fmt.Sprintf("[P2P:%s:%s:%s:%d]", transferID, userID, fileName, fileSize)
 		go func(text, channelID string) {
 			_, err := conn.Client.SendMessage(channelID, text, "")
@@ -204,7 +204,7 @@ func (v *MessageView) layoutUploadPanel(gtx layout.Context) layout.Dimensions {
 		return layout.Dimensions{}
 	}
 
-	// Spočítat celkový progress
+	// Calculate total progress
 	var totalSize, totalSent int64
 	var earliest time.Time
 	allDone := true
@@ -239,7 +239,7 @@ func (v *MessageView) layoutUploadPanel(gtx layout.Context) layout.Dimensions {
 			pct = int(totalSent * 100 / totalSize)
 		}
 		statusText = fmt.Sprintf("Uploading %d file(s)... %d%%", n, pct)
-		// Přidat speed + ETA
+		// Add speed + ETA
 		elapsed := time.Since(earliest).Seconds()
 		if elapsed > 0.5 && totalSent > 0 {
 			speed := float64(totalSent) / elapsed
@@ -284,7 +284,7 @@ func (v *MessageView) layoutUploadPanel(gtx layout.Context) layout.Dimensions {
 						},
 					)
 				}),
-				// Progress bar (celková)
+				// Progress bar (overall)
 				layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 					if allDone {
 						return layout.Dimensions{}
@@ -313,7 +313,7 @@ func (v *MessageView) pasteClipboardImage() {
 		return
 	}
 
-	// Uložit do temp souboru
+	// Save to temp file
 	tmpFile, err := os.CreateTemp("", "nora-paste-*.png")
 	if err != nil {
 		log.Printf("Clipboard paste temp file error: %v", err)
@@ -327,19 +327,19 @@ func (v *MessageView) pasteClipboardImage() {
 	}
 	tmpFile.Close()
 
-	// Spustit upload
+	// Start upload
 	v.autoSend = true
 	v.startUploads([]string{tmpPath})
 
-	// Cleanup temp souboru po 30s
+	// Cleanup temp file after 30s
 	go func() {
 		time.Sleep(30 * time.Second)
 		os.Remove(tmpPath)
 	}()
 }
 
-// readClipboardImage přečte PNG obrázek z clipboard.
-// Vrátí nil pokud clipboard neobsahuje obrázek.
+// readClipboardImage reads a PNG image from the clipboard.
+// Returns nil if the clipboard does not contain an image.
 func readClipboardImage() []byte {
 	switch runtime.GOOS {
 	case "linux":
@@ -378,7 +378,7 @@ if ($img -ne $null) {
 	}
 }
 
-// isPNG kontroluje PNG magic bytes.
+// isPNG checks for PNG magic bytes.
 func isPNG(data []byte) bool {
 	return len(data) > 8 && data[0] == 0x89 && data[1] == 'P' && data[2] == 'N' && data[3] == 'G'
 }

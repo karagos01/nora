@@ -56,13 +56,13 @@ func (d *Deps) CreateWebhook(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Ověřit že kanál existuje
+	// Verify that the channel exists
 	if _, err := d.Channels.GetByID(req.ChannelID); err != nil {
 		util.Error(w, http.StatusNotFound, "channel not found")
 		return
 	}
 
-	// Generovat token (32 random bytes → 64 hex znaků)
+	// Generate token (32 random bytes → 64 hex characters)
 	tokenBytes := make([]byte, 32)
 	if _, err := rand.Read(tokenBytes); err != nil {
 		util.Error(w, http.StatusInternalServerError, "failed to generate token")
@@ -142,7 +142,7 @@ func (d *Deps) UpdateWebhook(w http.ResponseWriter, r *http.Request) {
 	util.JSON(w, http.StatusOK, map[string]string{"status": "ok"})
 }
 
-// WebhookSend — POST /api/webhooks/{id}/{token} (VEŘEJNÝ, bez autentizace)
+// WebhookSend — POST /api/webhooks/{id}/{token} (PUBLIC, no authentication)
 func (d *Deps) WebhookSend(w http.ResponseWriter, r *http.Request) {
 	hookID := r.PathValue("id")
 	token := r.PathValue("token")
@@ -167,13 +167,13 @@ func (d *Deps) WebhookSend(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Ověřit že kanál stále existuje
+	// Verify that the channel still exists
 	if _, err := d.Channels.GetByID(hook.ChannelID); err != nil {
 		util.Error(w, http.StatusNotFound, "channel not found")
 		return
 	}
 
-	// Vytvořit zprávu pod jménem webhooku
+	// Create message under the webhook's name
 	msgID, _ := uuid.NewV7()
 	msg := &models.Message{
 		ID:        msgID.String(),
@@ -188,7 +188,7 @@ func (d *Deps) WebhookSend(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Webhook zpráva — použít jméno webhooku nebo override
+	// Webhook message — use webhook name or override
 	displayName := hook.Name
 	if req.Username != "" {
 		displayName = req.Username

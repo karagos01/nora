@@ -11,7 +11,7 @@ import (
 
 func (d *Deps) ListPendingApprovals(w http.ResponseWriter, r *http.Request) {
 	user := auth.GetUser(r)
-	// PermBan nebo PermApproveMembers
+	// PermBan or PermApproveMembers
 	err1 := d.requirePermission(user, models.PermBan)
 	err2 := d.requirePermission(user, models.PermApproveMembers)
 	if err1 != nil && err2 != nil {
@@ -45,7 +45,7 @@ func (d *Deps) ApproveUser(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Pokud quarantine enabled — vytvořit karanténu
+	// If quarantine enabled — create quarantine
 	if d.SecurityCfg.Quarantine.Enabled {
 		var endsAt *time.Time
 		if d.SecurityCfg.Quarantine.DurationDays > 0 {
@@ -87,7 +87,7 @@ func (d *Deps) RejectUser(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Smazat uživatele
+	// Delete user
 	d.Users.Delete(userID)
 	d.RefreshTokens.DeleteByUserID(userID)
 
@@ -98,7 +98,7 @@ func (d *Deps) RejectUser(w http.ResponseWriter, r *http.Request) {
 	})
 	d.Hub.Broadcast(event)
 
-	// Odpojit z WS
+	// Disconnect from WS
 	d.Hub.DisconnectUser(userID)
 
 	util.JSON(w, http.StatusOK, map[string]string{"status": "ok"})

@@ -9,7 +9,7 @@ import (
 	"github.com/google/uuid"
 )
 
-// SwarmAddSeed — uživatel se zaregistruje jako seeder pro soubor
+// SwarmAddSeed — user registers as a seeder for a file
 func (d *Deps) SwarmAddSeed(w http.ResponseWriter, r *http.Request) {
 	if !d.SwarmSharingEnabled {
 		util.Error(w, http.StatusForbidden, "swarm sharing is disabled")
@@ -31,7 +31,7 @@ func (d *Deps) SwarmAddSeed(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Ověřit přístup ke share
+	// Verify access to share
 	if dir.OwnerID != user.ID {
 		perm, err := d.Shares.GetEffectivePermission(shareID, user.ID)
 		if err != nil || !perm.CanRead || perm.IsBlocked {
@@ -48,7 +48,7 @@ func (d *Deps) SwarmAddSeed(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Ověřit že soubor patří do share
+	// Verify the file belongs to the share
 	file, err := d.Shares.GetFile(req.FileID)
 	if err != nil {
 		util.Error(w, http.StatusNotFound, "file not found")
@@ -65,7 +65,7 @@ func (d *Deps) SwarmAddSeed(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// S5 fix: broadcast jen ownerovi a uživatelům s přístupem ke share
+	// S5 fix: broadcast only to owner and users with access to the share
 	event, _ := ws.NewEvent(ws.EventSwarmSeedAdded, map[string]string{
 		"directory_id": shareID,
 		"file_id":      req.FileID,
@@ -79,7 +79,7 @@ func (d *Deps) SwarmAddSeed(w http.ResponseWriter, r *http.Request) {
 	util.JSON(w, http.StatusOK, map[string]string{"status": "ok"})
 }
 
-// SwarmRemoveSeed — odregistrovat seed
+// SwarmRemoveSeed — unregister seed
 func (d *Deps) SwarmRemoveSeed(w http.ResponseWriter, r *http.Request) {
 	if !d.SwarmSharingEnabled {
 		util.Error(w, http.StatusForbidden, "swarm sharing is disabled")
@@ -90,7 +90,7 @@ func (d *Deps) SwarmRemoveSeed(w http.ResponseWriter, r *http.Request) {
 	shareID := r.PathValue("id")
 	fileID := r.PathValue("fileId")
 
-	// S1 fix: ověřit přístup ke share
+	// S1 fix: verify access to the share
 	dir, err := d.Shares.GetDirectory(shareID)
 	if err != nil {
 		util.Error(w, http.StatusNotFound, "share not found")
@@ -104,7 +104,7 @@ func (d *Deps) SwarmRemoveSeed(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	// S2 fix: ověřit že soubor patří do share
+	// S2 fix: verify that the file belongs to the share
 	file, err := d.Shares.GetFile(fileID)
 	if err != nil {
 		util.Error(w, http.StatusNotFound, "file not found")
@@ -133,7 +133,7 @@ func (d *Deps) SwarmRemoveSeed(w http.ResponseWriter, r *http.Request) {
 	util.JSON(w, http.StatusOK, map[string]string{"status": "ok"})
 }
 
-// SwarmSources — online seedeři pro soubor
+// SwarmSources — online seeders for a file
 func (d *Deps) SwarmSources(w http.ResponseWriter, r *http.Request) {
 	if !d.SwarmSharingEnabled {
 		util.Error(w, http.StatusForbidden, "swarm sharing is disabled")
@@ -150,7 +150,7 @@ func (d *Deps) SwarmSources(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Ověřit přístup
+	// Verify access
 	if dir.OwnerID != user.ID {
 		perm, err := d.Shares.GetEffectivePermission(shareID, user.ID)
 		if err != nil || !perm.CanRead || perm.IsBlocked {
@@ -159,7 +159,7 @@ func (d *Deps) SwarmSources(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	// S3 fix: ověřit že soubor patří do share
+	// S3 fix: verify that the file belongs to the share
 	file, err := d.Shares.GetFile(fileID)
 	if err != nil {
 		util.Error(w, http.StatusNotFound, "file not found")
@@ -176,7 +176,7 @@ func (d *Deps) SwarmSources(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Owner je vždy potenciální zdroj (pokud je online)
+	// Owner is always a potential source (if online)
 	ownerIncluded := false
 	for _, id := range seederIDs {
 		if id == dir.OwnerID {
@@ -225,7 +225,7 @@ func (d *Deps) SwarmCounts(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Ověřit přístup
+	// Verify access
 	if dir.OwnerID != user.ID {
 		perm, err := d.Shares.GetEffectivePermission(shareID, user.ID)
 		if err != nil || !perm.CanRead || perm.IsBlocked {
@@ -248,7 +248,7 @@ func (d *Deps) SwarmCounts(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// SwarmRequest — zahájit multi-source download
+// SwarmRequest — initiate multi-source download
 func (d *Deps) SwarmRequest(w http.ResponseWriter, r *http.Request) {
 	if !d.SwarmSharingEnabled {
 		util.Error(w, http.StatusForbidden, "swarm sharing is disabled")
@@ -270,7 +270,7 @@ func (d *Deps) SwarmRequest(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Ověřit přístup
+	// Verify access
 	if dir.OwnerID != user.ID {
 		perm, err := d.Shares.GetEffectivePermission(shareID, user.ID)
 		if err != nil || !perm.CanRead || perm.IsBlocked {
@@ -297,13 +297,13 @@ func (d *Deps) SwarmRequest(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Najít online seedery
+	// Find online seeders
 	seederIDs, err := d.SwarmSeeds.ListSeeders(req.FileID)
 	if err != nil {
 		seederIDs = nil
 	}
 
-	// Owner je vždy potenciální zdroj
+	// Owner is always a potential source
 	ownerIncluded := false
 	for _, id := range seederIDs {
 		if id == dir.OwnerID {
@@ -335,7 +335,7 @@ func (d *Deps) SwarmRequest(w http.ResponseWriter, r *http.Request) {
 
 	transferID, _ := uuid.NewV7()
 
-	// Notifikovat seedery přes WS — swarm.download_notify (auto-seed registrace)
+	// Notify seeders via WS — swarm.download_notify (auto-seed registration)
 	for _, src := range sources {
 		event, _ := ws.NewEvent(ws.EventSwarmDownloadNotify, map[string]any{
 			"transfer_id":   transferID.String(),

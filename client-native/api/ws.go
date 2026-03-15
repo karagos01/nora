@@ -25,7 +25,7 @@ type WSClient struct {
 	connected   atomic.Bool
 }
 
-// IsConnected vrátí stav WS spojení (thread-safe)
+// IsConnected returns the WS connection state (thread-safe)
 func (ws *WSClient) IsConnected() bool {
 	return ws.connected.Load()
 }
@@ -96,7 +96,7 @@ func (ws *WSClient) readLoop(ctx context.Context) {
 		select {
 		case ws.events <- event:
 		default:
-			// Channel plný, dropnout starý event
+			// Channel full, drop oldest event
 			dropped := <-ws.events
 			ws.events <- event
 			log.Printf("WS event buffer full, dropped event: %s", dropped.Type)

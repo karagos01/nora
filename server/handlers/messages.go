@@ -84,7 +84,7 @@ func (d *Deps) ListMessages(w http.ResponseWriter, r *http.Request) {
 		messages = []models.Message{}
 	}
 
-	// Načíst přílohy
+	// Load attachments
 	if len(messages) > 0 {
 		ids := make([]string, len(messages))
 		for i, m := range messages {
@@ -104,7 +104,7 @@ func (d *Deps) ListMessages(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 
-		// Načíst reactions
+		// Load reactions
 		reactMap, _ := d.Reactions.ListByMessageIDs(ids)
 		for i := range messages {
 			if reacts, ok := reactMap[messages[i].ID]; ok {
@@ -112,7 +112,7 @@ func (d *Deps) ListMessages(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 
-		// Načíst polls
+		// Load polls
 		pollMap, _ := d.Polls.GetByMessageIDs(ids)
 		for i := range messages {
 			if poll, ok := pollMap[messages[i].ID]; ok {
@@ -120,7 +120,7 @@ func (d *Deps) ListMessages(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 
-		// Načíst link previews
+		// Load link previews
 		previewMap, _ := d.LinkPreviews.GetByMessageIDs(ids)
 		for i := range messages {
 			if lp, ok := previewMap[messages[i].ID]; ok {
@@ -128,7 +128,7 @@ func (d *Deps) ListMessages(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 
-		// Načíst reply counts (threads)
+		// Load reply counts (threads)
 		replyMap, _ := d.Messages.BatchCountReplies(ids)
 		for i := range messages {
 			if cnt, ok := replyMap[messages[i].ID]; ok {
@@ -144,7 +144,7 @@ func (d *Deps) CreateMessage(w http.ResponseWriter, r *http.Request) {
 	user := auth.GetUser(r)
 	channelID := r.PathValue("id")
 
-	// Ověřit že kanál existuje
+	// Verify the channel exists
 	ch, err := d.Channels.GetByID(channelID)
 	if err != nil {
 		util.Error(w, http.StatusNotFound, "channel not found")
@@ -162,7 +162,7 @@ func (d *Deps) CreateMessage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Slow mode enforcement — owners a admini bypass
+	// Slow mode enforcement — owners and admins bypass
 	if ch.SlowModeSeconds > 0 && !user.IsOwner {
 		perms, _ := d.Roles.GetUserPermissions(user.ID)
 		if perms&models.PermAdmin == 0 {
@@ -185,7 +185,7 @@ func (d *Deps) CreateMessage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Prázdný content je OK pokud jsou přílohy nebo poll
+	// Empty content is OK if there are attachments or a poll
 	if len(req.Attachments) == 0 && req.Poll == nil {
 		if msg := util.ValidateMessageContent(req.Content); msg != "" {
 			util.Error(w, http.StatusBadRequest, msg)
@@ -193,7 +193,7 @@ func (d *Deps) CreateMessage(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	// Auto-moderation — owner a admin bypass
+	// Auto-moderation — owner and admin bypass
 	var automodHide bool
 	if d.AutoMod != nil && d.AutoMod.Enabled && !user.IsOwner {
 		perms, _ := d.Roles.GetUserPermissions(user.ID)
@@ -230,7 +230,7 @@ func (d *Deps) CreateMessage(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	// Validace pollu
+	// Poll validation
 	if req.Poll != nil {
 		if req.Poll.Question == "" || len(req.Poll.Question) > 500 {
 			util.Error(w, http.StatusBadRequest, "poll question required (max 500 chars)")
@@ -262,7 +262,7 @@ func (d *Deps) CreateMessage(w http.ResponseWriter, r *http.Request) {
 		CreatedAt: time.Now().UTC(),
 	}
 
-	// Reply validace
+	// Reply validation
 	if req.ReplyToID != "" {
 		replyMsg, err := d.Messages.GetByID(req.ReplyToID)
 		if err != nil || replyMsg.ChannelID != channelID {
@@ -277,7 +277,7 @@ func (d *Deps) CreateMessage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Auto-moderation: skrýt zprávu (word filter match)
+	// Auto-moderation: hide message (word filter match)
 	if automodHide {
 		d.Messages.SetHidden(msg.ID, true, d.AutoMod.OwnerID, 999)
 		msg.IsHidden = true
@@ -285,11 +285,11 @@ func (d *Deps) CreateMessage(w http.ResponseWriter, r *http.Request) {
 		msg.HiddenByPosition = 999
 	}
 
-	// Uložit přílohy (deduplikace proběhla už v upload handleru)
-	// Povolené URL prefixy pro attachmenty
+	// Save attachments (deduplication already handled in upload handler)
+	// Allowed URL prefixes for attachments
 	allowedPrefixes := []string{"/api/uploads/", "/api/gameservers/"}
 	for _, a := range req.Attachments {
-		// Validovat URL — musí začínat povoleným prefixem
+		// Validate URL — must start with an allowed prefix
 		urlValid := false
 		for _, prefix := range allowedPrefixes {
 			if strings.HasPrefix(a.URL, prefix) {
@@ -304,14 +304,14 @@ func (d *Deps) CreateMessage(w http.ResponseWriter, r *http.Request) {
 
 		attID, _ := uuid.NewV7()
 
-		// Rozlišit upload soubory vs. externí URL (game server files apod.)
+		// Distinguish upload files vs. external URLs (game server files etc.)
 		fp := a.URL
 		isUpload := strings.HasPrefix(a.URL, "/api/uploads/")
 		if isUpload {
 			fp = a.URL[len("/api/uploads/"):]
 		}
 
-		// Ověřit content_hash jen pro upload soubory (ne pro game server files)
+		// Verify content_hash only for upload files (not for game server files)
 		contentHash := a.ContentHash
 		if isUpload && contentHash != "" && len(contentHash) == 64 {
 			if f, err := os.Open(filepath.Join(d.UploadsDir, fp)); err == nil {
@@ -345,7 +345,7 @@ func (d *Deps) CreateMessage(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	// Vytvořit poll pokud je součástí requestu
+	// Create poll if included in the request
 	if req.Poll != nil {
 		pollID, _ := uuid.NewV7()
 		poll := &models.Poll{
@@ -372,13 +372,13 @@ func (d *Deps) CreateMessage(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	// Načíst zprávu s autorem pro response + broadcast
+	// Load message with author for response + broadcast
 	author, _ := d.Users.GetByID(user.ID)
 	if author != nil {
 		msg.Author = author
 	}
 
-	// Načíst reply_to data pro broadcast
+	// Load reply_to data for broadcast
 	if msg.ReplyToID != nil {
 		if replyMsg, err := d.Messages.GetByID(*msg.ReplyToID); err == nil {
 			msg.ReplyTo = &models.Message{
@@ -389,8 +389,8 @@ func (d *Deps) CreateMessage(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	// Pro automod-hidden zprávy: broadcastovat s vyčištěným obsahem.
-	// Admini uvidí obsah při načtení zpráv z API (server jim vrátí plný obsah).
+	// For automod-hidden messages: broadcast with stripped content.
+	// Admins will see the content when loading messages from API (server returns full content to them).
 	if automodHide {
 		stripped := *msg
 		stripped.Content = ""
@@ -398,16 +398,16 @@ func (d *Deps) CreateMessage(w http.ResponseWriter, r *http.Request) {
 		stripped.Poll = nil
 		stripped.LinkPreview = nil
 		event, _ := ws.NewEvent(ws.EventMessageNew, &stripped)
-		d.Hub.Broadcast(event)
+		d.broadcastToChannelReaders(channelID, event)
 	} else {
 		event, _ := ws.NewEvent(ws.EventMessageNew, msg)
-		d.Hub.Broadcast(event)
+		d.broadcastToChannelReaders(channelID, event)
 	}
 
-	// Asynchronně stáhnout link preview z prvního URL ve zprávě
+	// Asynchronously fetch link preview from the first URL in the message
 	go d.fetchAndStoreLinkPreview(msg.ID, msg.Content)
 
-	// HTTP response: pro autora (běžný uživatel) také vyčištěný obsah
+	// HTTP response: for the author (regular user) also stripped content
 	if automodHide {
 		msg.Content = ""
 		msg.Attachments = nil
@@ -427,7 +427,7 @@ func (d *Deps) UpdateMessage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Vlastník nebo MANAGE_MESSAGES
+	// Owner or MANAGE_MESSAGES
 	if ownerID != user.ID {
 		if err := d.requirePermission(user, models.PermManageMessages); err != nil {
 			util.Error(w, http.StatusForbidden, "insufficient permissions")
@@ -446,7 +446,7 @@ func (d *Deps) UpdateMessage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Uložit starý obsah do historie editací
+	// Save old content to edit history
 	oldMsg, err := d.Messages.GetByID(msgID)
 	if err == nil && oldMsg.Content != req.Content {
 		d.Messages.SaveEditHistory(msgID, oldMsg.Content, user.ID)
@@ -461,17 +461,33 @@ func (d *Deps) UpdateMessage(w http.ResponseWriter, r *http.Request) {
 		"id":      msgID,
 		"content": req.Content,
 	})
-	d.Hub.Broadcast(event)
+	if oldMsg != nil {
+		d.broadcastToChannelReaders(oldMsg.ChannelID, event)
+	} else {
+		d.Hub.Broadcast(event)
+	}
 
-	// Re-fetch link preview po editaci
+	// Re-fetch link preview after edit
 	go d.fetchAndStoreLinkPreview(msgID, req.Content)
 
 	util.JSON(w, http.StatusOK, map[string]string{"status": "ok"})
 }
 
-// GetMessageEditHistory vrátí historii editací zprávy.
+// GetMessageEditHistory returns the edit history of a message.
 func (d *Deps) GetMessageEditHistory(w http.ResponseWriter, r *http.Request) {
+	user := auth.GetUser(r)
 	msgID := r.PathValue("id")
+
+	// Get message to check channel permission
+	msg, err := d.Messages.GetByID(msgID)
+	if err != nil {
+		util.Error(w, http.StatusNotFound, "message not found")
+		return
+	}
+	if err := d.requireChannelPermission(user, msg.ChannelID, models.PermRead); err != nil {
+		util.Error(w, http.StatusForbidden, "insufficient permissions")
+		return
+	}
 
 	edits, err := d.Messages.GetEditHistory(msgID)
 	if err != nil {
@@ -506,7 +522,10 @@ func (d *Deps) DeleteMessage(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	// Načíst přílohy před smazáním (CASCADE smaže attachment řádky z DB)
+	// Get channel ID before deletion for scoped broadcast
+	msgChannelID, _ := d.Messages.GetChannelID(msgID)
+
+	// Load attachments before deletion (CASCADE deletes attachment rows from DB)
 	atts, _ := d.Attachments.ListByMessageID(msgID)
 
 	if err := d.Messages.Delete(msgID); err != nil {
@@ -514,10 +533,10 @@ func (d *Deps) DeleteMessage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Smazat soubory z disku (jen upload soubory, ne externí URL)
+	// Delete files from disk (only upload files, not external URLs)
 	for _, a := range atts {
 		if strings.HasPrefix(a.Filepath, "/api/") {
-			continue // externí URL (game server files apod.) — nemazat
+			continue // external URL (game server files etc.) — do not delete
 		}
 		count, err := d.Attachments.CountByFilepath(a.Filepath)
 		if err != nil || count > 0 {
@@ -525,14 +544,18 @@ func (d *Deps) DeleteMessage(w http.ResponseWriter, r *http.Request) {
 		}
 		p := filepath.Join(d.UploadsDir, a.Filepath)
 		if err := os.Remove(p); err != nil && !os.IsNotExist(err) {
-			slog.Error("smazání souboru přílohy selhalo", "path", p, "error", err)
+			slog.Error("failed to delete attachment file", "path", p, "error", err)
 		}
 	}
 
 	event, _ := ws.NewEvent(ws.EventMessageDelete, map[string]string{"id": msgID})
-	d.Hub.Broadcast(event)
+	if msgChannelID != "" {
+		d.broadcastToChannelReaders(msgChannelID, event)
+	} else {
+		d.Hub.Broadcast(event)
+	}
 
-	// Logovat jen moderační delete (ne vlastní)
+	// Log only moderation deletes (not own messages)
 	if ownerID != user.ID {
 		d.logAudit(user.ID, "message.delete", "message", msgID, map[string]string{"author_id": ownerID})
 	}
@@ -544,7 +567,7 @@ func (d *Deps) PinMessage(w http.ResponseWriter, r *http.Request) {
 	user := auth.GetUser(r)
 	msgID := r.PathValue("id")
 
-	// Ověřit permissions
+	// Verify permissions
 	if err := d.requirePermission(user, models.PermManageMessages); err != nil {
 		util.Error(w, http.StatusForbidden, "insufficient permissions")
 		return
@@ -556,7 +579,7 @@ func (d *Deps) PinMessage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Hierarchie: pokud pinner není autor → canActOn
+	// Hierarchy: if pinner is not the author → canActOn
 	if msg.UserID != user.ID {
 		if err := d.canActOn(user, msg.UserID); err != nil {
 			util.Error(w, http.StatusForbidden, "cannot pin messages from higher-ranked users")
@@ -641,7 +664,7 @@ func (d *Deps) HideMessage(w http.ResponseWriter, r *http.Request) {
 		"is_hidden":          req.Hidden,
 		"hidden_by_position": actorPos,
 	}
-	// Při unhide přidat content, aby klienti mohli zprávu zobrazit
+	// On unhide, include content so clients can display the message
 	if !req.Hidden {
 		hidePayload["content"] = msg.Content
 	}
@@ -703,7 +726,7 @@ func (d *Deps) DeleteUserMessages(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Načíst přílohy před smazáním (CASCADE smaže attachment řádky z DB)
+	// Load attachments before deletion (CASCADE deletes attachment rows from DB)
 	atts, _ := d.Attachments.ListByUserMessages(targetID)
 
 	if err := d.Messages.DeleteByUserID(targetID); err != nil {
@@ -711,7 +734,7 @@ func (d *Deps) DeleteUserMessages(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Smazat soubory z disku (s ref counting, přeskočit externí URL)
+	// Delete files from disk (with ref counting, skip external URLs)
 	for _, a := range atts {
 		if strings.HasPrefix(a.Filepath, "/api/") {
 			continue
@@ -722,7 +745,7 @@ func (d *Deps) DeleteUserMessages(w http.ResponseWriter, r *http.Request) {
 		}
 		p := filepath.Join(d.UploadsDir, a.Filepath)
 		if err := os.Remove(p); err != nil && !os.IsNotExist(err) {
-			slog.Error("smazání souboru přílohy selhalo", "path", p, "error", err)
+			slog.Error("failed to delete attachment file", "path", p, "error", err)
 		}
 	}
 
@@ -739,6 +762,13 @@ func (d *Deps) DeleteUserMessages(w http.ResponseWriter, r *http.Request) {
 func (d *Deps) SearchMessages(w http.ResponseWriter, r *http.Request) {
 	user := auth.GetUser(r)
 	channelID := r.PathValue("id")
+
+	// Per-channel read permission check
+	if err := d.requireChannelPermission(user, channelID, models.PermRead); err != nil {
+		util.Error(w, http.StatusForbidden, "insufficient permissions")
+		return
+	}
+
 	query := r.URL.Query().Get("q")
 	if query == "" {
 		util.Error(w, http.StatusBadRequest, "missing search query")
@@ -761,7 +791,7 @@ func (d *Deps) SearchMessages(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	// Parsování rozšířených filtrů z query stringu
+	// Parse extended filters from the query string
 	textQuery, filters := parseSearchFilters(query)
 
 	callerPos, _ := d.Roles.GetHighestPosition(user.ID, user.IsOwner)
@@ -774,7 +804,7 @@ func (d *Deps) SearchMessages(w http.ResponseWriter, r *http.Request) {
 		messages = []models.Message{}
 	}
 
-	// Načíst přílohy, reactions, polls
+	// Load attachments, reactions, polls
 	if len(messages) > 0 {
 		ids := make([]string, len(messages))
 		for i, m := range messages {
@@ -819,14 +849,14 @@ func (d *Deps) SearchMessages(w http.ResponseWriter, r *http.Request) {
 	util.JSON(w, http.StatusOK, messages)
 }
 
-// parseSearchFilters parsuje rozšířené filtry z vyhledávacího dotazu.
-// Podporované filtry: from:username, has:image, has:link, has:file, before:YYYY-MM-DD, after:YYYY-MM-DD.
-// Vrací textovou část dotazu (bez filtrů) a strukturu s filtry.
+// parseSearchFilters parses extended filters from the search query.
+// Supported filters: from:username, has:image, has:link, has:file, before:YYYY-MM-DD, after:YYYY-MM-DD.
+// Returns the text part of the query (without filters) and a filter struct.
 func parseSearchFilters(raw string) (string, *queries.SearchFilters) {
 	filters := &queries.SearchFilters{}
 	hasFilter := false
 
-	// Rozdělit na tokeny a oddělit filtry od textu
+	// Split into tokens and separate filters from text
 	var textParts []string
 	parts := strings.Fields(raw)
 	for _, part := range parts {
@@ -846,7 +876,7 @@ func parseSearchFilters(raw string) (string, *queries.SearchFilters) {
 			hasFilter = true
 		case strings.HasPrefix(lower, "before:"):
 			date := part[7:]
-			// Validace formátu YYYY-MM-DD
+			// Validate YYYY-MM-DD format
 			if len(date) == 10 && date[4] == '-' && date[7] == '-' {
 				filters.Before = date
 				hasFilter = true
@@ -855,7 +885,7 @@ func parseSearchFilters(raw string) (string, *queries.SearchFilters) {
 			}
 		case strings.HasPrefix(lower, "after:"):
 			date := part[6:]
-			// Validace formátu YYYY-MM-DD
+			// Validate YYYY-MM-DD format
 			if len(date) == 10 && date[4] == '-' && date[7] == '-' {
 				filters.After = date
 				hasFilter = true
@@ -892,7 +922,7 @@ func (d *Deps) ListPinnedMessages(w http.ResponseWriter, r *http.Request) {
 		messages = []models.Message{}
 	}
 
-	// Načíst přílohy
+	// Load attachments
 	if len(messages) > 0 {
 		ids := make([]string, len(messages))
 		for i, m := range messages {
@@ -941,28 +971,34 @@ func (d *Deps) GetMessageThread(w http.ResponseWriter, r *http.Request) {
 	user := auth.GetUser(r)
 	msgID := r.PathValue("id")
 
-	// Načíst parent zprávu
+	// Load parent message
 	parent, err := d.Messages.GetByID(msgID)
 	if err != nil {
 		util.Error(w, http.StatusNotFound, "message not found")
 		return
 	}
 
+	// Per-channel read permission check
+	if err := d.requireChannelPermission(user, parent.ChannelID, models.PermRead); err != nil {
+		util.Error(w, http.StatusForbidden, "insufficient permissions")
+		return
+	}
+
 	callerPos, _ := d.Roles.GetHighestPosition(user.ID, user.IsOwner)
 
-	// Načíst replies
+	// Load replies
 	replies, err := d.Messages.ListReplies(msgID, callerPos)
 	if err != nil {
 		util.Error(w, http.StatusInternalServerError, "failed to list replies")
 		return
 	}
 
-	// Sestavit výsledek: parent + replies
+	// Build result: parent + replies
 	result := make([]models.Message, 0, 1+len(replies))
 	result = append(result, *parent)
 	result = append(result, replies...)
 
-	// Enrichment — přílohy, reactions, polls, link previews
+	// Enrichment — attachments, reactions, polls, link previews
 	ids := make([]string, len(result))
 	for i, m := range result {
 		ids[i] = m.ID
@@ -1008,7 +1044,7 @@ func (d *Deps) GetMessageThread(w http.ResponseWriter, r *http.Request) {
 
 var urlRe = regexp.MustCompile(`https?://[^\s<>\]\)]+`)
 
-// fetchAndStoreLinkPreview asynchronně stáhne OG metadata z prvního URL ve zprávě.
+// fetchAndStoreLinkPreview asynchronously fetches OG metadata from the first URL in the message.
 func (d *Deps) fetchAndStoreLinkPreview(msgID, content string) {
 	match := urlRe.FindString(content)
 	if match == "" {
@@ -1032,7 +1068,7 @@ func (d *Deps) fetchAndStoreLinkPreview(msgID, content string) {
 	}
 
 	if err := d.LinkPreviews.Create(lp); err != nil {
-		slog.Error("link preview: uložení selhalo", "message_id", msgID, "error", err)
+		slog.Error("link preview: save failed", "message_id", msgID, "error", err)
 		return
 	}
 

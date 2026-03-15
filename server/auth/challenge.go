@@ -6,7 +6,7 @@ import (
 	"encoding/hex"
 )
 
-// GenerateNonce generuje 32 random bajtů jako hex string
+// GenerateNonce generates 32 random bytes as a hex string
 func GenerateNonce() (string, error) {
 	b := make([]byte, 32)
 	if _, err := rand.Read(b); err != nil {
@@ -15,7 +15,7 @@ func GenerateNonce() (string, error) {
 	return hex.EncodeToString(b), nil
 }
 
-// VerifySignature ověří ed25519 podpis nonce
+// VerifySignature verifies an ed25519 signature of the nonce
 func VerifySignature(publicKey, nonce, signature []byte) bool {
 	if len(publicKey) != ed25519.PublicKeySize {
 		return false

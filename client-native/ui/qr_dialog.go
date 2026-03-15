@@ -39,7 +39,7 @@ func (d *QRDialog) Show(title, data string) {
 	d.data = data
 	d.qrReady = false
 
-	// Generovat QR kód
+	// Generate QR code
 	qr, err := qrcode.New(data, qrcode.Medium)
 	if err != nil {
 		return
@@ -127,11 +127,11 @@ func (d *QRDialog) Layout(gtx layout.Context) layout.Dimensions {
 								layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 									return layout.Flex{Spacing: layout.SpaceStart}.Layout(gtx,
 										layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-											return d.layoutBtn(gtx, &d.copyBtn, "Copy Link", ColorInput, ColorText)
+											return layoutDialogBtn(gtx, d.app.Theme, &d.copyBtn, "Copy Link", ColorInput, ColorText)
 										}),
 										layout.Rigid(layout.Spacer{Width: unit.Dp(8)}.Layout),
 										layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-											return d.layoutBtn(gtx, &d.closeBtn, "Close", ColorAccent, color.NRGBA{R: 255, G: 255, B: 255, A: 255})
+											return layoutDialogBtn(gtx, d.app.Theme, &d.closeBtn, "Close", ColorAccent, color.NRGBA{R: 255, G: 255, B: 255, A: 255})
 										}),
 									)
 								}),
@@ -144,22 +144,3 @@ func (d *QRDialog) Layout(gtx layout.Context) layout.Dimensions {
 	)
 }
 
-func (d *QRDialog) layoutBtn(gtx layout.Context, btn *widget.Clickable, text string, bg, fg color.NRGBA) layout.Dimensions {
-	return btn.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-		return layout.Background{}.Layout(gtx,
-			func(gtx layout.Context) layout.Dimensions {
-				sz := image.Rect(0, 0, gtx.Constraints.Min.X, gtx.Constraints.Min.Y)
-				rr := gtx.Dp(8)
-				paint.FillShape(gtx.Ops, bg, clip.RRect{Rect: sz, NE: rr, NW: rr, SE: rr, SW: rr}.Op(gtx.Ops))
-				return layout.Dimensions{Size: sz.Max}
-			},
-			func(gtx layout.Context) layout.Dimensions {
-				return layout.Inset{Top: unit.Dp(8), Bottom: unit.Dp(8), Left: unit.Dp(20), Right: unit.Dp(20)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-					lbl := material.Body2(d.app.Theme.Material, text)
-					lbl.Color = fg
-					return lbl.Layout(gtx)
-				})
-			},
-		)
-	})
-}

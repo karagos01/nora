@@ -14,7 +14,7 @@ import (
 
 type createInviteRequest struct {
 	MaxUses   int    `json:"max_uses"`
-	ExpiresIn int    `json:"expires_in"` // sekundy, 0 = nikdy
+	ExpiresIn int    `json:"expires_in"` // seconds, 0 = never
 }
 
 func (d *Deps) ListInvites(w http.ResponseWriter, r *http.Request) {
@@ -101,8 +101,8 @@ func (d *Deps) CreateInvite(w http.ResponseWriter, r *http.Request) {
 
 	d.logAudit(user.ID, "invite.create", "invite", inv.ID, map[string]any{"code": code, "max_uses": req.MaxUses})
 
-	// Sestavit invite link: host:port/kod
-	host := r.Host // obsahuje host:port
+	// Build invite link: host:port/code
+	host := r.Host // contains host:port
 	link := host + "/" + code
 
 	util.JSON(w, http.StatusCreated, map[string]any{

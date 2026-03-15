@@ -8,7 +8,7 @@ import (
 	"nora/ws"
 )
 
-// VoiceState vrátí aktuální voice state (kdo je v jakém voice kanálu) + screen sharers
+// VoiceState returns the current voice state (who is in which voice channel) + screen sharers
 func (d *Deps) VoiceState(w http.ResponseWriter, r *http.Request) {
 	state := d.Hub.AllVoiceState()
 	if state == nil {
@@ -21,7 +21,7 @@ func (d *Deps) VoiceState(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// VoiceMove přesune uživatele do jiného voice kanálu (vyžaduje KICK permission + hierarchii)
+// VoiceMove moves a user to another voice channel (requires KICK permission + hierarchy check)
 func (d *Deps) VoiceMove(w http.ResponseWriter, r *http.Request) {
 	actor := auth.GetUser(r)
 
@@ -39,21 +39,21 @@ func (d *Deps) VoiceMove(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Kontrola hierarchie
+	// Hierarchy check
 	if err := d.canActOn(actor, req.UserID); err != nil {
 		util.Error(w, http.StatusForbidden, err.Error())
 		return
 	}
 
-	// Ověřit že cílový kanál je voice
+	// Verify that the target channel is voice
 	ch, err := d.Channels.GetByID(req.ChannelID)
 	if err != nil || ch.Type != "voice" {
 		util.Error(w, http.StatusBadRequest, "target must be a voice channel")
 		return
 	}
 
-	// Přesunout uživatele — VoiceJoin automaticky leave ze starého kanálu
-	// Nejdřív zjistíme starý kanál pro broadcast leave
+	// Move user — VoiceJoin automatically leaves the old channel
+	// First determine the old channel for broadcast leave
 	oldChannelID, oldRemaining := d.Hub.VoiceLeave(req.UserID)
 	if oldChannelID != "" {
 		leaveMsg, _ := ws.NewEvent(ws.EventVoiceState, map[string]any{
@@ -64,7 +64,7 @@ func (d *Deps) VoiceMove(w http.ResponseWriter, r *http.Request) {
 		d.Hub.Broadcast(leaveMsg)
 	}
 
-	// Join do nového kanálu
+	// Join the new channel
 	newUsers := d.Hub.VoiceJoin(req.ChannelID, req.UserID)
 	joinMsg, _ := ws.NewEvent(ws.EventVoiceState, map[string]any{
 		"channel_id": req.ChannelID,
@@ -73,7 +73,7 @@ func (d *Deps) VoiceMove(w http.ResponseWriter, r *http.Request) {
 	})
 	d.Hub.Broadcast(joinMsg)
 
-	// Notifikace přesunutému uživateli
+	// Notification to the moved user
 	moveMsg, _ := ws.NewEvent(ws.EventVoiceMove, map[string]any{
 		"channel_id": req.ChannelID,
 		"moved_by":   actor.ID,

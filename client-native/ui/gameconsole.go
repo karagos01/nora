@@ -104,7 +104,7 @@ func (v *GameConsoleView) connectAndStream(ctx context.Context, wsURL, token str
 	v.conn = conn
 	v.mu.Unlock()
 
-	// Čtení zpráv
+	// Reading messages
 	for {
 		_, msg, err := conn.Read(ctx)
 		if err != nil {
@@ -113,7 +113,7 @@ func (v *GameConsoleView) connectAndStream(ctx context.Context, wsURL, token str
 			}
 			return
 		}
-		// Docker logs mohou obsahovat více řádků
+		// Docker logs can contain multiple lines
 		scanner := bufio.NewScanner(bytes.NewReader(msg))
 		for scanner.Scan() {
 			v.addLine(scanner.Text())
@@ -121,14 +121,14 @@ func (v *GameConsoleView) connectAndStream(ctx context.Context, wsURL, token str
 	}
 }
 
-// stripANSI odstraní ANSI escape sekvence z textu (barvy, formátování)
+// stripANSI removes ANSI escape sequences from text (colors, formatting)
 var ansiRe = regexp.MustCompile(`\x1b\[[0-9;]*[a-zA-Z]`)
 
 func (v *GameConsoleView) addLine(line string) {
 	line = ansiRe.ReplaceAllString(line, "")
 	v.mu.Lock()
 	v.lines = append(v.lines, line)
-	// Ring buffer: max 500 řádků
+	// Ring buffer: max 500 lines
 	if len(v.lines) > 500 {
 		v.lines = v.lines[len(v.lines)-500:]
 	}

@@ -17,7 +17,7 @@ import (
 	"nora-client/p2p"
 )
 
-// p2pLinkInfo — parsovaný P2P odkaz ze zprávy.
+// p2pLinkInfo — parsed P2P link from a message.
 type p2pLinkInfo struct {
 	transferID string
 	senderID   string
@@ -25,12 +25,12 @@ type p2pLinkInfo struct {
 	fileSize   int64
 }
 
-// parseP2PLink parsuje formát [P2P:transferID:senderUserID:fileName:fileSize].
+// parseP2PLink parses the format [P2P:transferID:senderUserID:fileName:fileSize].
 func parseP2PLink(text string) *p2pLinkInfo {
 	if !strings.HasPrefix(text, "[P2P:") || !strings.HasSuffix(text, "]") {
 		return nil
 	}
-	inner := text[5 : len(text)-1] // mezi [P2P: a ]
+	inner := text[5 : len(text)-1] // between [P2P: and ]
 	parts := strings.SplitN(inner, ":", 4)
 	if len(parts) != 4 {
 		return nil
@@ -45,7 +45,7 @@ func parseP2PLink(text string) *p2pLinkInfo {
 	}
 }
 
-// layoutP2PPanel zobrazí individuální progress bary pro P2P příjem.
+// layoutP2PPanel displays individual progress bars for P2P reception.
 func (v *MessageView) layoutP2PPanel(gtx layout.Context) layout.Dimensions {
 	conn := v.app.Conn()
 	if conn == nil || conn.P2P == nil {
@@ -53,7 +53,7 @@ func (v *MessageView) layoutP2PPanel(gtx layout.Context) layout.Dimensions {
 	}
 
 	transfers := conn.P2P.GetActiveTransfers()
-	// Filtrovat DirReceive ve stavech Waiting/Connecting/Transferring/Error
+	// Filter DirReceive in states Waiting/Connecting/Transferring/Error
 	var visible []*p2p.Transfer
 	for _, t := range transfers {
 		if t.Direction != p2p.DirReceive {
@@ -68,12 +68,12 @@ func (v *MessageView) layoutP2PPanel(gtx layout.Context) layout.Dimensions {
 		return layout.Dimensions{}
 	}
 
-	// Stabilní řazení podle ID (mapa vrací v náhodném pořadí)
+	// Stable sort by ID (map returns in random order)
 	sort.Slice(visible, func(i, j int) bool {
 		return visible[i].ID < visible[j].ID
 	})
 
-	// Zpracovat kliky na bary
+	// Process clicks on bars
 	for _, t := range visible {
 		btn, ok := v.p2pBarBtns[t.ID]
 		if !ok {
@@ -121,9 +121,9 @@ func (v *MessageView) layoutP2PPanel(gtx layout.Context) layout.Dimensions {
 	})
 }
 
-// layoutP2PBar renderuje jednotlivý P2P progress bar.
+// layoutP2PBar renders an individual P2P progress bar.
 func (v *MessageView) layoutP2PBar(gtx layout.Context, t *p2p.Transfer) layout.Dimensions {
-	// Zajistit clickable pro tento transfer
+	// Ensure clickable for this transfer
 	btn, ok := v.p2pBarBtns[t.ID]
 	if !ok {
 		btn = new(widget.Clickable)
@@ -171,7 +171,7 @@ func (v *MessageView) layoutP2PBar(gtx layout.Context, t *p2p.Transfer) layout.D
 		}
 		return layout.Inset{Bottom: unit.Dp(2)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
 			return layout.Flex{Axis: layout.Vertical}.Layout(gtx,
-				// Text + pozadí
+				// Text + background
 				layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 					return layout.Background{}.Layout(gtx,
 						func(gtx layout.Context) layout.Dimensions {
@@ -201,7 +201,7 @@ func (v *MessageView) layoutP2PBar(gtx layout.Context, t *p2p.Transfer) layout.D
 						},
 					)
 				}),
-				// Progress bar (jen při transferring)
+				// Progress bar (only when transferring)
 				layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 					if t.Status != p2p.StatusTransferring || t.FileSize <= 0 {
 						return layout.Dimensions{}
@@ -224,11 +224,11 @@ func (v *MessageView) layoutP2PBar(gtx layout.Context, t *p2p.Transfer) layout.D
 }
 
 
-// layoutP2PBlock renderuje P2P link ve stylu regulárních příloh (jednořádkový).
+// layoutP2PBlock renders a P2P link in the style of regular attachments (single-line).
 func (v *MessageView) layoutP2PBlock(gtx layout.Context, info *p2pLinkInfo, idx int, isOwn bool) layout.Dimensions {
 	conn := v.app.Conn()
 
-	// Zjistit stav: unavailable > aktivní transfer > downloaded > vlastní > dostupný
+	// Determine state: unavailable > active transfer > downloaded > own > available
 	icon := IconArrowDown
 	iconColor := ColorAccent
 	suffix := " \u2014 click to save"
@@ -326,7 +326,7 @@ func (v *MessageView) layoutP2PBlock(gtx layout.Context, info *p2pLinkInfo, idx 
 	return renderBlock(gtx)
 }
 
-// p2pTransferActive vrátí true pokud je transfer v aktivním stavu (waiting/connecting/transferring).
+// p2pTransferActive returns true if the transfer is in an active state (waiting/connecting/transferring).
 func (v *MessageView) p2pTransferActive(conn *ServerConnection, transferID string) bool {
 	for _, t := range conn.P2P.GetActiveTransfers() {
 		if t.ID == transferID && (t.Status == p2p.StatusWaiting || t.Status == p2p.StatusConnecting || t.Status == p2p.StatusTransferring) {

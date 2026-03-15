@@ -48,7 +48,7 @@ func (t *ToastManager) Show(msg string, level ToastLevel) {
 		CreatedAt: time.Now(),
 		Duration:  4 * time.Second,
 	})
-	// Max 5 viditelných toastů
+	// Max 5 visible toasts
 	if len(t.toasts) > 5 {
 		t.toasts = t.toasts[len(t.toasts)-5:]
 	}
@@ -64,7 +64,7 @@ func (t *ToastManager) Info(msg string)    { t.Show(msg, ToastInfo) }
 func (t *ToastManager) Layout(gtx layout.Context) layout.Dimensions {
 	t.mu.Lock()
 	now := time.Now()
-	// Odfiltrovat expirované
+	// Filter out expired
 	alive := t.toasts[:0]
 	needInvalidate := false
 	for _, toast := range t.toasts {
@@ -82,12 +82,12 @@ func (t *ToastManager) Layout(gtx layout.Context) layout.Dimensions {
 		return layout.Dimensions{}
 	}
 
-	// Invalidovat pro animaci zmizení
+	// Invalidate for fade-out animation
 	if needInvalidate {
 		gtx.Execute(op.InvalidateCmd{At: time.Now().Add(50 * time.Millisecond)})
 	}
 
-	// Toasty v pravém dolním rohu
+	// Toasts in the bottom-right corner
 	return layout.S.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
 		return layout.Inset{Bottom: unit.Dp(16), Right: unit.Dp(16)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
 			return layout.Flex{Axis: layout.Vertical, Alignment: layout.End}.Layout(gtx,
@@ -115,7 +115,7 @@ func layoutToast(gtx layout.Context, th *Theme, t toast, now time.Time) layout.D
 	elapsed := now.Sub(t.CreatedAt)
 	remaining := t.Duration - elapsed
 
-	// Fade out v posledních 500ms
+	// Fade out in the last 500ms
 	alpha := byte(255)
 	if remaining < 500*time.Millisecond {
 		alpha = byte(255 * remaining / (500 * time.Millisecond))
@@ -139,7 +139,7 @@ func layoutToast(gtx layout.Context, th *Theme, t toast, now time.Time) layout.D
 	})
 	call := macro.Stop()
 
-	// Pozadí s rounded rect
+	// Background with rounded rect
 	rr := gtx.Dp(6)
 	rect := clip.RRect{
 		Rect: image.Rect(0, 0, dims.Size.X, dims.Size.Y),

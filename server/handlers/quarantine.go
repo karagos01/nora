@@ -65,7 +65,7 @@ func (d *Deps) RemoveQuarantine(w http.ResponseWriter, r *http.Request) {
 	util.JSON(w, http.StatusOK, map[string]string{"status": "ok"})
 }
 
-// checkQuarantine kontroluje zda je uživatel v karanténě a má restrikci na danou akci.
+// checkQuarantine checks whether the user is in quarantine and has a restriction on the given action.
 func (d *Deps) checkQuarantine(userID, action string) error {
 	if d.Quarantine == nil || !d.SecurityCfg.Quarantine.Enabled {
 		return nil

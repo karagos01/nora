@@ -4,77 +4,77 @@ import (
 	"math"
 )
 
-// NoiseGate implementuje noise gate s adaptivním noise floor odhadem.
-// Framy s RMS pod thresholdem jsou ztlumeny (fade-out), framy nad thresholdem
-// procházejí beze změny (fade-in). Přechody jsou vyhlazené pomocí attack/release
-// ramp, aby se zabránilo klikání.
+// NoiseGate implements a noise gate with adaptive noise floor estimation.
+// Frames with RMS below the threshold are muted (fade-out), frames above the threshold
+// pass through unchanged (fade-in). Transitions are smoothed using attack/release
+// ramps to prevent clicking.
 type NoiseGate struct {
-	// Enabled určuje zda je noise gate aktivní
+	// Enabled determines whether the noise gate is active
 	Enabled bool
 
-	// Konfigurovatelné parametry
-	OpenThreshold  float32 // RMS úroveň pro otevření gate (0.0-1.0)
-	CloseThreshold float32 // RMS úroveň pro zavření gate (0.0-1.0), typicky nižší než open
+	// Configurable parameters
+	OpenThreshold  float32 // RMS level for opening the gate (0.0-1.0)
+	CloseThreshold float32 // RMS level for closing the gate (0.0-1.0), typically lower than open
 
-	// Attack/release v počtu framů (1 frame = 20ms)
-	AttackFrames  int // kolik framů trvá fade-in (gate open)
-	ReleaseFrames int // kolik framů trvá fade-out (gate close)
-	HoldFrames    int // kolik framů zůstává gate otevřený po poklesu pod threshold
+	// Attack/release in frame count (1 frame = 20ms)
+	AttackFrames  int // how many frames the fade-in takes (gate open)
+	ReleaseFrames int // how many frames the fade-out takes (gate close)
+	HoldFrames    int // how many frames the gate stays open after dropping below threshold
 
-	// Vnitřní stav
-	gain         float32 // aktuální gain 0.0-1.0
-	holdCounter  int     // countdown pro hold fázi
-	noiseFloor   float64 // adaptivní odhad noise floor (RMS)
-	noiseAlpha   float64 // koeficient pro EMA noise floor update
-	frameCount   int     // počet zpracovaných framů (pro inicializaci)
+	// Internal state
+	gain         float32 // current gain 0.0-1.0
+	holdCounter  int     // countdown for the hold phase
+	noiseFloor   float64 // adaptive noise floor estimate (RMS)
+	noiseAlpha   float64 // coefficient for EMA noise floor update
+	frameCount   int     // number of processed frames (for initialization)
 }
 
-// NewNoiseGate vytvoří noise gate s rozumnými výchozími hodnotami.
-// Parametry jsou optimalizované pro voice chat na 8kHz, 20ms framy.
+// NewNoiseGate creates a noise gate with reasonable default values.
+// Parameters are optimized for voice chat at 8kHz, 20ms frames.
 func NewNoiseGate() *NoiseGate {
 	return &NoiseGate{
 		Enabled:        true,
-		OpenThreshold:  0.015, // ~-36dB — otevře se při řeči
-		CloseThreshold: 0.010, // ~-40dB — zavře se při tichém šumu
-		AttackFrames:   1,     // 20ms — rychlý attack pro přirozenou řeč
-		ReleaseFrames:  5,     // 100ms — pomalý release, žádné usekávání konců slov
-		HoldFrames:     15,    // 300ms — drží otevřeno po konci řeči (pauzy mezi slovy)
+		OpenThreshold:  0.015, // ~-36dB — opens on speech
+		CloseThreshold: 0.010, // ~-40dB — closes on quiet noise
+		AttackFrames:   1,     // 20ms — fast attack for natural speech
+		ReleaseFrames:  5,     // 100ms — slow release, no clipping of word endings
+		HoldFrames:     15,    // 300ms — holds open after speech ends (pauses between words)
 		gain:           0.0,
-		noiseAlpha:     0.005, // pomalá adaptace noise floor
+		noiseAlpha:     0.005, // slow noise floor adaptation
 	}
 }
 
-// Process zpracuje jeden audio frame (typicky 160 vzorků při 8kHz/20ms).
-// Pokud je gate uzavřený, vrátí ztlumené vzorky (ticho).
-// Pokud je gate otevřený, vrátí původní vzorky.
-// Vzorky se modifikují in-place a vrátí se stejný slice.
+// Process processes a single audio frame (typically 160 samples at 8kHz/20ms).
+// If the gate is closed, returns muted samples (silence).
+// If the gate is open, returns the original samples.
+// Samples are modified in-place and the same slice is returned.
 func (ng *NoiseGate) Process(samples []int16) []int16 {
 	if !ng.Enabled || len(samples) == 0 {
 		return samples
 	}
 
-	// Spočítat RMS tohoto framu
+	// Calculate RMS of this frame
 	rms := calcFrameRMS(samples)
 
 	ng.frameCount++
 
-	// Adaptivní noise floor — aktualizovat jen když je gate zavřený
-	// (aby hlasitá řeč nezvýšila noise floor)
+	// Adaptive noise floor — update only when the gate is closed
+	// (so that loud speech doesn't raise the noise floor)
 	if ng.gain < 0.1 {
 		if ng.frameCount < 25 {
-			// Prvních 500ms: rychlá inicializace noise floor
+			// First 500ms: fast noise floor initialization
 			ng.noiseFloor = ng.noiseFloor*0.8 + float64(rms)*0.2
 		} else {
-			// Pomalá adaptace
+			// Slow adaptation
 			ng.noiseFloor = ng.noiseFloor*(1-ng.noiseAlpha) + float64(rms)*ng.noiseAlpha
 		}
 	}
 
-	// Dynamický threshold — nad noise floor
+	// Dynamic threshold — above noise floor
 	dynOpen := float32(ng.noiseFloor*2.5) + ng.OpenThreshold*0.5
 	dynClose := float32(ng.noiseFloor*1.8) + ng.CloseThreshold*0.5
 
-	// Minimální threshold (nikdy pod konfigurované hodnoty)
+	// Minimum threshold (never below configured values)
 	if dynOpen < ng.OpenThreshold {
 		dynOpen = ng.OpenThreshold
 	}
@@ -82,11 +82,11 @@ func (ng *NoiseGate) Process(samples []int16) []int16 {
 		dynClose = ng.CloseThreshold
 	}
 
-	// Gate logika
+	// Gate logic
 	if rms >= dynOpen {
-		// Nad open threshold → otevřít gate, resetovat hold
+		// Above open threshold -> open gate, reset hold
 		ng.holdCounter = ng.HoldFrames
-		// Attack: rychlé zvýšení gain
+		// Attack: fast gain increase
 		if ng.AttackFrames > 0 {
 			ng.gain += 1.0 / float32(ng.AttackFrames)
 		} else {
@@ -96,12 +96,12 @@ func (ng *NoiseGate) Process(samples []int16) []int16 {
 			ng.gain = 1.0
 		}
 	} else if rms < dynClose {
-		// Pod close threshold
+		// Below close threshold
 		if ng.holdCounter > 0 {
-			// Hold fáze — gate zůstává otevřený
+			// Hold phase — gate stays open
 			ng.holdCounter--
 		} else {
-			// Release: postupné snížení gain
+			// Release: gradual gain decrease
 			if ng.ReleaseFrames > 0 {
 				ng.gain -= 1.0 / float32(ng.ReleaseFrames)
 			} else {
@@ -112,32 +112,32 @@ func (ng *NoiseGate) Process(samples []int16) []int16 {
 			}
 		}
 	}
-	// Mezi close a open threshold — hystereze, stav se nemění
+	// Between close and open threshold — hysteresis, state doesn't change
 
-	// Aplikovat gain na vzorky
+	// Apply gain to samples
 	if ng.gain <= 0.001 {
-		// Úplné ticho — vynulovat vzorky
+		// Complete silence — zero out samples
 		for i := range samples {
 			samples[i] = 0
 		}
 	} else if ng.gain < 0.999 {
-		// Částečný gain — fade
+		// Partial gain — fade
 		g := ng.gain
 		for i, s := range samples {
 			samples[i] = int16(float32(s) * g)
 		}
 	}
-	// gain >= 1.0 — vzorky procházejí beze změny
+	// gain >= 1.0 — samples pass through unchanged
 
 	return samples
 }
 
-// IsOpen vrátí true pokud je gate aktuálně otevřený (propouští zvuk).
+// IsOpen returns true if the gate is currently open (passing audio through).
 func (ng *NoiseGate) IsOpen() bool {
 	return ng.gain > 0.1
 }
 
-// Reset resetuje vnitřní stav gate (při reconnectu apod.).
+// Reset resets the internal gate state (on reconnect etc.).
 func (ng *NoiseGate) Reset() {
 	ng.gain = 0.0
 	ng.holdCounter = 0
@@ -145,7 +145,7 @@ func (ng *NoiseGate) Reset() {
 	ng.frameCount = 0
 }
 
-// calcFrameRMS spočítá RMS úroveň framu normalizovanou na 0.0-1.0.
+// calcFrameRMS calculates the RMS level of a frame normalized to 0.0-1.0.
 func calcFrameRMS(samples []int16) float32 {
 	if len(samples) == 0 {
 		return 0

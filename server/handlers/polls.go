@@ -32,21 +32,21 @@ func (d *Deps) VotePoll(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Ověřit že poll existuje
+	// Verify the poll exists
 	pollType, err := d.Polls.GetPollType(pollID)
 	if err != nil {
 		util.Error(w, http.StatusNotFound, "poll not found")
 		return
 	}
 
-	// Ověřit že option patří k pollu
+	// Verify the option belongs to the poll
 	belongs, err := d.Polls.OptionBelongsToPoll(pollID, req.OptionID)
 	if err != nil || !belongs {
 		util.Error(w, http.StatusBadRequest, "option does not belong to this poll")
 		return
 	}
 
-	// Kontrola expiration — načíst poll pro expires_at
+	// Check expiration — load poll for expires_at
 	poll, err := d.Polls.GetByID(pollID)
 	if err != nil {
 		util.Error(w, http.StatusNotFound, "poll not found")
@@ -59,19 +59,19 @@ func (d *Deps) VotePoll(w http.ResponseWriter, r *http.Request) {
 
 	switch pollType {
 	case "simple", "anonymous":
-		// Max 1 hlas — pokud user už hlasoval, přehodit
+		// Max 1 vote — if user already voted, toggle
 		voted, _ := d.Polls.HasVoted(pollID, req.OptionID, user.ID)
 		if voted {
 			// Unvote (toggle off)
 			d.Polls.Unvote(pollID, req.OptionID, user.ID)
 		} else {
-			// Odebrat předchozí hlas (pokud existuje) a přidat nový
+			// Remove previous vote (if exists) and add new one
 			d.Polls.UnvoteAll(pollID, user.ID)
 			d.Polls.Vote(pollID, req.OptionID, user.ID)
 		}
 
 	case "multi":
-		// Toggle — vote pokud nehlasoval, unvote pokud ano
+		// Toggle — vote if not voted, unvote if already voted
 		voted, _ := d.Polls.HasVoted(pollID, req.OptionID, user.ID)
 		if voted {
 			d.Polls.Unvote(pollID, req.OptionID, user.ID)
@@ -84,7 +84,7 @@ func (d *Deps) VotePoll(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Načíst aktualizovaný poll
+	// Load updated poll
 	poll, err = d.Polls.GetByID(pollID)
 	if err != nil {
 		util.Error(w, http.StatusInternalServerError, "failed to load poll")

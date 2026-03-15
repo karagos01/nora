@@ -19,7 +19,7 @@ type acceptTunnelRequest struct {
 	WGPubKey string `json:"wg_pubkey"`
 }
 
-// GetTunnels vrátí tunely uživatele (pending + active)
+// GetTunnels returns the user's tunnels (pending + active)
 func (d *Deps) GetTunnels(w http.ResponseWriter, r *http.Request) {
 	user := auth.GetUser(r)
 	tunnels, err := d.Tunnels.GetByUser(user.ID)
@@ -32,7 +32,7 @@ func (d *Deps) GetTunnels(w http.ResponseWriter, r *http.Request) {
 	util.JSON(w, http.StatusOK, tunnels)
 }
 
-// CreateTunnel vytvoří nový tunnel request k jinému uživateli
+// CreateTunnel creates a new tunnel request to another user
 func (d *Deps) CreateTunnel(w http.ResponseWriter, r *http.Request) {
 	user := auth.GetUser(r)
 
@@ -52,20 +52,20 @@ func (d *Deps) CreateTunnel(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Ověřit že cílový uživatel existuje
+	// Verify the target user exists
 	target, err := d.Users.GetByID(req.TargetID)
 	if err != nil {
 		util.Error(w, http.StatusNotFound, "target user not found")
 		return
 	}
 
-	// Zkontrolovat zda už existuje aktivní tunnel
+	// Check if an active tunnel already exists
 	if d.Tunnels.HasActiveTunnel(user.ID, req.TargetID) {
 		util.Error(w, http.StatusConflict, "tunnel already exists between these users")
 		return
 	}
 
-	// Přidělit IP z LAN poolu
+	// Allocate IP from the LAN pool
 	nextIP, err := d.LAN.GetNextIPSimple()
 	if err != nil {
 		util.Error(w, http.StatusInternalServerError, "failed to allocate IP")
@@ -94,11 +94,11 @@ func (d *Deps) CreateTunnel(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Notifikovat cílového uživatele
+	// Notify the target user
 	event, _ := ws.NewEvent(ws.EventTunnelRequest, tunnel)
 	d.Hub.BroadcastToUser(req.TargetID, event)
 
-	// WG config pro creatora
+	// WG config for the creator
 	resp := map[string]any{
 		"tunnel": tunnel,
 		"wg_config": map[string]string{
@@ -111,7 +111,7 @@ func (d *Deps) CreateTunnel(w http.ResponseWriter, r *http.Request) {
 	util.JSON(w, http.StatusCreated, resp)
 }
 
-// AcceptTunnel přijme tunnel request
+// AcceptTunnel accepts a tunnel request
 func (d *Deps) AcceptTunnel(w http.ResponseWriter, r *http.Request) {
 	user := auth.GetUser(r)
 	tunnelID := r.PathValue("id")
@@ -143,7 +143,7 @@ func (d *Deps) AcceptTunnel(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Přidělit IP pro target
+	// Allocate IP for the target
 	nextIP, err := d.LAN.GetNextIPSimple()
 	if err != nil {
 		util.Error(w, http.StatusInternalServerError, "failed to allocate IP")
@@ -160,7 +160,7 @@ func (d *Deps) AcceptTunnel(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Přidat WG peery pro oba uživatele
+	// Add WG peers for both users
 	if err := d.WG.AddPeer(tunnel.CreatorWGPubKey, tunnel.CreatorIP); err != nil {
 		util.Error(w, http.StatusInternalServerError, "failed to add creator WG peer")
 		return
@@ -170,14 +170,14 @@ func (d *Deps) AcceptTunnel(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Reload tunnel s aktuálními daty
+	// Reload tunnel with current data
 	tunnel, _ = d.Tunnels.GetByID(tunnelID)
 
-	// Notifikovat creatora
+	// Notify the creator
 	event, _ := ws.NewEvent(ws.EventTunnelAccept, tunnel)
 	d.Hub.BroadcastToUser(tunnel.CreatorID, event)
 
-	// WG config pro target
+	// WG config for the target
 	resp := map[string]any{
 		"tunnel": tunnel,
 		"wg_config": map[string]string{
@@ -190,7 +190,7 @@ func (d *Deps) AcceptTunnel(w http.ResponseWriter, r *http.Request) {
 	util.JSON(w, http.StatusOK, resp)
 }
 
-// CloseTunnel uzavře tunnel (může obě strany)
+// CloseTunnel closes a tunnel (either side can close)
 func (d *Deps) CloseTunnel(w http.ResponseWriter, r *http.Request) {
 	user := auth.GetUser(r)
 	tunnelID := r.PathValue("id")
@@ -211,7 +211,7 @@ func (d *Deps) CloseTunnel(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Odebrat WG peery pokud byl active
+	// Remove WG peers if it was active
 	if tunnel.Status == "active" {
 		if tunnel.CreatorWGPubKey != "" {
 			d.WG.RemovePeer(tunnel.CreatorWGPubKey)
@@ -223,7 +223,7 @@ func (d *Deps) CloseTunnel(w http.ResponseWriter, r *http.Request) {
 
 	d.Tunnels.Close(tunnelID)
 
-	// Notifikovat druhou stranu
+	// Notify the other side
 	otherUserID := tunnel.TargetID
 	if user.ID == tunnel.TargetID {
 		otherUserID = tunnel.CreatorID

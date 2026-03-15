@@ -6,6 +6,7 @@ import (
 	"image/color"
 	"log"
 
+	"gioui.org/io/pointer"
 	"gioui.org/layout"
 	"gioui.org/op/clip"
 	"gioui.org/op/paint"
@@ -293,6 +294,7 @@ func (v *FriendListView) Layout(gtx layout.Context) layout.Dimensions {
 				return v.friendBtns[idx].Layout(gtx, func(gtx layout.Context) layout.Dimensions {
 					bg := color.NRGBA{}
 					if v.friendBtns[idx].Hovered() {
+						pointer.CursorPointer.Add(gtx.Ops)
 						bg = ColorHover
 					}
 
@@ -401,6 +403,7 @@ func (v *FriendListView) layoutSmallIconBtn(gtx layout.Context, btn *widget.Clic
 	return btn.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
 		bg := color.NRGBA{R: clr.R / 4, G: clr.G / 4, B: clr.B / 4, A: 255}
 		if btn.Hovered() {
+			pointer.CursorPointer.Add(gtx.Ops)
 			bg = color.NRGBA{R: clr.R / 3, G: clr.G / 3, B: clr.B / 3, A: 255}
 		}
 		return layout.Background{}.Layout(gtx,
@@ -426,6 +429,7 @@ func (v *FriendListView) layoutSmallBtn(gtx layout.Context, btn *widget.Clickabl
 	return btn.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
 		bg := color.NRGBA{R: clr.R / 4, G: clr.G / 4, B: clr.B / 4, A: 255}
 		if btn.Hovered() {
+			pointer.CursorPointer.Add(gtx.Ops)
 			bg = color.NRGBA{R: clr.R / 3, G: clr.G / 3, B: clr.B / 3, A: 255}
 		}
 		return layout.Background{}.Layout(gtx,

@@ -4,7 +4,7 @@ package mount
 
 import "fmt"
 
-// FuseMount — stub pro platformy bez FUSE.
+// FuseMount — stub for platforms without FUSE.
 type FuseMount struct {
 	mountPath string
 }

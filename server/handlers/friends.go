@@ -64,21 +64,21 @@ func (d *Deps) SendFriendRequest(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Ověřit že cílový uživatel existuje
+	// Verify that the target user exists
 	target, err := d.Users.GetByID(req.UserID)
 	if err != nil {
 		util.Error(w, http.StatusNotFound, "user not found")
 		return
 	}
 
-	// Block kontrola
+	// Block check
 	blocked, _ := d.Blocks.EitherBlocked(user.ID, req.UserID)
 	if blocked {
 		util.Error(w, http.StatusForbidden, "this user is blocked")
 		return
 	}
 
-	// Kontrola zda už jsou přátelé
+	// Check if already friends
 	areFriends, err := d.Friends.AreFriends(user.ID, req.UserID)
 	if err != nil {
 		util.Error(w, http.StatusInternalServerError, "failed to check friendship")
@@ -89,7 +89,7 @@ func (d *Deps) SendFriendRequest(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Kontrola existujícího requestu (oba směry)
+	// Check for existing request (both directions)
 	exists, err := d.FriendRequests.Exists(user.ID, req.UserID)
 	if err != nil {
 		util.Error(w, http.StatusInternalServerError, "failed to check existing request")
@@ -100,19 +100,19 @@ func (d *Deps) SendFriendRequest(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Vytvořit request
+	// Create request
 	fr, err := d.FriendRequests.Create(user.ID, req.UserID)
 	if err != nil {
 		util.Error(w, http.StatusInternalServerError, "failed to create friend request")
 		return
 	}
 
-	// Přidat from_user info
+	// Add from_user info
 	caller, _ := d.Users.GetByID(user.ID)
 	fr.FromUser = caller
 	fr.ToUser = target
 
-	// WS notifikace cílovému uživateli
+	// WS notification to target user
 	event, _ := ws.NewEvent(ws.EventFriendRequest, fr)
 	d.Hub.BroadcastToUser(req.UserID, event)
 
@@ -156,22 +156,22 @@ func (d *Deps) AcceptFriendRequest(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Jen to_user může přijmout
+	// Only to_user can accept
 	if fr.ToUserID != user.ID {
 		util.Error(w, http.StatusForbidden, "only the recipient can accept")
 		return
 	}
 
-	// Vytvořit přátelství
+	// Create friendship
 	if err := d.Friends.Add(fr.FromUserID, fr.ToUserID); err != nil {
 		util.Error(w, http.StatusInternalServerError, "failed to add friend")
 		return
 	}
 
-	// Smazat request
+	// Delete request
 	d.FriendRequests.Delete(reqID)
 
-	// WS oběma - friend.add
+	// WS to both — friend.add
 	fromUser, _ := d.Users.GetByID(fr.FromUserID)
 	toUser, _ := d.Users.GetByID(fr.ToUserID)
 
@@ -184,7 +184,7 @@ func (d *Deps) AcceptFriendRequest(w http.ResponseWriter, r *http.Request) {
 		d.Hub.BroadcastToUser(fr.ToUserID, event)
 	}
 
-	// WS notifikace o acceptu
+	// WS notification about acceptance
 	acceptEvent, _ := ws.NewEvent(ws.EventFriendRequestAccept, map[string]string{"id": reqID})
 	d.Hub.BroadcastToUser(fr.FromUserID, acceptEvent)
 	d.Hub.BroadcastToUser(fr.ToUserID, acceptEvent)
@@ -202,7 +202,7 @@ func (d *Deps) DeclineFriendRequest(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// from nebo to user může odmítnout
+	// from or to user can decline
 	if fr.FromUserID != user.ID && fr.ToUserID != user.ID {
 		util.Error(w, http.StatusForbidden, "not your friend request")
 		return
@@ -210,7 +210,7 @@ func (d *Deps) DeclineFriendRequest(w http.ResponseWriter, r *http.Request) {
 
 	d.FriendRequests.Delete(reqID)
 
-	// WS notifikace oběma
+	// WS notification to both
 	event, _ := ws.NewEvent(ws.EventFriendRequestDecline, map[string]string{"id": reqID})
 	d.Hub.BroadcastToUser(fr.FromUserID, event)
 	d.Hub.BroadcastToUser(fr.ToUserID, event)

@@ -29,7 +29,7 @@ func (a *App) processWSEvent(conn *ServerConnection, ev api.WSEvent) {
 	case "message.new":
 		var msg api.Message
 		if json.Unmarshal(ev.Payload, &msg) == nil {
-			// Cross-server blocklist: ignorovat zprávy od blokovaných uživatelů
+			// Cross-server blocklist: ignore messages from blocked users
 			if msg.Author != nil && a.IsBlockedKey(msg.Author.PublicKey) {
 				return
 			}
@@ -49,16 +49,16 @@ func (a *App) processWSEvent(conn *ServerConnection, ev api.WSEvent) {
 					}
 				}
 			}
-			// Clear typing for this user v daném kanálu
+			// Clear typing for this user in the given channel
 			if conn.ChannelTyping[msg.ChannelID] != nil {
 				delete(conn.ChannelTyping[msg.ChannelID], msg.UserID)
 			}
 
-			// Thread: přidat reply do otevřeného threadu
+			// Thread: add reply to the open thread
 			if a.ThreadView.Visible && msg.ReplyToID != nil && *msg.ReplyToID == a.ThreadView.ParentID {
 				a.ThreadView.AddReply(msg)
 			}
-			// Thread: zvýšit reply count parent zprávy v messages
+			// Thread: increment reply count of the parent message
 			if msg.ReplyToID != nil {
 				for i, m := range conn.Messages {
 					if m.ID == *msg.ReplyToID {
@@ -69,7 +69,7 @@ func (a *App) processWSEvent(conn *ServerConnection, ev api.WSEvent) {
 			}
 			a.mu.Unlock()
 
-			// Uložit do message cache
+			// Save to message cache
 			if conn.MsgCache != nil {
 				cm := store.CachedMessage{
 					ID:        msg.ID,
@@ -153,7 +153,7 @@ func (a *App) processWSEvent(conn *ServerConnection, ev api.WSEvent) {
 			}
 			a.mu.Unlock()
 
-			// Aktualizovat cached pinned messages
+			// Update cached pinned messages
 			go func() {
 				pins, err := conn.Client.GetPinnedMessages(conn.ActiveChannelID)
 				if err == nil {
@@ -301,13 +301,13 @@ func (a *App) processWSEvent(conn *ServerConnection, ev api.WSEvent) {
 	case "dm.message":
 		var msg api.DMPendingMessage
 		if json.Unmarshal(ev.Payload, &msg) == nil {
-			// Přeskočit vlastní zprávy — už jsme je přidali lokálně při odeslání
+			// Skip own messages — we already added them locally when sending
 			if msg.SenderID == conn.UserID {
 				return
 			}
 
 			a.mu.Lock()
-			// Najít konverzaci a peer key
+			// Find conversation and peer key
 			var peerKey string
 			convKnown := false
 			for _, c := range conn.DMConversations {
@@ -324,7 +324,7 @@ func (a *App) processWSEvent(conn *ServerConnection, ev api.WSEvent) {
 			}
 			secretKey := a.SecretKey
 
-			// Cross-server blocklist: ignorovat DM od blokovaných (známá konverzace)
+			// Cross-server blocklist: ignore DM from blocked users (known conversation)
 			if convKnown && peerKey != "" && a.IsBlockedKey(peerKey) {
 				a.mu.Unlock()
 				return
@@ -332,13 +332,13 @@ func (a *App) processWSEvent(conn *ServerConnection, ev api.WSEvent) {
 
 			if !convKnown {
 				a.mu.Unlock()
-				// Nová konverzace — načíst ze serveru, dešifrovat a uložit zprávu
+				// New conversation — fetch from server, decrypt and save message
 				go func() {
 					convs, err := conn.Client.GetDMConversations()
 					if err != nil {
 						return
 					}
-					// Najít peer key z nově načtených konverzací
+					// Find peer key from newly fetched conversations
 					var newPeerKey string
 					for _, c := range convs {
 						if c.ID == msg.ConversationID {
@@ -351,11 +351,11 @@ func (a *App) processWSEvent(conn *ServerConnection, ev api.WSEvent) {
 							break
 						}
 					}
-					// Cross-server blocklist: ignorovat DM od blokovaných (nová konverzace)
+					// Cross-server blocklist: ignore DM from blocked users (new conversation)
 					if newPeerKey != "" && a.IsBlockedKey(newPeerKey) {
 						return
 					}
-					// Dešifrovat a uložit do lokální historie
+					// Decrypt and save to local history
 					if newPeerKey != "" && secretKey != "" {
 						decrypted, err := crypto.DecryptDM(secretKey, newPeerKey, msg.EncryptedContent)
 						if err == nil {
@@ -389,7 +389,7 @@ func (a *App) processWSEvent(conn *ServerConnection, ev api.WSEvent) {
 
 			a.mu.Unlock()
 
-			// Známá konverzace — dešifrovat se správným peer key
+			// Known conversation — decrypt with the correct peer key
 			if peerKey != "" && secretKey != "" {
 				decrypted, err := crypto.DecryptDM(secretKey, peerKey, msg.EncryptedContent)
 				if err == nil {
@@ -426,7 +426,7 @@ func (a *App) processWSEvent(conn *ServerConnection, ev api.WSEvent) {
 		}
 
 	case "channel.typing":
-		// Channel typing indikátor
+		// Channel typing indicator
 		var payload struct {
 			ChannelID string `json:"channel_id"`
 			UserID    string `json:"user_id"`
@@ -527,7 +527,7 @@ func (a *App) processWSEvent(conn *ServerConnection, ev api.WSEvent) {
 			conn.Members = append(conn.Members, user)
 			conn.OnlineUsers[user.ID] = true
 			a.mu.Unlock()
-			// Auto-create kontakt
+			// Auto-create contact
 			if a.Contacts != nil && user.PublicKey != "" {
 				name := user.DisplayName
 				if name == "" {
@@ -551,7 +551,7 @@ func (a *App) processWSEvent(conn *ServerConnection, ev api.WSEvent) {
 			a.mu.Lock()
 			conn.FriendRequests = append(conn.FriendRequests, fr)
 			a.mu.Unlock()
-			// Desktop notifikace pro friend request
+			// Desktop notification for friend request
 			if a.NotifMgr != nil {
 				fromName := "Someone"
 				if fr.FromUser != nil {
@@ -668,13 +668,13 @@ func (a *App) processWSEvent(conn *ServerConnection, ev api.WSEvent) {
 				conn.ActiveChannelName = ""
 				conn.Messages = nil
 			}
-			// Vyčistit LAN members pro smazaný kanál (pokud to byl LAN kanál)
+			// Clean up LAN members for deleted channel (if it was a LAN channel)
 			delete(conn.LANMembers, payload.ID)
 			a.mu.Unlock()
 		}
 
 	case "category.create", "category.update", "category.delete":
-		// Full refresh — server vrací hierarchii s Children
+		// Full refresh — server returns hierarchy with Children
 		go func() {
 			cats, err := conn.Client.GetCategories()
 			if err == nil {
@@ -693,7 +693,7 @@ func (a *App) processWSEvent(conn *ServerConnection, ev api.WSEvent) {
 				return
 			}
 
-			// Try to decrypt — zkusí aktuální klíč, pak staré (po rotaci)
+			// Try to decrypt — tries the current key, then old ones (after rotation)
 			if a.GroupHistory != nil {
 				allKeys := a.GroupHistory.GetAllKeys(msg.GroupID)
 				if len(allKeys) > 0 {
@@ -987,7 +987,7 @@ func (a *App) processWSEvent(conn *ServerConnection, ev api.WSEvent) {
 			a.mu.Lock()
 			conn.BlockedUsers = append(conn.BlockedUsers, user)
 			a.mu.Unlock()
-			// Sync do klientského cross-server blocklistu
+			// Sync to client-side cross-server blocklist
 			if a.Contacts != nil && user.PublicKey != "" {
 				a.Contacts.SetBlocked(user.PublicKey, true)
 			}
@@ -1004,7 +1004,7 @@ func (a *App) processWSEvent(conn *ServerConnection, ev api.WSEvent) {
 				}
 			}
 			a.mu.Unlock()
-			// Sync do klientského cross-server blocklistu
+			// Sync to client-side cross-server blocklist
 			if a.Contacts != nil {
 				a.mu.RLock()
 				for _, u := range conn.Users {
@@ -1040,7 +1040,7 @@ func (a *App) processWSEvent(conn *ServerConnection, ev api.WSEvent) {
 					break
 				}
 			}
-			// Aktualizovat status mapy
+			// Update status maps
 			if user.Status != "" {
 				conn.UserStatuses[user.ID] = user.Status
 			} else {
@@ -1052,7 +1052,7 @@ func (a *App) processWSEvent(conn *ServerConnection, ev api.WSEvent) {
 				delete(conn.UserStatusText, user.ID)
 			}
 			a.mu.Unlock()
-			// Aktualizovat kontakt
+			// Update contact
 			if a.Contacts != nil && user.PublicKey != "" {
 				name := user.DisplayName
 				if name == "" {
@@ -1069,7 +1069,7 @@ func (a *App) processWSEvent(conn *ServerConnection, ev api.WSEvent) {
 			EncryptedContent string `json:"encrypted_content"`
 		}
 		if json.Unmarshal(ev.Payload, &payload) == nil {
-			// Najít peer key pro dešifrování
+			// Find peer key for decryption
 			peerKey := ""
 			a.mu.RLock()
 			for _, c := range conn.DMConversations {
@@ -1091,7 +1091,7 @@ func (a *App) processWSEvent(conn *ServerConnection, ev api.WSEvent) {
 				}
 			}
 
-			// Aktualizovat v current view
+			// Update in current view
 			a.mu.Lock()
 			if payload.ConversationID == conn.ActiveDMID {
 				for i, m := range conn.DMMessages {
@@ -1104,7 +1104,7 @@ func (a *App) processWSEvent(conn *ServerConnection, ev api.WSEvent) {
 			}
 			a.mu.Unlock()
 
-			// Aktualizovat lokální historii
+			// Update local history
 			if a.DMHistory != nil {
 				a.DMHistory.UpdateMessage(payload.ConversationID, payload.ID, decrypted)
 				a.DMHistory.Save()
@@ -1141,7 +1141,7 @@ func (a *App) processWSEvent(conn *ServerConnection, ev api.WSEvent) {
 		}
 		if json.Unmarshal(ev.Payload, &payload) == nil {
 			log.Printf("voice error: %s", payload.Error)
-			// Pokud "Wrong password" → klient zobrazí password prompt
+			// If "Wrong password" → client shows password prompt
 			a.mu.Lock()
 			conn.LastVoiceError = payload.Error
 			a.mu.Unlock()
@@ -1193,7 +1193,7 @@ func (a *App) processWSEvent(conn *ServerConnection, ev api.WSEvent) {
 		}
 
 	case "voice.move":
-		// Notifikace přesunutému uživateli — reconnect na nový kanál
+		// Notification to the moved user — reconnect to the new channel
 		var payload struct {
 			ChannelID string `json:"channel_id"`
 			MovedBy   string `json:"moved_by"`
@@ -1236,7 +1236,7 @@ func (a *App) processWSEvent(conn *ServerConnection, ev api.WSEvent) {
 			ConversationID string `json:"conversation_id"`
 		}
 		if json.Unmarshal(ev.Payload, &payload) == nil && conn.Call != nil {
-			// Ignorovat blokované uživatele (server-side)
+			// Ignore blocked users (server-side)
 			blocked := false
 			a.mu.RLock()
 			for _, u := range conn.BlockedUsers {
@@ -1245,7 +1245,7 @@ func (a *App) processWSEvent(conn *ServerConnection, ev api.WSEvent) {
 					break
 				}
 			}
-			// Cross-server blocklist: najít public key volajícího
+			// Cross-server blocklist: find caller's public key
 			if !blocked {
 				for _, u := range conn.Users {
 					if u.ID == payload.From && u.PublicKey != "" {
@@ -1593,18 +1593,18 @@ func (a *App) processWSEvent(conn *ServerConnection, ev api.WSEvent) {
 				}
 				savePath := filepath.Join(localRoot, relPath, payload.FileName)
 
-				// Path traversal ochrana
+				// Path traversal protection
 				cleanPath := filepath.Clean(savePath)
 				if !strings.HasPrefix(cleanPath, filepath.Clean(localRoot)+string(filepath.Separator)) && cleanPath != filepath.Clean(localRoot) {
 					log.Printf("Upload request: path traversal attempt: %s", savePath)
 				} else {
-					// Vytvořit adresáře pokud neexistují
+					// Create directories if they don't exist
 					os.MkdirAll(filepath.Dir(cleanPath), 0755)
 
-					// Zahájit P2P download od uploadera
+					// Start P2P download from the uploader
 					conn.P2P.RequestDownload(payload.UploaderID, payload.UploadID, cleanPath)
 
-					// Po dokončení synchronizovat file listing
+					// After completion, sync file listing
 					go func() {
 						for i := 0; i < 600; i++ {
 							time.Sleep(time.Second)
@@ -1637,7 +1637,7 @@ func (a *App) processWSEvent(conn *ServerConnection, ev api.WSEvent) {
 			log.Printf("File deleted: %s/%s in share %s by %s",
 				payload.RelativePath, payload.FileName, payload.DirectoryID, payload.DeletedBy)
 
-			// Owner smaže soubor z disku
+			// Owner deletes the file from disk
 			a.mu.RLock()
 			localRoot, ok := conn.SharePaths[payload.DirectoryID]
 			a.mu.RUnlock()
@@ -1651,7 +1651,7 @@ func (a *App) processWSEvent(conn *ServerConnection, ev api.WSEvent) {
 				}
 				fullPath := filepath.Join(localRoot, relPath, payload.FileName)
 
-				// Path traversal ochrana
+				// Path traversal protection
 				cleanPath := filepath.Clean(fullPath)
 				cleanRoot := filepath.Clean(localRoot)
 				if strings.HasPrefix(cleanPath, cleanRoot+string(filepath.Separator)) || cleanPath == cleanRoot {
@@ -1660,7 +1660,7 @@ func (a *App) processWSEvent(conn *ServerConnection, ev api.WSEvent) {
 					} else {
 						log.Printf("file.deleted: removed %s", cleanPath)
 					}
-					// Synchronizovat file listing se serverem
+					// Sync file listing with the server
 					go a.syncShareFiles(conn, payload.DirectoryID, localRoot)
 				} else {
 					log.Printf("file.deleted: path traversal attempt: %s", fullPath)
@@ -1730,7 +1730,7 @@ func (a *App) processWSEvent(conn *ServerConnection, ev api.WSEvent) {
 					break
 				}
 			}
-			// Smazat členy
+			// Delete members
 			if a.GameServers != nil {
 				delete(a.GameServers.gsMembers, payload.ID)
 			}
@@ -1772,7 +1772,7 @@ func (a *App) processWSEvent(conn *ServerConnection, ev api.WSEvent) {
 			a.mu.Lock()
 			conn.Tunnels = append(conn.Tunnels, tunnel)
 			a.mu.Unlock()
-			// Desktop notifikace
+			// Desktop notification
 			if a.NotifMgr != nil {
 				a.NotifMgr.NotifyMessage(conn.Name, "VPN Tunnels", "Tunnel request", tunnel.CreatorName)
 			}
@@ -1888,7 +1888,7 @@ func (a *App) processWSEvent(conn *ServerConnection, ev api.WSEvent) {
 		}
 
 	case "swarm.download_notify":
-		// Server notifikuje seedery o swarm downloadu — auto-registrace seed souboru
+		// Server notifies seeders about swarm download — auto-register seed file
 		if conn.Swarm != nil {
 			var data struct {
 				DirectoryID  string `json:"directory_id"`
@@ -1919,13 +1919,13 @@ func (a *App) processWSEvent(conn *ServerConnection, ev api.WSEvent) {
 		}
 
 	case "swarm.seed_added", "swarm.seed_removed":
-		// Refresh seed counts pokud jsme v shares view
+		// Refresh seed counts if we're in shares view
 		if a.SharesView.ActiveShareID != "" {
 			a.Window.Invalidate()
 		}
 
 	case "ban.created":
-		// Admin notifikace — refresh ban list
+		// Admin notification — refresh ban list
 		log.Printf("WS: ban.created event")
 
 	case "device.suspicious":
@@ -1980,7 +1980,7 @@ func (a *App) processWSEvent(conn *ServerConnection, ev api.WSEvent) {
 		if json.Unmarshal(ev.Payload, &data) == nil {
 			log.Printf("Calendar reminder: %s", data.Title)
 			go PlayNotificationSound()
-			// Desktop notifikace pro calendar reminder
+			// Desktop notification for calendar reminder
 			if a.NotifMgr != nil {
 				a.NotifMgr.NotifyCalendarReminder(conn.Name, data.Title)
 			}
@@ -2000,30 +2000,30 @@ func (a *App) processWSEvent(conn *ServerConnection, ev api.WSEvent) {
 			log.Printf("Transfer request: %s wants file %s from share %s",
 				payload.RequesterID, payload.FileName, payload.DirectoryID)
 
-			// Owner auto-respond: najít lokální cestu a registrovat soubor pro P2P
+			// Owner auto-respond: find local path and register file for P2P
 			a.mu.RLock()
 			localRoot, ok := conn.SharePaths[payload.DirectoryID]
 			a.mu.RUnlock()
 
 			if ok && localRoot != "" && conn.P2P != nil {
-				// Sestavit cestu: root + relativePath + fileName
+				// Build path: root + relativePath + fileName
 				relPath := payload.RelativePath
 				if relPath == "/" || relPath == "" {
 					relPath = ""
 				} else {
-					// Odstranit úvodní /
+					// Remove leading /
 					relPath = strings.TrimPrefix(relPath, "/")
 				}
 				fullPath := filepath.Join(localRoot, relPath, payload.FileName)
 
-				// Path traversal ochrana
+				// Path traversal protection
 				cleanPath := filepath.Clean(fullPath)
 				if !strings.HasPrefix(cleanPath, filepath.Clean(localRoot)+string(filepath.Separator)) && cleanPath != filepath.Clean(localRoot) {
 					log.Printf("Transfer request: path traversal attempt: %s", fullPath)
 				} else {
-					// Ověřit existenci souboru
+					// Verify file existence
 					if fi, err := os.Stat(cleanPath); err == nil && !fi.IsDir() {
-						// Registrovat soubor v P2P manageru s transferID od serveru
+						// Register file in P2P manager with transferID from server
 						conn.P2P.RegisterFileForShare(payload.TransferID, cleanPath, payload.FileName, fi.Size())
 						log.Printf("Transfer request: registered %s for transfer %s", cleanPath, payload.TransferID)
 					} else {
@@ -2037,7 +2037,7 @@ func (a *App) processWSEvent(conn *ServerConnection, ev api.WSEvent) {
 	}
 }
 
-// findUsername hledá username v conn.Users (volající musí držet a.mu).
+// findUsername looks up a username in conn.Users (caller must hold a.mu).
 func findUsername(conn *ServerConnection, userID string) string {
 	for _, u := range conn.Users {
 		if u.ID == userID {
@@ -2050,7 +2050,7 @@ func findUsername(conn *ServerConnection, userID string) string {
 	return "Unknown"
 }
 
-// findChannelName hledá název kanálu v conn.Channels (volající musí držet a.mu).
+// findChannelName looks up a channel name in conn.Channels (caller must hold a.mu).
 func findChannelName(conn *ServerConnection, channelID string) string {
 	for _, ch := range conn.Channels {
 		if ch.ID == channelID {
@@ -2060,7 +2060,7 @@ func findChannelName(conn *ServerConnection, channelID string) string {
 	return "unknown"
 }
 
-// findGroupName hledá název skupiny v conn.Groups (volající musí držet a.mu).
+// findGroupName looks up a group name in conn.Groups (caller must hold a.mu).
 func findGroupName(conn *ServerConnection, groupID string) string {
 	for _, g := range conn.Groups {
 		if g.ID == groupID {
@@ -2070,7 +2070,7 @@ func findGroupName(conn *ServerConnection, groupID string) string {
 	return "Group"
 }
 
-// syncShareFiles synchronizuje file listing se serverem (owner-side, po uploadu).
+// syncShareFiles synchronizes file listing with the server (owner-side, after upload).
 func (a *App) syncShareFiles(conn *ServerConnection, shareID, localPath string) {
 	var files []map[string]interface{}
 	filepath.Walk(localPath, func(path string, info os.FileInfo, err error) error {

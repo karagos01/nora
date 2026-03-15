@@ -21,7 +21,7 @@ const (
 	pathHashLen       = 64
 )
 
-// --- Request typy ---
+// --- Request types ---
 
 type createShareRequest struct {
 	PathHash    string `json:"path_hash"`
@@ -65,7 +65,7 @@ type syncFileEntry struct {
 	ModifiedAt   string `json:"modified_at"`
 }
 
-// --- Sdílené adresáře ---
+// --- Shared directories ---
 
 func (d *Deps) ListShares(w http.ResponseWriter, r *http.Request) {
 	user := auth.GetUser(r)
@@ -79,7 +79,7 @@ func (d *Deps) ListShares(w http.ResponseWriter, r *http.Request) {
 		own = []models.SharedDirectory{}
 	}
 
-	// Lazy expiration check — deaktivovat expirované shares
+	// Lazy expiration check — deactivate expired shares
 	now := time.Now().UTC()
 	for i := range own {
 		if own[i].ExpiresAt != nil && now.After(*own[i].ExpiresAt) && own[i].IsActive {
@@ -97,7 +97,7 @@ func (d *Deps) ListShares(w http.ResponseWriter, r *http.Request) {
 		accessible = []models.SharedDirectory{}
 	}
 
-	// Přidat effective permissions ke každému accessible share
+	// Add effective permissions to each accessible share
 	for i := range accessible {
 		perm, err := d.Shares.GetEffectivePermission(accessible[i].ID, user.ID)
 		if err == nil {
@@ -130,7 +130,7 @@ func (d *Deps) CreateShare(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Validace path_hash formátu (hex SHA-256)
+	// Validate path_hash format (hex SHA-256)
 	if len(req.PathHash) != pathHashLen {
 		util.Error(w, http.StatusBadRequest, "path_hash must be 64 hex characters")
 		return
@@ -140,7 +140,7 @@ func (d *Deps) CreateShare(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Limit počtu sdílení per uživatel
+	// Limit shares per user
 	existing, _ := d.Shares.ListByOwner(user.ID)
 	if len(existing) >= maxSharesPerUser {
 		util.Error(w, http.StatusBadRequest, "share limit reached")
@@ -161,7 +161,7 @@ func (d *Deps) CreateShare(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Vytvořit globální oprávnění (default: read)
+	// Create global permission (default: read)
 	permID, _ := uuid.NewV7()
 	globalPerm := &models.SharePermission{
 		ID:          permID.String(),
@@ -190,7 +190,7 @@ func (d *Deps) GetShare(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Vlastník vidí vždy, ostatní musí mít oprávnění
+	// Owner always sees, others must have permission
 	if dir.OwnerID != user.ID {
 		perm, err := d.Shares.GetEffectivePermission(shareID, user.ID)
 		if err != nil || !perm.CanRead || perm.IsBlocked {
@@ -203,7 +203,7 @@ func (d *Deps) GetShare(w http.ResponseWriter, r *http.Request) {
 		"directory": dir,
 	}
 
-	// Permissions vidí jen owner
+	// Only owner can see permissions
 	if dir.OwnerID == user.ID {
 		perms, _ := d.Shares.ListPermissions(shareID)
 		if perms == nil {
@@ -300,7 +300,7 @@ func (d *Deps) DeleteShare(w http.ResponseWriter, r *http.Request) {
 	util.JSON(w, http.StatusOK, map[string]string{"status": "ok"})
 }
 
-// --- Oprávnění ---
+// --- Permissions ---
 
 func (d *Deps) AddSharePermission(w http.ResponseWriter, r *http.Request) {
 	user := auth.GetUser(r)
@@ -322,7 +322,7 @@ func (d *Deps) AddSharePermission(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Write implikuje Read + Delete
+	// Write implies Read + Delete
 	canWrite := req.CanWrite
 	canRead := req.CanRead
 	if canWrite {
@@ -350,8 +350,8 @@ func (d *Deps) AddSharePermission(w http.ResponseWriter, r *http.Request) {
 		perms = []models.SharePermission{}
 	}
 
-	// Permission change notifikace — broadcast všem (pro refresh accessible listu),
-	// ale bez citlivých dat (jen directory_id)
+	// Permission change notification — broadcast to all (to refresh accessible list),
+	// but without sensitive data (only directory_id)
 	event, _ := ws.NewEvent(ws.EventSharePermissionChanged, map[string]string{
 		"directory_id": shareID,
 	})
@@ -427,7 +427,7 @@ func (d *Deps) UpdateSharePermission(w http.ResponseWriter, r *http.Request) {
 	if req.IsBlocked != nil {
 		existing.IsBlocked = *req.IsBlocked
 	}
-	// Write implikuje Read
+	// Write implies Read
 	if existing.CanWrite {
 		existing.CanRead = true
 	}
@@ -500,7 +500,7 @@ func (d *Deps) ListShareFiles(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Přístup: owner vždy, ostatní musí mít read
+	// Access: owner always, others must have read
 	if dir.OwnerID != user.ID {
 		perm, err := d.Shares.GetEffectivePermission(shareID, user.ID)
 		if err != nil || !perm.CanRead || perm.IsBlocked {
@@ -521,7 +521,7 @@ func (d *Deps) ListShareFiles(w http.ResponseWriter, r *http.Request) {
 	util.JSON(w, http.StatusOK, files)
 }
 
-// SyncShareFiles — klient pošle aktuální listing souborů, server nahradí cache
+// SyncShareFiles — client sends current file listing, server replaces cache
 func (d *Deps) SyncShareFiles(w http.ResponseWriter, r *http.Request) {
 	user := auth.GetUser(r)
 	shareID := r.PathValue("id")
@@ -536,13 +536,13 @@ func (d *Deps) SyncShareFiles(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Kontrola expirace
+	// Check expiration
 	if d.checkShareExpired(dir) {
 		util.Error(w, http.StatusGone, "share has expired")
 		return
 	}
 
-	// Limit na request body (50MB max — 50k souborů s metadaty)
+	// Limit request body (50MB max — 50k files with metadata)
 	r.Body = http.MaxBytesReader(w, r.Body, 50*1024*1024)
 
 	var req syncFilesRequest
@@ -551,7 +551,7 @@ func (d *Deps) SyncShareFiles(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Limit počtu souborů (anti-DoS)
+	// Limit number of files (anti-DoS)
 	if len(req.Files) > maxFilesPerSync {
 		util.Error(w, http.StatusBadRequest, "too many files")
 		return
@@ -570,9 +570,9 @@ func (d *Deps) SyncShareFiles(w http.ResponseWriter, r *http.Request) {
 		}
 
 		if !f.IsDir {
-			// Kontrola max file size
+			// Check max file size
 			if dir.MaxFileSizeMB > 0 && f.FileSize > int64(dir.MaxFileSizeMB)*1024*1024 {
-				continue // přeskočit soubor překračující limit
+				continue // skip file exceeding limit
 			}
 			fileCount++
 			totalSize += f.FileSize
@@ -590,13 +590,13 @@ func (d *Deps) SyncShareFiles(w http.ResponseWriter, r *http.Request) {
 		})
 	}
 
-	// Kontrola max files count
+	// Check max files count
 	if dir.MaxFilesCount > 0 && fileCount > dir.MaxFilesCount {
 		util.Error(w, http.StatusBadRequest, "too many files for this share's limit")
 		return
 	}
 
-	// Kontrola storage quota
+	// Check storage quota
 	if dir.StorageQuotaMB > 0 && totalSize > int64(dir.StorageQuotaMB)*1024*1024 {
 		util.Error(w, http.StatusBadRequest, "storage quota exceeded")
 		return
@@ -607,7 +607,7 @@ func (d *Deps) SyncShareFiles(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Broadcast změna souborů
+	// Broadcast file change
 	event, _ := ws.NewEvent(ws.EventShareFilesChanged, map[string]string{
 		"directory_id": shareID,
 		"owner_id":     user.ID,
@@ -620,7 +620,7 @@ func (d *Deps) SyncShareFiles(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// TransferRequest — požadavek na stažení souboru
+// TransferRequest — file download request
 func (d *Deps) TransferRequest(w http.ResponseWriter, r *http.Request) {
 	user := auth.GetUser(r)
 	shareID := r.PathValue("id")
@@ -631,7 +631,7 @@ func (d *Deps) TransferRequest(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Ověřit přístup
+	// Verify access
 	if dir.OwnerID != user.ID {
 		perm, err := d.Shares.GetEffectivePermission(shareID, user.ID)
 		if err != nil || !perm.CanRead || perm.IsBlocked {
@@ -654,13 +654,13 @@ func (d *Deps) TransferRequest(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// IDOR ochrana: soubor musí patřit do požadovaného share
+	// IDOR protection: file must belong to the requested share
 	if file.DirectoryID != shareID {
 		util.Error(w, http.StatusBadRequest, "file does not belong to this share")
 		return
 	}
 
-	// Poslat transfer request ownerovi přes WS
+	// Send transfer request to owner via WS
 	transferID, _ := uuid.NewV7()
 	event, _ := ws.NewEvent(ws.EventTransferRequest, map[string]any{
 		"transfer_id":   transferID.String(),
@@ -680,7 +680,7 @@ func (d *Deps) TransferRequest(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// UploadRequest — požadavek na nahrání souboru do share (uploader → owner)
+// UploadRequest — file upload request to share (uploader → owner)
 func (d *Deps) UploadRequest(w http.ResponseWriter, r *http.Request) {
 	user := auth.GetUser(r)
 	shareID := r.PathValue("id")
@@ -691,13 +691,13 @@ func (d *Deps) UploadRequest(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Kontrola expirace
+	// Check expiration
 	if d.checkShareExpired(dir) {
 		util.Error(w, http.StatusGone, "share has expired")
 		return
 	}
 
-	// Ověřit write oprávnění
+	// Verify write permission
 	if dir.OwnerID != user.ID {
 		perm, err := d.Shares.GetEffectivePermission(shareID, user.ID)
 		if err != nil || !perm.CanWrite || perm.IsBlocked {
@@ -727,13 +727,13 @@ func (d *Deps) UploadRequest(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Kontrola max file size
+	// Check max file size
 	if dir.MaxFileSizeMB > 0 && req.FileSize > int64(dir.MaxFileSizeMB)*1024*1024 {
 		util.Error(w, http.StatusRequestEntityTooLarge, "file exceeds max file size limit")
 		return
 	}
 
-	// Kontrola stats (files count + storage quota)
+	// Check stats (files count + storage quota)
 	if dir.MaxFilesCount > 0 || dir.StorageQuotaMB > 0 {
 		totalSize, filesCount, err := d.Shares.GetShareStats(shareID)
 		if err == nil {
@@ -765,7 +765,7 @@ func (d *Deps) UploadRequest(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// DeleteShareFile — smaže záznam souboru z cache a notifikuje ownera k fyzickému smazání
+// DeleteShareFile — deletes a file record from cache and notifies owner for physical deletion
 func (d *Deps) DeleteShareFile(w http.ResponseWriter, r *http.Request) {
 	user := auth.GetUser(r)
 	shareID := r.PathValue("id")
@@ -776,7 +776,7 @@ func (d *Deps) DeleteShareFile(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Ověřit write oprávnění (owner má vždy přístup)
+	// Verify write permission (owner always has access)
 	if dir.OwnerID != user.ID {
 		perm, err := d.Shares.GetEffectivePermission(shareID, user.ID)
 		if err != nil || !perm.CanWrite || perm.IsBlocked {
@@ -805,13 +805,13 @@ func (d *Deps) DeleteShareFile(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Smazat záznam z DB
+	// Delete record from DB
 	if err := d.Shares.DeleteFileEntry(shareID, req.RelativePath, req.FileName); err != nil {
 		util.Error(w, http.StatusNotFound, "file not found in cache")
 		return
 	}
 
-	// Notifikovat ownera přes WS — aby fyzicky smazal soubor z disku
+	// Notify owner via WS — so they physically delete the file from disk
 	event, _ := ws.NewEvent(ws.EventFileDeleted, map[string]any{
 		"directory_id":  shareID,
 		"relative_path": req.RelativePath,
@@ -823,7 +823,7 @@ func (d *Deps) DeleteShareFile(w http.ResponseWriter, r *http.Request) {
 	util.JSON(w, http.StatusOK, map[string]string{"status": "ok"})
 }
 
-// GetShareStats — vrátí celkovou velikost a počet souborů (jen pro ownera)
+// GetShareStats — returns total size and file count (owner only)
 func (d *Deps) GetShareStats(w http.ResponseWriter, r *http.Request) {
 	user := auth.GetUser(r)
 	shareID := r.PathValue("id")
@@ -850,7 +850,7 @@ func (d *Deps) GetShareStats(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// checkShareExpired zkontroluje expiraci share a deaktivuje ho, vrátí true pokud expiroval
+// checkShareExpired checks share expiration and deactivates it, returns true if expired
 func (d *Deps) checkShareExpired(dir *models.SharedDirectory) bool {
 	if dir.ExpiresAt != nil && time.Now().UTC().After(*dir.ExpiresAt) {
 		dir.IsActive = false
@@ -860,18 +860,18 @@ func (d *Deps) checkShareExpired(dir *models.SharedDirectory) bool {
 	return false
 }
 
-// --- Validace ---
+// --- Validation ---
 
-// isValidSharePath kontroluje že relativní cesta je bezpečná
+// isValidSharePath checks that the relative path is safe
 func isValidSharePath(p string) bool {
 	if p == "" {
 		return false
 	}
-	// Musí začínat /
+	// Must start with /
 	if !strings.HasPrefix(p, "/") {
 		return false
 	}
-	// Nesmí obsahovat path traversal
+	// Must not contain path traversal
 	cleaned := path.Clean(p)
 	if strings.Contains(cleaned, "..") {
 		return false
@@ -879,7 +879,7 @@ func isValidSharePath(p string) bool {
 	return true
 }
 
-// isValidFileName kontroluje že jméno souboru neobsahuje path separátory
+// isValidFileName checks that the filename does not contain path separators
 func isValidFileName(name string) bool {
 	if name == "" || name == "." || name == ".." {
 		return false

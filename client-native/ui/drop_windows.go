@@ -26,7 +26,7 @@ var (
 	pCallWindowProc   = user32.NewProc("CallWindowProcW")
 )
 
-// SetupFileDrop inicializuje OS file drop pro Windows (WM_DROPFILES).
+// SetupFileDrop initializes OS file drop for Windows (WM_DROPFILES).
 func (a *App) SetupFileDrop(e app.ViewEvent) {
 	v, ok := e.(app.Win32ViewEvent)
 	if !ok || !e.Valid() || a.fileDropInitialized {
@@ -38,13 +38,13 @@ func (a *App) SetupFileDrop(e app.ViewEvent) {
 }
 
 func initFileDropWin32(hwnd uintptr, ch chan<- []string, win *app.Window) {
-	// Povolit příjem WM_DROPFILES
+	// Enable receiving WM_DROPFILES
 	pDragAcceptFiles.Call(hwnd, 1)
 
-	// Uložit originální window procedure
+	// Save the original window procedure
 	origWndProc, _, _ := pGetWindowLongPtr.Call(hwnd, _GWLP_WNDPROC)
 
-	// Subclass — zachytit WM_DROPFILES, ostatní předat dál
+	// Subclass — intercept WM_DROPFILES, pass others through
 	newProc := syscall.NewCallback(func(hWnd, msg, wParam, lParam uintptr) uintptr {
 		if msg == _WM_DROPFILES {
 			hDrop := wParam

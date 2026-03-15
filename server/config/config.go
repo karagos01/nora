@@ -67,7 +67,7 @@ type RateLimitConfig struct {
 
 type RegistrationConfig struct {
 	Open bool   `toml:"open"`
-	Mode string `toml:"mode"` // "open", "approval", "closed" — má prioritu nad Open
+	Mode string `toml:"mode"` // "open", "approval", "closed" — takes priority over Open
 }
 
 type SecurityConfig struct {
@@ -188,8 +188,8 @@ func Load(path string) (*Config, error) {
 	return cfg, nil
 }
 
-// ResolveRegMode vrací registration mode string.
-// Pokud Mode je nastavený, použije se. Jinak se odvozuje z Open bool.
+// ResolveRegMode returns the registration mode string.
+// If Mode is set, it is used. Otherwise it is derived from the Open bool.
 func ResolveRegMode(reg RegistrationConfig) string {
 	if reg.Mode != "" {
 		return reg.Mode

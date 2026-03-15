@@ -1,7 +1,7 @@
 package voice
 
 // Opus codec — pure Go (kazzmir/opus-go, ccgo-transpiled libopus, no CGO).
-// 48kHz, mono, 20ms framy (960 samples), VoIP optimized.
+// 48kHz, mono, 20ms frames (960 samples), VoIP optimized.
 
 import (
 	"log"
@@ -15,19 +15,19 @@ const (
 	OpusChannels    = 1     // mono
 	OpusFrameMs     = 20    // ms
 	OpusFrameSize   = OpusSampleRate * OpusFrameMs / 1000 // 960 samples per frame
-	OpusBitrate     = 32000 // bps (voice optimized, 24-64kbps rozsah)
-	OpusComplexity  = 5     // 0-10, 5 = dobrý kompromis výkon/kvalita
-	OpusMaxPacket   = 4000  // max Opus packet size v bytech
+	OpusBitrate     = 32000 // bps (voice optimized, 24-64kbps range)
+	OpusComplexity  = 5     // 0-10, 5 = good performance/quality tradeoff
+	OpusMaxPacket   = 4000  // max Opus packet size in bytes
 )
 
-// OpusCodec drží encoder a decoder pro jedno voice spojení.
+// OpusCodec holds an encoder and decoder for a single voice connection.
 type OpusCodec struct {
 	mu  sync.Mutex
 	enc *opus.Encoder
 	dec *opus.Decoder
 }
 
-// NewOpusCodec vytvoří nový Opus encoder+decoder (48kHz, mono, VoIP).
+// NewOpusCodec creates a new Opus encoder+decoder (48kHz, mono, VoIP).
 func NewOpusCodec() (*OpusCodec, error) {
 	enc, err := opus.NewEncoder(OpusSampleRate, OpusChannels, opus.ApplicationVoIP)
 	if err != nil {
@@ -50,8 +50,8 @@ func NewOpusCodec() (*OpusCodec, error) {
 	return &OpusCodec{enc: enc, dec: dec}, nil
 }
 
-// Encode kóduje 960 PCM int16 samples (20ms @ 48kHz) do Opus packetu.
-// Vrací Opus packet (bytes) nebo error.
+// Encode encodes 960 PCM int16 samples (20ms @ 48kHz) into an Opus packet.
+// Returns the Opus packet (bytes) or an error.
 func (c *OpusCodec) Encode(pcm []int16) ([]byte, error) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
@@ -64,8 +64,8 @@ func (c *OpusCodec) Encode(pcm []int16) ([]byte, error) {
 	return packet[:n], nil
 }
 
-// Decode dekóduje Opus packet do PCM int16 samples.
-// Vrací decoded samples (960 pro 20ms @ 48kHz) nebo error.
+// Decode decodes an Opus packet into PCM int16 samples.
+// Returns decoded samples (960 for 20ms @ 48kHz) or an error.
 func (c *OpusCodec) Decode(packet []byte) ([]int16, error) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
@@ -78,7 +78,7 @@ func (c *OpusCodec) Decode(packet []byte) ([]int16, error) {
 	return pcm[:n], nil
 }
 
-// Close uvolní encoder a decoder.
+// Close releases the encoder and decoder.
 func (c *OpusCodec) Close() {
 	c.mu.Lock()
 	defer c.mu.Unlock()
@@ -93,7 +93,7 @@ func (c *OpusCodec) Close() {
 	}
 }
 
-// EncodeSilence vrací Opus packet reprezentující ticho (960 nulových samples).
+// EncodeSilence returns an Opus packet representing silence (960 zero samples).
 func (c *OpusCodec) EncodeSilence() ([]byte, error) {
 	silence := make([]int16, OpusFrameSize)
 	return c.Encode(silence)

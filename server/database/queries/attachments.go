@@ -43,7 +43,7 @@ func (q *AttachmentQueries) ListByMessageIDs(ids []string) (map[string][]models.
 		return nil, nil
 	}
 
-	// Sestavit query s IN(?)
+	// Build query with IN(?)
 	query := `SELECT id, message_id, filepath, filename, mime_type, size, content_hash FROM attachments WHERE message_id IN (`
 	args := make([]any, len(ids))
 	for i, id := range ids {
@@ -72,7 +72,7 @@ func (q *AttachmentQueries) ListByMessageIDs(ids []string) (map[string][]models.
 	return result, rows.Err()
 }
 
-// ListByUserMessages vrátí všechny přílohy pro zprávy daného uživatele.
+// ListByUserMessages returns all attachments for messages of a given user.
 func (q *AttachmentQueries) ListByUserMessages(userID string) ([]models.Attachment, error) {
 	rows, err := q.DB.Query(
 		`SELECT a.id, a.message_id, a.filepath, a.filename, a.mime_type, a.size, a.content_hash
@@ -94,7 +94,7 @@ func (q *AttachmentQueries) ListByUserMessages(userID string) ([]models.Attachme
 	return result, rows.Err()
 }
 
-// FindByContentHash najde filepath existujícího souboru se stejným content hashem.
+// FindByContentHash finds the filepath of an existing file with the same content hash.
 func (q *AttachmentQueries) FindByContentHash(hash string) (string, error) {
 	var filepath string
 	err := q.DB.QueryRow(
@@ -106,7 +106,7 @@ func (q *AttachmentQueries) FindByContentHash(hash string) (string, error) {
 	return filepath, err
 }
 
-// CountByFilepath spočítá kolik attachmentů ukazuje na stejný soubor.
+// CountByFilepath counts how many attachments point to the same file.
 func (q *AttachmentQueries) CountByFilepath(filepath string) (int, error) {
 	var count int
 	err := q.DB.QueryRow(

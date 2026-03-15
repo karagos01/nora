@@ -2,18 +2,18 @@ package screen
 
 import "encoding/binary"
 
-// Typy zpráv pro screen sharing DataChannel protokol.
+// Message types for the screen sharing DataChannel protocol.
 const (
 	MsgMetadata byte = 0x01 // [1B type][2B width LE][2B height LE][1B fps]
 	MsgH264Data byte = 0x02 // [1B type][N bytes H.264 Annex-B]
 )
 
-// IsLegacyJPEG detekuje legacy JPEG frame (bez type prefixu) přes SOI marker.
+// IsLegacyJPEG detects a legacy JPEG frame (without type prefix) via SOI marker.
 func IsLegacyJPEG(data []byte) bool {
 	return len(data) >= 2 && data[0] == 0xFF && data[1] == 0xD8
 }
 
-// EncodeMetadata vytvoří metadata zprávu s rozlišením a FPS.
+// EncodeMetadata creates a metadata message with resolution and FPS.
 func EncodeMetadata(w, h, fps int) []byte {
 	buf := make([]byte, 6)
 	buf[0] = MsgMetadata
@@ -23,7 +23,7 @@ func EncodeMetadata(w, h, fps int) []byte {
 	return buf
 }
 
-// DecodeMetadata parsuje metadata zprávu.
+// DecodeMetadata parses a metadata message.
 func DecodeMetadata(data []byte) (w, h, fps int, ok bool) {
 	if len(data) < 5 {
 		return 0, 0, 0, false
@@ -34,7 +34,7 @@ func DecodeMetadata(data []byte) (w, h, fps int, ok bool) {
 	return w, h, fps, true
 }
 
-// EncodeH264Chunk obalí H.264 data type prefixem.
+// EncodeH264Chunk wraps H.264 data with a type prefix.
 func EncodeH264Chunk(h264Data []byte) []byte {
 	msg := make([]byte, 1+len(h264Data))
 	msg[0] = MsgH264Data
@@ -42,9 +42,9 @@ func EncodeH264Chunk(h264Data []byte) []byte {
 	return msg
 }
 
-// ParseMessage parsuje příchozí DataChannel zprávu.
-// Vrací typ zprávy a payload (bez type bytu).
-// Pro legacy JPEG vrací typ 0 a celá data jako payload.
+// ParseMessage parses an incoming DataChannel message.
+// Returns the message type and payload (without the type byte).
+// For legacy JPEG, returns type 0 and the entire data as payload.
 func ParseMessage(data []byte) (msgType byte, payload []byte) {
 	if len(data) == 0 {
 		return 0, nil

@@ -65,7 +65,7 @@ func handleUp(w http.ResponseWriter, r *http.Request) {
 	}
 	log.Printf("Request: endpoint=%s ip=%s", req.Endpoint, req.IP)
 
-	// Vytvoř TUN interface
+	// Create TUN interface
 	tunDev, err := tun.CreateTUN(ifaceName, device.DefaultMTU)
 	if err != nil {
 		log.Printf("ERROR: create TUN: %v", err)
@@ -113,7 +113,7 @@ func handleUp(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Nastav IP adresu na interface
+	// Set IP address on interface
 	if err := setIP(realName, req.IP); err != nil {
 		log.Printf("ERROR: setIP: %v", err)
 		dev.Close()
@@ -181,7 +181,7 @@ func setIP(ifname, cidr string) error {
 	}
 }
 
-// authToken je bearer token generovaný při startu, uložený v ~/.nora/wg-helper-token
+// authToken is a bearer token generated at startup, stored in ~/.nora/wg-helper-token
 var authToken string
 
 func generateAuthToken() (string, error) {
@@ -222,7 +222,7 @@ func extractWintun() {
 		return
 	}
 
-	// Extrahuj wintun.dll vedle exe (LoadLibrary hledá primárně tam)
+	// Extract wintun.dll next to exe (LoadLibrary looks there first)
 	exePath, err := os.Executable()
 	if err != nil {
 		exePath = "."
@@ -235,7 +235,7 @@ func extractWintun() {
 		return
 	}
 	if err := os.WriteFile(dllPath, wintunDLL, 0644); err != nil {
-		// Fallback na temp pokud vedle exe nejde zapsat (read-only adresář)
+		// Fallback to temp if writing next to exe fails (read-only directory)
 		dllPath = filepath.Join(os.TempDir(), "wintun.dll")
 		if err2 := os.WriteFile(dllPath, wintunDLL, 0644); err2 != nil {
 			log.Printf("WARNING: failed to extract wintun.dll: %v", err2)
@@ -252,7 +252,7 @@ func main() {
 	extractWintun()
 	addr := "127.0.0.1:9023"
 
-	// Generovat auth token a uložit do ~/.nora/wg-helper-token
+	// Generate auth token and save to ~/.nora/wg-helper-token
 	token, err := generateAuthToken()
 	if err != nil {
 		log.Fatalf("Failed to generate auth token: %v", err)

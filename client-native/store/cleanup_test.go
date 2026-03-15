@@ -17,7 +17,7 @@ func TestScanDiskUsage(t *testing.T) {
 	os.MkdirAll(filepath.Join(noraDir, "cache", "server1"), 0700)
 	os.MkdirAll(filepath.Join(noraDir, "sounds"), 0700)
 
-	// Fiktivní soubory
+	// Dummy files
 	os.WriteFile(filepath.Join(noraDir, "identities.json"), make([]byte, 100), 0600)
 	os.WriteFile(filepath.Join(noraDir, "dm_history_abcd1234.json"), make([]byte, 500), 0600)
 	os.WriteFile(filepath.Join(noraDir, "group_history_abcd1234.json"), make([]byte, 300), 0600)
@@ -55,7 +55,7 @@ func TestCleanupCache(t *testing.T) {
 	cacheDir := filepath.Join(tmp, ".nora", "cache")
 	os.MkdirAll(cacheDir, 0700)
 
-	// Vytvořit 3 soubory s různým ModTime (oldest → newest)
+	// Create 3 files with different ModTime (oldest → newest)
 	files := []struct {
 		name string
 		size int
@@ -73,7 +73,7 @@ func TestCleanupCache(t *testing.T) {
 		os.Chtimes(path, now.Add(-f.age), now.Add(-f.age))
 	}
 
-	// Celkem 1000B, limit 600B → měl by smazat old.dat (400B) = freed 400B
+	// Total 1000B, limit 600B → should delete old.dat (400B) = freed 400B
 	freed, err := CleanupCache(600)
 	if err != nil {
 		t.Fatal(err)
@@ -82,11 +82,11 @@ func TestCleanupCache(t *testing.T) {
 		t.Errorf("freed = %d, want 400", freed)
 	}
 
-	// old.dat by neměl existovat
+	// old.dat should not exist
 	if _, err := os.Stat(filepath.Join(cacheDir, "old.dat")); !os.IsNotExist(err) {
 		t.Error("old.dat should be deleted")
 	}
-	// mid.dat a new.dat by měly zůstat
+	// mid.dat and new.dat should remain
 	if _, err := os.Stat(filepath.Join(cacheDir, "mid.dat")); err != nil {
 		t.Error("mid.dat should exist")
 	}
@@ -109,7 +109,7 @@ func TestCleanupCacheAll(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	// cache adresář by měl existovat, ale být prázdný
+	// cache directory should exist but be empty
 	parent := filepath.Join(tmp, ".nora", "cache")
 	entries, err := os.ReadDir(parent)
 	if err != nil {
@@ -140,12 +140,12 @@ func TestDMDeleteOlderThan(t *testing.T) {
 		t.Errorf("deleted = %d, want 2", deleted)
 	}
 
-	// conv1 by měla mít jen 1 zprávu
+	// conv1 should have only 1 message
 	if len(h.messages["conv1"]) != 1 {
 		t.Errorf("conv1 messages = %d, want 1", len(h.messages["conv1"]))
 	}
 
-	// conv2 by měla být smazána (prázdná)
+	// conv2 should be deleted (empty)
 	if _, ok := h.messages["conv2"]; ok {
 		t.Error("conv2 should be deleted (empty)")
 	}
@@ -177,7 +177,7 @@ func TestGroupDeleteOlderThanPreservesKeys(t *testing.T) {
 		t.Errorf("deleted = %d, want 1", deleted)
 	}
 
-	// Zprávy smazané, ale klíče zachovány
+	// Messages deleted, but keys preserved
 	if h.messages["g1"] != nil && len(h.messages["g1"]) > 0 {
 		t.Error("messages should be nil/empty")
 	}

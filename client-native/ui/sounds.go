@@ -26,7 +26,7 @@ var (
 	customDMSnd    string
 )
 
-// SetSoundSettings nastaví hlasitost a cesty ke custom zvukům.
+// SetSoundSettings sets the volume and paths for custom sounds.
 func SetSoundSettings(volume float64, notifPath, dmPath string) {
 	soundMu.Lock()
 	notifVolume = volume
@@ -78,7 +78,7 @@ func PlayDMSound() {
 	}
 }
 
-// PlayNotifPreview přehraje notification zvuk bez cooldownu (pro settings preview).
+// PlayNotifPreview plays a notification sound without cooldown (for settings preview).
 func PlayNotifPreview() {
 	soundMu.Lock()
 	vol := notifVolume
@@ -92,7 +92,7 @@ func PlayNotifPreview() {
 	}
 }
 
-// PlayDMPreview přehraje DM zvuk bez cooldownu (pro settings preview).
+// PlayDMPreview plays a DM sound without cooldown (for settings preview).
 func PlayDMPreview() {
 	soundMu.Lock()
 	vol := notifVolume
@@ -187,7 +187,7 @@ func generateWAV(freqHz float64, duration time.Duration, volume float64) []byte 
 	return buf.Bytes()
 }
 
-// playCustomSound přehraje custom zvukový soubor (MP3/WAV) s danou hlasitostí.
+// playCustomSound plays a custom sound file (MP3/WAV) at the given volume.
 func playCustomSound(path string, volume float64) {
 	volPct := int(volume * 100)
 	switch runtime.GOOS {
@@ -243,17 +243,17 @@ func PlayVoiceLeaveSound() {
 	}()
 }
 
-// callRingStop zastaví aktuální ring loop.
+// callRingStop stops the current ring loop.
 var (
 	callRingMu   sync.Mutex
 	callRingStop chan struct{}
 )
 
-// StartCallRingLoop spustí opakující se zvonění (příchozí hovor).
-// Zvuk se opakuje dokud se nezavolá StopCallRingLoop.
+// StartCallRingLoop starts a repeating ring sound (incoming call).
+// The sound repeats until StopCallRingLoop is called.
 func StartCallRingLoop() {
 	callRingMu.Lock()
-	// Zastavit předchozí loop
+	// Stop previous loop
 	if callRingStop != nil {
 		select {
 		case <-callRingStop:
@@ -291,7 +291,7 @@ func StartCallRingLoop() {
 	}()
 }
 
-// StartOutgoingRingLoop spustí zvuk vyzvánění pro volajícího.
+// StartOutgoingRingLoop starts a ring sound for the caller.
 func StartOutgoingRingLoop() {
 	callRingMu.Lock()
 	if callRingStop != nil {
@@ -331,7 +331,7 @@ func StartOutgoingRingLoop() {
 	}()
 }
 
-// StopCallRingLoop zastaví ring loop (incoming i outgoing).
+// StopCallRingLoop stops the ring loop (both incoming and outgoing).
 func StopCallRingLoop() {
 	callRingMu.Lock()
 	if callRingStop != nil {
@@ -345,7 +345,7 @@ func StopCallRingLoop() {
 	callRingMu.Unlock()
 }
 
-// PlayCallEndSound přehraje zvuk ukončení hovoru.
+// PlayCallEndSound plays the call end sound.
 func PlayCallEndSound() {
 	soundMu.Lock()
 	vol := notifVolume
@@ -357,7 +357,7 @@ func PlayCallEndSound() {
 	}()
 }
 
-// ShouldNotify rozhoduje jestli přehrát notifikační zvuk.
+// ShouldNotify decides whether to play a notification sound.
 // Hierarchie: channel override → server override → global default.
 // channelID == "" → DM/group (jen server + global).
 func (a *App) ShouldNotify(conn *ServerConnection, channelID, content string) bool {
@@ -409,7 +409,7 @@ func itoa(n int) string {
 	return s
 }
 
-// SendOSNotification posílá systémovou notifikaci (toast/banner).
+// SendOSNotification sends a system notification (toast/banner).
 // Linux: notify-send, Windows: PowerShell, macOS: osascript.
 func SendOSNotification(title, body string) {
 	go sendOSNotification(title, body)
@@ -437,19 +437,19 @@ $n.Dispose()`, escapePS(title), escapePS(body))
 	}
 }
 
-// escapePS escapuje single quotes pro PowerShell stringy.
+// escapePS escapes single quotes for PowerShell strings.
 func escapePS(s string) string {
 	return strings.ReplaceAll(s, "'", "''")
 }
 
-// escapeAS escapuje double quotes a backslashe pro AppleScript.
+// escapeAS escapes double quotes and backslashes for AppleScript.
 func escapeAS(s string) string {
 	s = strings.ReplaceAll(s, "\\", "\\\\")
 	s = strings.ReplaceAll(s, "\"", "\\\"")
 	return s
 }
 
-// copyFile zkopíruje soubor ze src do dst.
+// copyFile copies a file from src to dst.
 func copyFile(src, dst string) error {
 	in, err := os.Open(src)
 	if err != nil {
@@ -465,7 +465,7 @@ func copyFile(src, dst string) error {
 	return err
 }
 
-// truncateMsg zkrátí zprávu na max znaků s "..." na konci.
+// truncateMsg shortens a message to max characters with "..." at the end.
 func truncateMsg(s string, max int) string {
 	r := []rune(s)
 	if len(r) <= max {

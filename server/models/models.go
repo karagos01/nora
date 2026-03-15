@@ -207,7 +207,7 @@ type GroupInvite struct {
 	CreatedAt time.Time  `json:"created_at"`
 }
 
-// Historie editací zpráv
+// Message edit history
 type MessageEdit struct {
 	ID         int       `json:"id"`
 	MessageID  string    `json:"message_id"`
@@ -216,7 +216,7 @@ type MessageEdit struct {
 	EditedBy   string    `json:"edited_by"`
 }
 
-// Permission bitmasky
+// Permission bitmasks
 const (
 	PermSendMessages   int64 = 1
 	PermRead           int64 = 2
@@ -290,7 +290,7 @@ type LANParty struct {
 	CreatedAt time.Time `json:"created_at"`
 }
 
-// Webhook pro bot/integrační API
+// Webhook for bot/integration API
 type Webhook struct {
 	ID        string    `json:"id"`
 	ChannelID string    `json:"channel_id"`
@@ -301,7 +301,7 @@ type Webhook struct {
 	CreatedAt time.Time `json:"created_at"`
 }
 
-// Galerie — příloha s kontextem zprávy
+// Gallery — attachment with message context
 type GalleryItem struct {
 	ID          string    `json:"id"`
 	MessageID   string    `json:"message_id"`
@@ -316,7 +316,7 @@ type GalleryItem struct {
 	CreatedAt   time.Time `json:"created_at"`
 }
 
-// File storage — složky a soubory
+// File storage — folders and files
 type StorageFolder struct {
 	ID        string    `json:"id"`
 	Name      string    `json:"name"`
@@ -368,7 +368,7 @@ type GameServerMember struct {
 	JoinedAt     time.Time `json:"joined_at"`
 }
 
-// VPN Tunnel — personální WireGuard tunel mezi dvěma uživateli
+// VPN Tunnel — personal WireGuard tunnel between two users
 type Tunnel struct {
 	ID              string    `json:"id"`
 	CreatorID       string    `json:"creator_id"`
@@ -404,7 +404,7 @@ type WhiteboardStroke struct {
 	Username     string    `json:"username,omitempty"`
 }
 
-// Sdílené adresáře
+// Shared directories
 type SharedDirectory struct {
 	ID             string     `json:"id"`
 	OwnerID        string     `json:"owner_id"`
@@ -456,7 +456,7 @@ type SharedFileEntry struct {
 	CachedAt     time.Time  `json:"cached_at"`
 }
 
-// Ban system — device bany, invite chain, karanténa, schvalování
+// Ban system — device bans, invite chain, quarantine, approvals
 
 type DeviceBan struct {
 	ID              string     `json:"id"`
@@ -519,10 +519,10 @@ type PendingApproval struct {
 	InviterUsername    string     `json:"inviter_username,omitempty"`
 }
 
-// Channel permission overrides (per-channel allow/deny pro role nebo uživatele)
+// Channel permission overrides (per-channel allow/deny for roles or users)
 type ChannelPermOverride struct {
 	ChannelID  string `json:"channel_id"`
-	TargetType string `json:"target_type"` // "role" nebo "user"
+	TargetType string `json:"target_type"` // "role" or "user"
 	TargetID   string `json:"target_id"`
 	Allow      int64  `json:"allow"`
 	Deny       int64  `json:"deny"`

@@ -9,7 +9,7 @@ import (
 	"path/filepath"
 )
 
-// RegisterURLScheme registruje nora:// URL scheme na Windows přes registry.
+// RegisterURLScheme registers the nora:// URL scheme on Windows via the registry.
 func RegisterURLScheme() error {
 	exePath, err := os.Executable()
 	if err != nil {

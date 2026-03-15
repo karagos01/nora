@@ -4,5 +4,5 @@ package ui
 
 import "gioui.org/app"
 
-// SetupFileDrop je no-op na nepodporovaných platformách.
+// SetupFileDrop is a no-op on unsupported platforms.
 func (a *App) SetupFileDrop(e app.ViewEvent) {}

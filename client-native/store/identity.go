@@ -6,24 +6,24 @@ import (
 	"path/filepath"
 )
 
-// NotifyLevel určuje úroveň notifikací.
+// NotifyLevel defines the notification level.
 type NotifyLevel int
 
 const (
-	NotifyAll      NotifyLevel = 0 // výchozí — všechny zvuky
-	NotifyMentions NotifyLevel = 1 // jen @mentions
+	NotifyAll      NotifyLevel = 0 // default — all sounds
+	NotifyMentions NotifyLevel = 1 // only @mentions
 	NotifyNothing  NotifyLevel = 2 // muted
 )
 
-// UnmarshalJSON zpracuje oba formáty: starý string ("displayName") i nový objekt ({displayName, driveLetter}).
+// UnmarshalJSON handles both formats: old string ("displayName") and new object ({displayName, driveLetter}).
 func (m *MountedShareInfo) UnmarshalJSON(data []byte) error {
-	// Zkusit starý formát: prostý string
+	// Try old format: plain string
 	var s string
 	if err := json.Unmarshal(data, &s); err == nil {
 		m.DisplayName = s
 		return nil
 	}
-	// Nový formát: objekt
+	// New format: object
 	type Alias MountedShareInfo
 	var a Alias
 	if err := json.Unmarshal(data, &a); err != nil {
@@ -37,27 +37,28 @@ type StoredIdentity struct {
 	PublicKey       string         `json:"publicKey"`
 	Username        string         `json:"username"`
 	Encrypted       string         `json:"encrypted"`
-	PasswordVerify  string         `json:"passwordVerify,omitempty"` // šifrovaný známý string pro detekci špatného hesla
+	PasswordVerify  string         `json:"passwordVerify,omitempty"` // encrypted known string for wrong password detection
 	Servers         []StoredServer `json:"servers,omitempty"`
 	NotifyLevel    NotifyLevel    `json:"notifyLevel,omitempty"`
 	NotifVolume    float64        `json:"notifVolume,omitempty"`    // 0.0-1.0, 0 → default 1.0
-	CustomNotifSnd string         `json:"customNotifSnd,omitempty"` // cesta ke custom notification zvuku
-	CustomDMSnd    string         `json:"customDmSnd,omitempty"`    // cesta ke custom DM zvuku
-	VideoVolume    int            `json:"videoVolume,omitempty"`    // 0 → default 100 (rozsah 0-200)
-	FontScale      float64        `json:"fontScale,omitempty"`      // 0 → default 1.0 (rozsah 0.7-1.6)
+	CustomNotifSnd string         `json:"customNotifSnd,omitempty"` // path to custom notification sound
+	CustomDMSnd    string         `json:"customDmSnd,omitempty"`    // path to custom DM sound
+	VideoVolume    int            `json:"videoVolume,omitempty"`    // 0 → default 100 (range 0-200)
+	YouTubeQuality int           `json:"youtubeQuality,omitempty"` // preferred height (360, 480, 720), 0 → auto (best ≤720p)
+	FontScale      float64        `json:"fontScale,omitempty"`      // 0 → default 1.0 (range 0.7-1.6)
 	MaxCacheBytes  int64          `json:"maxCacheBytes,omitempty"`  // 0 → default 2 GB
-	MaxHistoryDays int            `json:"maxHistoryDays,omitempty"` // 0 → neomezeno
-	CompactMode    bool           `json:"compactMode,omitempty"`    // IRC-style compact zprávy
+	MaxHistoryDays int            `json:"maxHistoryDays,omitempty"` // 0 → unlimited
+	CompactMode    bool           `json:"compactMode,omitempty"`    // IRC-style compact messages
 }
 
 type MountedShareInfo struct {
 	DisplayName string `json:"displayName"`
-	DriveLetter string `json:"driveLetter,omitempty"` // Windows: mapované písmeno (např. "Z:")
-	Port        int    `json:"port,omitempty"`         // WebDAV port pro reuse při restartu
+	DriveLetter string `json:"driveLetter,omitempty"` // Windows: mapped drive letter (e.g. "Z:")
+	Port        int    `json:"port,omitempty"`         // WebDAV port for reuse on restart
 	CanWrite    bool   `json:"canWrite,omitempty"`
 }
 
-// LobbyPrefs uchovává poslední nastavení pro lobby kanál
+// LobbyPrefs stores the last settings for a lobby channel
 type LobbyPrefs struct {
 	LastName     string `json:"last_name,omitempty"`
 	LastPassword string `json:"last_password,omitempty"`
@@ -99,7 +100,7 @@ func LoadIdentities() ([]StoredIdentity, error) {
 
 	var ids []StoredIdentity
 	if err := json.Unmarshal(data, &ids); err != nil {
-		// Pokus o single-object formát (migrace)
+		// Try single-object format (migration)
 		var single StoredIdentity
 		if err2 := json.Unmarshal(data, &single); err2 == nil && single.PublicKey != "" {
 			return []StoredIdentity{single}, nil
@@ -402,14 +403,14 @@ func UpdateSoundSettings(publicKey string, volume float64, notifSnd, dmSnd strin
 	return nil
 }
 
-// SoundsDir vrátí cestu k ~/.nora/sounds/ a vytvoří ji pokud neexistuje.
+// SoundsDir returns the path to ~/.nora/sounds/ and creates it if it doesn't exist.
 func SoundsDir() string {
 	dir := filepath.Join(noraDir(), "sounds")
 	os.MkdirAll(dir, 0700)
 	return dir
 }
 
-// NoraDir vrátí cestu k ~/.nora/ (exportovaná pro cleanup).
+// NoraDir returns the path to ~/.nora/ (exported for cleanup).
 func NoraDir() string {
 	return noraDir()
 }
@@ -422,6 +423,20 @@ func UpdateVideoVolume(publicKey string, volume int) error {
 	for i := range ids {
 		if ids[i].PublicKey == publicKey {
 			ids[i].VideoVolume = volume
+			return SaveIdentities(ids)
+		}
+	}
+	return nil
+}
+
+func UpdateYouTubeQuality(publicKey string, height int) error {
+	ids, err := LoadIdentities()
+	if err != nil {
+		return err
+	}
+	for i := range ids {
+		if ids[i].PublicKey == publicKey {
+			ids[i].YouTubeQuality = height
 			return SaveIdentities(ids)
 		}
 	}

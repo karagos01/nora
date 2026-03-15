@@ -57,7 +57,7 @@ func (d *Deps) CreateCategory(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Validace parent_id — max 2 úrovně (root → child)
+	// Validate parent_id — max 2 levels (root -> child)
 	if req.ParentID != nil && *req.ParentID != "" {
 		parent, err := d.Categories.GetByID(*req.ParentID)
 		if err != nil {
@@ -139,30 +139,30 @@ func (d *Deps) UpdateCategory(w http.ResponseWriter, r *http.Request) {
 		cat.Position = *req.Position
 	}
 
-	// Validace parent_id
+	// Validate parent_id
 	if req.ParentID != nil {
 		newParentID := *req.ParentID
 		if newParentID == "" {
-			// Odebrat parenta (stát se top-level)
+			// Remove parent (become top-level)
 			cat.ParentID = nil
 		} else {
-			// Nesmí nastavit sebe jako parenta
+			// Cannot set itself as parent
 			if newParentID == cat.ID {
 				util.Error(w, http.StatusBadRequest, "category cannot be its own parent")
 				return
 			}
-			// Parent musí existovat
+			// Parent must exist
 			parent, err := d.Categories.GetByID(newParentID)
 			if err != nil {
 				util.Error(w, http.StatusBadRequest, "parent category not found")
 				return
 			}
-			// Max 2 úrovně — parent nesmí mít sám parenta
+			// Max 2 levels — parent must not have a parent itself
 			if parent.ParentID != nil && *parent.ParentID != "" {
 				util.Error(w, http.StatusBadRequest, "max 2 levels of nesting allowed")
 				return
 			}
-			// Root s dětmi se nesmí stát child
+			// Root with children cannot become a child
 			cats, _ := d.Categories.List()
 			for _, c := range cats {
 				if c.ID == cat.ID && len(c.Children) > 0 {
@@ -249,7 +249,7 @@ func (d *Deps) ReorderCategories(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Broadcast update pro každou kategorii
+	// Broadcast update for each category
 	for _, id := range req.CategoryIDs {
 		cat, err := d.Categories.GetByID(id)
 		if err != nil {

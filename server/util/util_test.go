@@ -123,7 +123,7 @@ func TestGetClientIPUntrustedProxy(t *testing.T) {
 	req.Header.Set("X-Forwarded-For", "1.2.3.4")
 
 	ip := GetClientIP(req)
-	// Vzdálený klient není trusted proxy — ignorujeme X-Forwarded-For
+	// Remote client is not a trusted proxy — ignoring X-Forwarded-For
 	if ip != "203.0.113.99" {
 		t.Errorf("got %q, want 203.0.113.99 (should ignore XFF from untrusted)", ip)
 	}

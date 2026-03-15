@@ -28,41 +28,42 @@ import (
 )
 
 type msgAction struct {
-	rowHovered    bool      // hover stav celého řádku zprávy
-	lastPress     time.Time // pro double-click reply detekci
-	editBtn       widget.Clickable
-	deleteBtn     widget.Clickable
-	replyBtn      widget.Clickable
-	pinBtn        widget.Clickable
-	hideBtn       widget.Clickable
-	copyBtn       widget.Clickable
-	thumbUpBtn    widget.Clickable
-	thumbDownBtn  widget.Clickable
-	reactEmojiBtn widget.Clickable // "+" button to open reaction emoji picker
-	reactionBtns  [8]widget.Clickable // clickable for existing reactions
-	pollOptBtns   [10]widget.Clickable // clickable for poll options
-	attBtns       [8]widget.Clickable
-	nameBtn       widget.Clickable // klik na jméno autora → UserPopup
-	avatarBtn     widget.Clickable // klik na avatar → UserPopup
+	rowHovered     bool      // hover state of entire message row
+	lastPress      time.Time // for double-click reply detection
+	editBtn        widget.Clickable
+	deleteBtn      widget.Clickable
+	replyBtn       widget.Clickable
+	pinBtn         widget.Clickable
+	hideBtn        widget.Clickable
+	copyBtn        widget.Clickable
+	thumbUpBtn     widget.Clickable
+	thumbDownBtn   widget.Clickable
+	reactEmojiBtn  widget.Clickable     // "+" button to open reaction emoji picker
+	reactionBtns   [8]widget.Clickable  // clickable for existing reactions
+	pollOptBtns    [10]widget.Clickable // clickable for poll options
+	attBtns        [8]widget.Clickable
+	vidSaveBtns    [8]widget.Clickable // download button for video attachments
+	nameBtn        widget.Clickable // click on author name → UserPopup
+	avatarBtn      widget.Clickable // click on avatar → UserPopup
 	p2pBtn         widget.Clickable // P2P download button
-	downloadAllBtn widget.Clickable // Download All pro game server files
-	linkPreviewBtn  widget.Clickable // klik na link preview → otevřít URL
-	replyCountBtn   widget.Clickable // klik na "N replies" → otevřít thread
-	replyRefBtn     widget.Clickable // klik na reply referenci → otevřít thread
-	bookmarkBtn     widget.Clickable
-	editHistoryBtn  widget.Clickable // klik na "(edited)" → zobrazit historii editací
-	links         MsgLinks
-	mentions      MsgMentions
-	textSels      []widget.Selectable
+	downloadAllBtn widget.Clickable // Download All for game server files
+	linkPreviewBtn widget.Clickable // click on link preview → open URL
+	replyCountBtn  widget.Clickable // click on "N replies" → open thread
+	replyRefBtn    widget.Clickable // click on reply reference → open thread
+	bookmarkBtn    widget.Clickable
+	editHistoryBtn widget.Clickable // click on "(edited)" → show edit history
+	links          MsgLinks
+	mentions       MsgMentions
+	textSels       []widget.Selectable
 }
 type MessageView struct {
-	app       *App
+	app        *App
 	list       widget.List
 	editor     widget.Editor
 	editorList widget.List
 	sendBtn    widget.Clickable
-	uploadBtn widget.Clickable
-	actions   []msgAction
+	uploadBtn  widget.Clickable
+	actions    []msgAction
 
 	// Reply state
 	ReplyToID      string
@@ -71,9 +72,9 @@ type MessageView struct {
 	cancelReply    widget.Clickable
 
 	// Edit state
-	EditingID      string
-	editOriginal   string
-	cancelEdit     widget.Clickable
+	EditingID    string
+	editOriginal string
+	cancelEdit   widget.Clickable
 
 	// Typing
 	lastTypingSent time.Time
@@ -86,17 +87,16 @@ type MessageView struct {
 	pendingUploads  []*pendingUpload
 	uploadMu        sync.Mutex
 	autoSend        bool
-	uploadChannelID string // channelID zachycený při pickFiles()
-	autoSendPending bool   // signál z goroutiny pro auto-send
+	uploadChannelID string // channelID captured during pickFiles()
+	autoSendPending bool   // signal from goroutine for auto-send
 	uploadBarBtn    widget.Clickable
 
 	// Download state
 	pendingDownloads []*pendingDownload
 	downloadMu       sync.Mutex
 
-	// P2P transfer bar clickables (pro error retry/dismiss)
+	// P2P transfer bar clickables (for error retry/dismiss)
 	p2pBarBtns map[string]*widget.Clickable
-
 
 	// Link file from storage
 	linkFileBtn widget.Clickable
@@ -105,33 +105,33 @@ type MessageView struct {
 	scrollBottomBtn widget.Clickable
 
 	// Pinned messages
-	pinsBtn        widget.Clickable
-	pinBarBtn      widget.Clickable
-	pinUnpinBtn    widget.Clickable
-	pinEditBtn     widget.Clickable
-	pinDeleteBtn   widget.Clickable
-	pinReplyBtn    widget.Clickable
-	pinCopyBtn     widget.Clickable
-	pinThumbUpBtn  widget.Clickable
+	pinsBtn         widget.Clickable
+	pinBarBtn       widget.Clickable
+	pinUnpinBtn     widget.Clickable
+	pinEditBtn      widget.Clickable
+	pinDeleteBtn    widget.Clickable
+	pinReplyBtn     widget.Clickable
+	pinCopyBtn      widget.Clickable
+	pinThumbUpBtn   widget.Clickable
 	pinThumbDownBtn widget.Clickable
-	pinAttBtns     [8]widget.Clickable
-	pinLinkBtn     widget.Clickable
-	pinLinks       MsgLinks
-	pinSels        []widget.Selectable
-	showPins       bool
-	pinExpanded    bool
-	pinnedMsgs     []api.Message
-	pinSeenID      string // ID poslední viděné připnuté zprávy
-	pinsList       widget.List // init Axis v layoutPinnedMessages
-	pinsListLinks  []MsgLinks
-	pinsListSels   [][]widget.Selectable
-	pinsListActs   []pinListAction
+	pinAttBtns      [8]widget.Clickable
+	pinLinkBtn      widget.Clickable
+	pinLinks        MsgLinks
+	pinSels         []widget.Selectable
+	showPins        bool
+	pinExpanded     bool
+	pinnedMsgs      []api.Message
+	pinSeenID       string      // ID of last seen pinned message
+	pinsList        widget.List // init Axis in layoutPinnedMessages
+	pinsListLinks   []MsgLinks
+	pinsListSels    [][]widget.Selectable
+	pinsListActs    []pinListAction
 
 	// Mention autocomplete
-	mentionQuery   string
-	mentionBtns    []widget.Clickable
-	showMentions   bool
-	mentionSelIdx  int
+	mentionQuery  string
+	mentionBtns   []widget.Clickable
+	showMentions  bool
+	mentionSelIdx int
 
 	// Poll builder
 	pollBtn         widget.Clickable
@@ -144,16 +144,16 @@ type MessageView struct {
 	scheduleBuilder     *ScheduleBuilder
 
 	// Emoji picker
-	emojiBtn        widget.Clickable
-	showEmojis      bool
-	emojiList       widget.List
-	emojiClickBtns  []widget.Clickable
+	emojiBtn         widget.Clickable
+	showEmojis       bool
+	emojiList        widget.List
+	emojiClickBtns   []widget.Clickable
 	unicodeEmojiBtns []widget.Clickable
 	emojiCategoryIdx int // 0=custom, 1..N=unicode categories
 	emojiCatBtns     []widget.Clickable
 
 	// Reaction emoji picker
-	reactPickerMsgIdx int  // which message index has the picker open (-1=none)
+	reactPickerMsgIdx int // which message index has the picker open (-1=none)
 	reactPickerBtns   []widget.Clickable
 
 	// Search
@@ -166,7 +166,7 @@ type MessageView struct {
 	searchActions  []msgAction
 	searchLoading  bool
 	searchOffset   int
-	searchQuery    string // poslední hledaný text
+	searchQuery    string // last searched text
 	searchList     widget.List
 
 	// Slow mode error
@@ -186,6 +186,7 @@ type MessageView struct {
 	editHistoryList  widget.List
 	editHistoryClose widget.Clickable
 }
+
 func NewMessageView(a *App) *MessageView {
 	v := &MessageView{app: a}
 	v.list.Axis = layout.Vertical
@@ -246,18 +247,18 @@ func (v *MessageView) Layout(gtx layout.Context) layout.Dimensions {
 		v.actions = make([]msgAction, len(messages)+20)
 	}
 
-	// Mention autocomplete: převzít focus pro správnou navigaci šipkami
+	// Mention autocomplete: take focus for proper arrow key navigation
 	if v.showMentions {
 		candidates := v.getMentionCandidates()
 		n := len(candidates)
 
-		// Registrovat event handler pro náš tag (mention navigace)
+		// Register event handler for our tag (mention navigation)
 		areaStack := clip.Rect{Max: image.Pt(1, 1)}.Push(gtx.Ops)
 		event.Op(gtx.Ops, &v.mentionSelIdx)
 		areaStack.Pop()
 		gtx.Execute(key.FocusCmd{Tag: &v.mentionSelIdx})
 
-		// Zpracovat klávesy: šipky, Tab, Enter, Escape, Backspace + text input
+		// Process keys: arrows, Tab, Enter, Escape, Backspace + text input
 		for {
 			ev, ok := gtx.Event(
 				key.FocusFilter{Target: &v.mentionSelIdx},
@@ -268,7 +269,7 @@ func (v *MessageView) Layout(gtx layout.Context) layout.Dimensions {
 				key.Filter{Focus: &v.mentionSelIdx, Name: key.NameEnter},
 				key.Filter{Focus: &v.mentionSelIdx, Name: key.NameEscape},
 				key.Filter{Focus: &v.mentionSelIdx, Name: key.NameDeleteBackward},
-				key.Filter{Focus: &v.mentionSelIdx, Name: ""}, // catch-all pro ostatní klávesy
+				key.Filter{Focus: &v.mentionSelIdx, Name: ""}, // catch-all for other keys
 			)
 			if !ok {
 				break
@@ -308,23 +309,23 @@ func (v *MessageView) Layout(gtx layout.Context) layout.Dimensions {
 			}
 		}
 
-		// Editor Update stále běží (z Layout), ale bez focusu nic nezpracuje
-		// — pouze vrátí ChangeEvent pokud jsme změnili text přes Insert/Delete
+		// Editor Update still runs (from Layout), but without focus it processes nothing
+		// — only returns ChangeEvent if we changed text via Insert/Delete
 		for {
 			ev, ok := v.editor.Update(gtx)
 			if !ok {
 				break
 			}
-			// Ignorovat — už jsme zpracovali v mention handleru výše
+			// Ignore — already processed in the mention handler above
 			_ = ev
 		}
 	} else {
-		// Vrátit focus editoru pokud ho má mention tag
+		// Return focus to editor if the mention tag has it
 		if gtx.Focused(&v.mentionSelIdx) {
 			gtx.Execute(key.FocusCmd{Tag: &v.editor})
 		}
 
-		// Normální editor events
+		// Normal editor events
 		for {
 			ev, ok := v.editor.Update(gtx)
 			if !ok {
@@ -343,7 +344,7 @@ func (v *MessageView) Layout(gtx layout.Context) layout.Dimensions {
 			}
 		}
 
-		// Escape: zrušit editaci/reply
+		// Escape: cancel editing/reply
 		for {
 			ev, ok := gtx.Event(key.Filter{Name: key.NameEscape})
 			if !ok {
@@ -362,7 +363,7 @@ func (v *MessageView) Layout(gtx layout.Context) layout.Dimensions {
 		}
 	}
 
-	// Ctrl+F: otevřít search
+	// Ctrl+F: open search
 	for {
 		ev, ok := gtx.Event(key.Filter{Name: "F", Required: key.ModCtrl})
 		if !ok {
@@ -376,14 +377,14 @@ func (v *MessageView) Layout(gtx layout.Context) layout.Dimensions {
 		}
 	}
 
-	// Ctrl+V: clipboard paste upload (obrázek)
+	// Ctrl+V: clipboard paste upload (image)
 	for {
 		ev, ok := gtx.Event(key.Filter{Name: "V", Required: key.ModCtrl})
 		if !ok {
 			break
 		}
 		if e, ok := ev.(key.Event); ok && e.State == key.Press {
-			// Zkusit paste obrázku z clipboard — jen pokud editor je prázdný nebo focus
+			// Try pasting an image from clipboard — only if editor is empty or has focus
 			go v.pasteClipboardImage()
 		}
 	}
@@ -453,7 +454,7 @@ func (v *MessageView) Layout(gtx layout.Context) layout.Dimensions {
 				if len(results) == 0 || channelID == "" {
 					return
 				}
-				// Přímo přidat jako pending uploads (done stav)
+				// Directly add as pending uploads (done state)
 				v.uploadMu.Lock()
 				v.uploadChannelID = channelID
 				for _, r := range results {
@@ -468,7 +469,7 @@ func (v *MessageView) Layout(gtx layout.Context) layout.Dimensions {
 					})
 				}
 				v.uploadMu.Unlock()
-				// Otevřít upload dialog pro odeslání
+				// Open upload dialog for sending
 				v.app.UploadDlg.Show()
 				v.app.Window.Invalidate()
 			})
@@ -679,7 +680,7 @@ func (v *MessageView) Layout(gtx layout.Context) layout.Dimensions {
 				go v.app.Bookmarks.Save()
 			}
 		}
-		// Klik na "(edited)" — zobrazit historii editací
+		// Click on "(edited)" — show edit history
 		if v.actions[i].editHistoryBtn.Clicked(gtx) {
 			msgID := msg.ID
 			v.editHistoryMsgID = msgID
@@ -718,7 +719,7 @@ func (v *MessageView) Layout(gtx layout.Context) layout.Dimensions {
 				}()
 			}
 		}
-		// Download All — stáhnout všechny game server přílohy
+		// Download All — download all game server attachments
 		if v.actions[i].downloadAllBtn.Clicked(gtx) {
 			attachments := msg.Attachments
 			serverURL := ""
@@ -875,7 +876,7 @@ func (v *MessageView) Layout(gtx layout.Context) layout.Dimensions {
 			}
 		}
 
-		// Handle attachment clicks — obrázky otevřít v prohlížeči, ostatní stáhnout
+		// Handle attachment clicks — open images in viewer, download others
 		for j, att := range msg.Attachments {
 			if j >= len(v.actions[i].attBtns) {
 				break
@@ -892,6 +893,19 @@ func (v *MessageView) Layout(gtx layout.Context) layout.Dimensions {
 					} else if isImage {
 						go openURL(fileURL)
 					} else {
+						v.app.SaveDlg.Show(fname, func(savePath string) {
+							v.startDownload(fileURL, savePath, fname, tok)
+						})
+					}
+				}
+			}
+			// Video save button
+			if j < len(v.actions[i].vidSaveBtns) && v.actions[i].vidSaveBtns[j].Clicked(gtx) {
+				if isVideoMIME(att.MimeType) {
+					if conn := v.app.Conn(); conn != nil {
+						fileURL := conn.URL + att.URL
+						fname := att.Filename
+						tok := conn.Client.GetAccessToken()
 						v.app.SaveDlg.Show(fname, func(savePath string) {
 							v.startDownload(fileURL, savePath, fname, tok)
 						})
@@ -949,7 +963,7 @@ func (v *MessageView) Layout(gtx layout.Context) layout.Dimensions {
 							})
 						})
 					}),
-					)
+				)
 			})
 		}),
 
@@ -968,7 +982,7 @@ func (v *MessageView) Layout(gtx layout.Context) layout.Dimensions {
 			return layout.Dimensions{Size: size}
 		}),
 
-		// Pinned message bar (vždy viditelný když existují piny)
+		// Pinned message bar (always visible when pins exist)
 		layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 			if len(v.pinnedMsgs) == 0 {
 				return layout.Dimensions{}
@@ -976,7 +990,7 @@ func (v *MessageView) Layout(gtx layout.Context) layout.Dimensions {
 			if v.pinBarBtn.Clicked(gtx) {
 				v.pinExpanded = !v.pinExpanded
 				v.showPins = v.pinExpanded
-				// Označit jako viděné + persistovat
+				// Mark as seen + persist
 				if len(v.pinnedMsgs) > 0 {
 					v.pinSeenID = v.pinnedMsgs[0].ID
 					go func() {
@@ -1050,7 +1064,7 @@ func (v *MessageView) Layout(gtx layout.Context) layout.Dimensions {
 					}()
 				})
 			}
-			// Kliky na přílohy v pin baru
+			// Clicks on attachments in the pin bar
 			for j := range latest.Attachments {
 				if j >= len(v.pinAttBtns) {
 					break
@@ -1073,7 +1087,7 @@ func (v *MessageView) Layout(gtx layout.Context) layout.Dimensions {
 					}
 				}
 			}
-			// Klik na URL link v pin baru
+			// Click on URL link in the pin bar
 			if v.pinLinkBtn.Clicked(gtx) {
 				url := findURLInText(latest.Content)
 				if url != "" {
@@ -1083,12 +1097,12 @@ func (v *MessageView) Layout(gtx layout.Context) layout.Dimensions {
 			return v.layoutPinBar(gtx)
 		}),
 
-		// Rozbalený pinned messages panel
+		// Expanded pinned messages panel
 		layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 			if !v.showPins || len(v.pinnedMsgs) < 2 {
 				return layout.Dimensions{}
 			}
-			// Click handling pro pinned list akce
+			// Click handling for pinned list actions
 			canPin := myPerms&(api.PermManageMessages|api.PermAdmin) != 0
 			for i := range v.pinsListActs {
 				if i >= len(v.pinnedMsgs) {
@@ -1216,10 +1230,10 @@ func (v *MessageView) Layout(gtx layout.Context) layout.Dimensions {
 			return v.layoutTypingIndicator(gtx)
 		}),
 
-		// Messages (nebo search results)
+		// Messages (or search results)
 		layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
 			if v.showPins && len(v.pinnedMsgs) > 0 {
-				// Ztmavený overlay přes zprávy když je pinned panel otevřený
+				// Darkened overlay over messages when pinned panel is open
 				overlay := color.NRGBA{A: 60}
 				paint.FillShape(gtx.Ops, overlay, clip.Rect{Max: gtx.Constraints.Max}.Op())
 				return layout.Dimensions{Size: gtx.Constraints.Max}
@@ -1241,7 +1255,7 @@ func (v *MessageView) Layout(gtx layout.Context) layout.Dimensions {
 			return layout.Stack{Alignment: layout.SE}.Layout(gtx,
 				layout.Expanded(func(gtx layout.Context) layout.Dimensions {
 					// +1 item for "beginning" indicator at top
-				listLen := len(messages)
+					listLen := len(messages)
 					if v.noMoreOlder {
 						listLen++
 					}
@@ -1429,7 +1443,7 @@ func (v *MessageView) Layout(gtx layout.Context) layout.Dimensions {
 											lineH := gtx.Dp(20)
 											cursorY := cursorLine * lineH
 											viewH := maxH - gtx.Dp(24)
-											// Zabránit ScrollToEnd přepisu — nastavit BeforeEnd
+											// Prevent ScrollToEnd override — set BeforeEnd
 											v.editorList.Position.BeforeEnd = cursorLine < totalLines
 											v.editorList.Position.First = 0
 											if viewH > 0 {
@@ -1468,7 +1482,7 @@ func (v *MessageView) Layout(gtx layout.Context) layout.Dimensions {
 		}),
 	)
 
-	// Edit history overlay (nad ostatním obsahem)
+	// Edit history overlay (above other content)
 	if v.showEditHistory {
 		v.layoutEditHistoryOverlay(gtx)
 	}
@@ -1476,7 +1490,7 @@ func (v *MessageView) Layout(gtx layout.Context) layout.Dimensions {
 	return dims
 }
 
-// layoutMessageCompact — IRC-style compact zpráva: [HH:MM] username: obsah
+// layoutMessageCompact — IRC-style compact message: [HH:MM] username: content
 func (v *MessageView) layoutMessageCompact(gtx layout.Context, msg api.Message, isOwn bool, idx int, myUsername string, usernames map[string]bool, usernameToID map[string]string) layout.Dimensions {
 	serverURL := ""
 	conn := v.app.Conn()
@@ -1484,7 +1498,7 @@ func (v *MessageView) layoutMessageCompact(gtx layout.Context, msg api.Message, 
 		serverURL = conn.URL
 	}
 
-	// Hover tracking + double-click reply (stejný jako normální mode)
+	// Hover tracking + double-click reply (same as normal mode)
 	for {
 		ev, ok := gtx.Event(pointer.Filter{
 			Target: &v.actions[idx].rowHovered,
@@ -1528,7 +1542,7 @@ func (v *MessageView) layoutMessageCompact(gtx layout.Context, msg api.Message, 
 	return layout.Inset{Left: unit.Dp(8), Right: unit.Dp(8), Top: unit.Dp(1), Bottom: unit.Dp(1)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
 		macro := op.Record(gtx.Ops)
 		dims := layout.Flex{Axis: layout.Vertical}.Layout(gtx,
-			// Hlavní řádek: [čas] jméno: obsah + action btns
+			// Main row: [time] name: content + action btns
 			layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 				return layout.Flex{Alignment: layout.Baseline}.Layout(gtx,
 					// Timestamp
@@ -1569,13 +1583,6 @@ func (v *MessageView) layoutMessageCompact(gtx layout.Context, msg api.Message, 
 							return dims
 						})
 					}),
-					// Action buttons
-					layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-						if !hovered {
-							return layout.Dimensions{}
-						}
-						return v.layoutActionBtns(gtx, idx, isOwn, msg.IsPinned, msg.IsHidden, msg.ID)
-					}),
 				)
 			}),
 			// Attachments
@@ -1605,6 +1612,20 @@ func (v *MessageView) layoutMessageCompact(gtx layout.Context, msg api.Message, 
 		}
 		call.Add(gtx.Ops)
 
+		// Action buttons overlay (top-right)
+		if hovered {
+			actMacro := op.Record(gtx.Ops)
+			actDims := v.layoutActionBtns(gtx, idx, isOwn, msg.IsPinned, msg.IsHidden, msg.ID)
+			actCall := actMacro.Stop()
+			offX := dims.Size.X - actDims.Size.X
+			if offX < 0 {
+				offX = 0
+			}
+			st := op.Offset(image.Pt(offX, 0)).Push(gtx.Ops)
+			actCall.Add(gtx.Ops)
+			st.Pop()
+		}
+
 		// Pointer area
 		pr := pointer.PassOp{}.Push(gtx.Ops)
 		rect := clip.Rect{Max: dims.Size}.Push(gtx.Ops)
@@ -1632,10 +1653,10 @@ func (v *MessageView) layoutMessage(gtx layout.Context, msg api.Message, grouped
 		serverURL = c.URL
 	}
 
-	// Mention highlight — jemný tint pokud zpráva zmiňuje aktuálního uživatele
+	// Mention highlight — subtle tint if message mentions the current user
 	isMentioned := myUsername != "" && strings.Contains(strings.ToLower(msg.Content), "@"+strings.ToLower(myUsername))
 
-	// Hover tracking + double-click reply přes pointer eventy (neblokuje vnořené interakce)
+	// Hover tracking + double-click reply via pointer events (does not block nested interactions)
 	for {
 		ev, ok := gtx.Event(pointer.Filter{
 			Target: &v.actions[idx].rowHovered,
@@ -1668,10 +1689,10 @@ func (v *MessageView) layoutMessage(gtx layout.Context, msg api.Message, grouped
 	hovered := v.actions[idx].rowHovered
 
 	return layout.Inset{Top: topPad, Left: unit.Dp(16), Right: unit.Dp(16), Bottom: unit.Dp(1)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-		// Nejdřív layout obsah do makra, abychom znali skutečnou velikost
+		// First layout content into a macro so we know the actual size
 		macro := op.Record(gtx.Ops)
 		dims := layout.Flex{Axis: layout.Vertical}.Layout(gtx,
-			// Reply reference (klik → otevřít thread)
+			// Reply reference (click -> open thread)
 			layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 				if msg.ReplyTo == nil {
 					return layout.Dimensions{}
@@ -1696,7 +1717,7 @@ func (v *MessageView) layoutMessage(gtx layout.Context, msg api.Message, grouped
 							if hovered {
 								lbl.Color = ColorTextDim
 							} else {
-								lbl.Color = color.NRGBA{A: 0} // neviditelný, ale zabírá místo
+								lbl.Color = color.NRGBA{A: 0} // invisible but takes up space
 							}
 							return layout.Center.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
 								return lbl.Layout(gtx)
@@ -1721,12 +1742,12 @@ func (v *MessageView) layoutMessage(gtx layout.Context, msg api.Message, grouped
 
 								groupedBody := func(gtx layout.Context) layout.Dimensions {
 									return layout.Flex{Axis: layout.Vertical}.Layout(gtx,
-										// Text content (jen pokud existuje)
+										// Text content (only if it exists)
 										layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 											if !hasGroupedContent {
 												return layout.Dimensions{}
 											}
-											// Placeholder pro skryté zprávy (automod)
+											// Placeholder for hidden messages (automod)
 											if msg.IsHidden && strings.TrimSpace(msg.Content) == "" {
 												lbl := material.Body2(v.app.Theme.Material, "This message was hidden by auto-moderation")
 												lbl.Color = ColorTextDim
@@ -1734,39 +1755,19 @@ func (v *MessageView) layoutMessage(gtx layout.Context, msg api.Message, grouped
 												return lbl.Layout(gtx)
 											}
 											if p2pInfo := parseP2PLink(msg.Content); p2pInfo != nil {
-												return layout.Flex{Alignment: layout.End}.Layout(gtx,
-													layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
-														return v.layoutP2PBlock(gtx, p2pInfo, idx, isOwn)
-													}),
-													layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-														if !hovered {
-															return layout.Dimensions{}
-														}
-														return v.layoutActionBtns(gtx, idx, isOwn, msg.IsPinned, msg.IsHidden, msg.ID)
-													}),
-												)
+												return v.layoutP2PBlock(gtx, p2pInfo, idx, isOwn)
 											}
-											return layout.Flex{Alignment: layout.End}.Layout(gtx,
-												layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
-													content := msg.Content
-													emojis := v.getEmojis()
-													dims := layoutMessageContent(gtx, v.app.Theme, content, emojis, &v.actions[idx].links, &v.actions[idx].mentions, usernameToID, usernames, &v.actions[idx].textSels, v.app, serverURL)
-													if msg.UpdatedAt != nil {
-														editDims := v.layoutEditedLabel(gtx, idx)
-														dims.Size.X += editDims.Size.X
-														if editDims.Size.Y > dims.Size.Y {
-															dims.Size.Y = editDims.Size.Y
-														}
-													}
-													return dims
-												}),
-												layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-													if !hovered {
-														return layout.Dimensions{}
-													}
-													return v.layoutActionBtns(gtx, idx, isOwn, msg.IsPinned, msg.IsHidden, msg.ID)
-												}),
-											)
+											content := msg.Content
+											emojis := v.getEmojis()
+											dims := layoutMessageContent(gtx, v.app.Theme, content, emojis, &v.actions[idx].links, &v.actions[idx].mentions, usernameToID, usernames, &v.actions[idx].textSels, v.app, serverURL)
+											if msg.UpdatedAt != nil {
+												editDims := v.layoutEditedLabel(gtx, idx)
+												dims.Size.X += editDims.Size.X
+												if editDims.Size.Y > dims.Size.Y {
+													dims.Size.Y = editDims.Size.Y
+												}
+											}
+											return dims
 										}),
 										layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 											if len(msg.Attachments) == 0 {
@@ -1811,22 +1812,14 @@ func (v *MessageView) layoutMessage(gtx layout.Context, msg api.Message, grouped
 									)
 								}
 
-								// Bez textu: action btns jako overlay v pravém horním rohu
-								if !hasGroupedContent && hovered {
-									return layout.Stack{Alignment: layout.NE}.Layout(gtx,
-										layout.Stacked(groupedBody),
-										layout.Stacked(func(gtx layout.Context) layout.Dimensions {
-											return v.layoutActionBtns(gtx, idx, isOwn, msg.IsPinned, msg.IsHidden, msg.ID)
-										}),
-									)
-								}
+								return groupedBody(gtx)
 								return groupedBody(gtx)
 							}
 
 							hasContent := strings.TrimSpace(msg.Content) != "" || (msg.IsHidden && strings.TrimSpace(msg.Content) == "")
 
 							return layout.Flex{Axis: layout.Vertical}.Layout(gtx,
-								// Username + date řádek (+ action btns pokud zpráva nemá text)
+								// Username + date row (+ action btns if message has no text)
 								layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 									return layout.Flex{Alignment: layout.End}.Layout(gtx,
 										layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
@@ -1866,51 +1859,35 @@ func (v *MessageView) layoutMessage(gtx layout.Context, msg api.Message, grouped
 												}),
 											)
 										}),
-										layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-											if hasContent || !hovered {
-												return layout.Dimensions{}
-											}
-											return v.layoutActionBtns(gtx, idx, isOwn, msg.IsPinned, msg.IsHidden, msg.ID)
-										}),
 									)
 								}),
-								// Content + action btns (jen pokud je textový obsah)
+								// Content + action btns (only if there is text content)
 								layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 									if !hasContent {
 										return layout.Dimensions{}
 									}
 									return layout.Inset{Top: unit.Dp(2)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-										return layout.Flex{Alignment: layout.End}.Layout(gtx,
-											layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
-												// Placeholder pro skryté zprávy (automod)
-												if msg.IsHidden && strings.TrimSpace(msg.Content) == "" {
-													lbl := material.Body2(v.app.Theme.Material, "This message was hidden by auto-moderation")
-													lbl.Color = ColorTextDim
-													lbl.Font.Style = font.Italic
-													return lbl.Layout(gtx)
-												}
-												if p2pInfo := parseP2PLink(msg.Content); p2pInfo != nil {
-													return v.layoutP2PBlock(gtx, p2pInfo, idx, isOwn)
-												}
-												content := msg.Content
-												emojis := v.getEmojis()
-												dims := layoutMessageContent(gtx, v.app.Theme, content, emojis, &v.actions[idx].links, &v.actions[idx].mentions, usernameToID, usernames, &v.actions[idx].textSels, v.app, serverURL)
-												if msg.UpdatedAt != nil {
-													editDims := v.layoutEditedLabel(gtx, idx)
-													dims.Size.X += editDims.Size.X
-													if editDims.Size.Y > dims.Size.Y {
-														dims.Size.Y = editDims.Size.Y
-													}
-												}
-												return dims
-											}),
-											layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-												if !hovered {
-													return layout.Dimensions{}
-												}
-												return v.layoutActionBtns(gtx, idx, isOwn, msg.IsPinned, msg.IsHidden, msg.ID)
-											}),
-										)
+										// Placeholder for hidden messages (automod)
+										if msg.IsHidden && strings.TrimSpace(msg.Content) == "" {
+											lbl := material.Body2(v.app.Theme.Material, "This message was hidden by auto-moderation")
+											lbl.Color = ColorTextDim
+											lbl.Font.Style = font.Italic
+											return lbl.Layout(gtx)
+										}
+										if p2pInfo := parseP2PLink(msg.Content); p2pInfo != nil {
+											return v.layoutP2PBlock(gtx, p2pInfo, idx, isOwn)
+										}
+										content := msg.Content
+										emojis := v.getEmojis()
+										dims := layoutMessageContent(gtx, v.app.Theme, content, emojis, &v.actions[idx].links, &v.actions[idx].mentions, usernameToID, usernames, &v.actions[idx].textSels, v.app, serverURL)
+										if msg.UpdatedAt != nil {
+											editDims := v.layoutEditedLabel(gtx, idx)
+											dims.Size.X += editDims.Size.X
+											if editDims.Size.Y > dims.Size.Y {
+												dims.Size.Y = editDims.Size.Y
+											}
+										}
+										return dims
 									})
 								}),
 								// Attachments
@@ -1964,7 +1941,7 @@ func (v *MessageView) layoutMessage(gtx layout.Context, msg api.Message, grouped
 		)
 		call := macro.Stop()
 
-		// Highlight pozadí (pod obsahem)
+		// Highlight background (below content)
 		if hovered && !isMentioned {
 			paint.FillShape(gtx.Ops, color.NRGBA{R: 255, G: 255, B: 255, A: 8}, clip.Rect{Max: dims.Size}.Op())
 		}
@@ -1972,11 +1949,25 @@ func (v *MessageView) layoutMessage(gtx layout.Context, msg api.Message, grouped
 			paint.FillShape(gtx.Ops, color.NRGBA{R: 100, G: 80, B: 20, A: 30}, clip.Rect{Max: dims.Size}.Op())
 		}
 
-		// Replay obsah
+		// Replay content
 		call.Add(gtx.Ops)
 
-		// Pointer area pro hover detekci (navrchu s PassOp — Enter/Leave projdou,
-		// kliky se propagují dolů k obsahu díky PassOp)
+		// Action buttons overlay (top-right)
+		if hovered {
+			actMacro := op.Record(gtx.Ops)
+			actDims := v.layoutActionBtns(gtx, idx, isOwn, msg.IsPinned, msg.IsHidden, msg.ID)
+			actCall := actMacro.Stop()
+			offX := dims.Size.X - actDims.Size.X
+			if offX < 0 {
+				offX = 0
+			}
+			st := op.Offset(image.Pt(offX, 0)).Push(gtx.Ops)
+			actCall.Add(gtx.Ops)
+			st.Pop()
+		}
+
+		// Pointer area for hover detection (on top with PassOp — Enter/Leave pass through,
+		// clicks propagate down to content thanks to PassOp)
 		pr := pointer.PassOp{}.Push(gtx.Ops)
 		rect := clip.Rect{Max: dims.Size}.Push(gtx.Ops)
 		event.Op(gtx.Ops, &v.actions[idx].rowHovered)
@@ -2044,7 +2035,7 @@ func (v *MessageView) layoutAttachments(gtx layout.Context, msgIdx int, msg api.
 			})
 		}))
 	}
-	// Download All tlačítko pro game server attachmenty
+	// Download All button for game server attachments
 	if hasGameServerAttachments(msg.Attachments) {
 		items = append(items, layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 			return layout.Inset{Top: unit.Dp(4)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
@@ -2088,7 +2079,7 @@ func (v *MessageView) layoutAttachments(gtx layout.Context, msgIdx int, msg api.
 	return layout.Flex{Axis: layout.Vertical}.Layout(gtx, items...)
 }
 
-// layoutLinkPreview vykreslí kompaktní OpenGraph embed pod zprávou.
+// layoutLinkPreview renders a compact OpenGraph embed below the message.
 func (v *MessageView) layoutLinkPreview(gtx layout.Context, msg api.Message, idx int) layout.Dimensions {
 	lp := msg.LinkPreview
 	if lp == nil || (lp.Title == "" && lp.Description == "") {
@@ -2102,7 +2093,10 @@ func (v *MessageView) layoutLinkPreview(gtx layout.Context, msg api.Message, idx
 
 	return layout.Inset{Top: unit.Dp(4)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
 		return btn.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-			// Omezit šířku preview
+			if btn.Hovered() {
+				pointer.CursorPointer.Add(gtx.Ops)
+			}
+			// Limit preview width
 			maxW := gtx.Dp(420)
 			if gtx.Constraints.Max.X > maxW {
 				gtx.Constraints.Max.X = maxW
@@ -2112,7 +2106,7 @@ func (v *MessageView) layoutLinkPreview(gtx layout.Context, msg api.Message, idx
 			accentBorder := ColorAccent
 
 			return layout.Background{}.Layout(gtx,
-				// Pozadí se zaoblenými rohy + accent levý border
+				// Background with rounded corners + accent left border
 				func(gtx layout.Context) layout.Dimensions {
 					bounds := image.Rect(0, 0, gtx.Constraints.Min.X, gtx.Constraints.Min.Y)
 					rr := gtx.Dp(6)
@@ -2120,7 +2114,7 @@ func (v *MessageView) layoutLinkPreview(gtx layout.Context, msg api.Message, idx
 						Rect: bounds,
 						NE:   rr, NW: rr, SE: rr, SW: rr,
 					}.Op(gtx.Ops))
-					// Levý accent border (3px)
+					// Left accent border (3px)
 					borderW := gtx.Dp(3)
 					paint.FillShape(gtx.Ops, accentBorder, clip.RRect{
 						Rect: image.Rect(0, 0, borderW, bounds.Max.Y),
@@ -2128,7 +2122,7 @@ func (v *MessageView) layoutLinkPreview(gtx layout.Context, msg api.Message, idx
 					}.Op(gtx.Ops))
 					return layout.Dimensions{Size: bounds.Max}
 				},
-				// Obsah
+				// Content
 				func(gtx layout.Context) layout.Dimensions {
 					return layout.Inset{Top: unit.Dp(6), Bottom: unit.Dp(6), Left: unit.Dp(10), Right: unit.Dp(8)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
 						return layout.Flex{Axis: layout.Vertical}.Layout(gtx,
@@ -2167,7 +2161,7 @@ func (v *MessageView) layoutLinkPreview(gtx layout.Context, msg api.Message, idx
 									return lbl.Layout(gtx)
 								})
 							}),
-							// Thumbnail obrázek
+							// Thumbnail image
 							layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 								if lp.ImageURL == "" {
 									return layout.Dimensions{}
@@ -2293,86 +2287,101 @@ func (v *MessageView) layoutActionBtns(gtx layout.Context, idx int, isOwn bool, 
 	canManage := perms&(api.PermManageMessages|api.PermAdmin) != 0
 	canPin := perms&(api.PermManageMessages|api.PermAdmin) != 0
 
-	return layout.Flex{}.Layout(gtx,
-		layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-			return v.layoutSmallAction(gtx, &v.actions[idx].thumbUpBtn, "\U0001f44d", ColorTextDim)
-		}),
-		layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-			return layout.Inset{Left: unit.Dp(2)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-				return v.layoutSmallAction(gtx, &v.actions[idx].thumbDownBtn, "\U0001f44e", ColorTextDim)
+	return layout.Background{}.Layout(gtx,
+		func(gtx layout.Context) layout.Dimensions {
+			bounds := image.Rect(0, 0, gtx.Constraints.Min.X, gtx.Constraints.Min.Y)
+			rr := gtx.Dp(6)
+			paint.FillShape(gtx.Ops, ColorCard, clip.RRect{
+				Rect: bounds,
+				NE:   rr, NW: rr, SE: rr, SW: rr,
+			}.Op(gtx.Ops))
+			return layout.Dimensions{Size: bounds.Max}
+		},
+		func(gtx layout.Context) layout.Dimensions {
+			return layout.UniformInset(unit.Dp(2)).Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+				return layout.Flex{}.Layout(gtx,
+					layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+						return v.layoutSmallAction(gtx, &v.actions[idx].thumbUpBtn, "\U0001f44d", ColorTextDim)
+					}),
+					layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+						return layout.Inset{Left: unit.Dp(2)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+							return v.layoutSmallAction(gtx, &v.actions[idx].thumbDownBtn, "\U0001f44e", ColorTextDim)
+						})
+					}),
+					layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+						return layout.Inset{Left: unit.Dp(2)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+							return v.layoutSmallIconAction(gtx, &v.actions[idx].reactEmojiBtn, IconAdd, ColorAccent)
+						})
+					}),
+					layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+						return layout.Inset{Left: unit.Dp(4)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+							return v.layoutSmallIconAction(gtx, &v.actions[idx].copyBtn, IconCopy, ColorTextDim)
+						})
+					}),
+					layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+						icon := IconBookmarkBorder
+						clr := ColorTextDim
+						if v.app.Bookmarks != nil {
+							if conn := v.app.Conn(); conn != nil && v.app.Bookmarks.IsBookmarked(msgID, conn.URL) {
+								icon = IconBookmark
+								clr = ColorAccent
+							}
+						}
+						return layout.Inset{Left: unit.Dp(4)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+							return v.layoutSmallIconAction(gtx, &v.actions[idx].bookmarkBtn, icon, clr)
+						})
+					}),
+					layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+						return layout.Inset{Left: unit.Dp(4)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+							return v.layoutSmallIconAction(gtx, &v.actions[idx].replyBtn, IconReply, ColorTextDim)
+						})
+					}),
+					// Pin — only with ManageChannels or Admin
+					layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+						if !canPin {
+							return layout.Dimensions{}
+						}
+						pinLabel := "Pin"
+						if isPinned {
+							pinLabel = "Unpin"
+						}
+						return layout.Inset{Left: unit.Dp(4)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+							return v.layoutSmallAction(gtx, &v.actions[idx].pinBtn, pinLabel, ColorAccent)
+						})
+					}),
+					layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+						if isOwn {
+							return layout.Dimensions{}
+						}
+						hideLabel := "Hide"
+						if isHidden {
+							hideLabel = "Show"
+						}
+						return layout.Inset{Left: unit.Dp(4)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+							return v.layoutSmallAction(gtx, &v.actions[idx].hideBtn, hideLabel, ColorTextDim)
+						})
+					}),
+					// Edit — own messages only
+					layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+						if !isOwn {
+							return layout.Dimensions{}
+						}
+						return layout.Inset{Left: unit.Dp(4)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+							return v.layoutSmallIconAction(gtx, &v.actions[idx].editBtn, IconEdit, ColorTextDim)
+						})
+					}),
+					// Delete — author or ManageMessages/Admin
+					layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+						if !isOwn && !canManage {
+							return layout.Dimensions{}
+						}
+						return layout.Inset{Left: unit.Dp(4)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+							return v.layoutSmallIconAction(gtx, &v.actions[idx].deleteBtn, IconDelete, ColorDanger)
+						})
+					}),
+				)
 			})
-		}),
-		layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-			return layout.Inset{Left: unit.Dp(2)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-				return v.layoutSmallIconAction(gtx, &v.actions[idx].reactEmojiBtn, IconAdd, ColorAccent)
-			})
-		}),
-		layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-			return layout.Inset{Left: unit.Dp(4)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-				return v.layoutSmallIconAction(gtx, &v.actions[idx].copyBtn, IconCopy, ColorTextDim)
-			})
-		}),
-		layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-			icon := IconBookmarkBorder
-			clr := ColorTextDim
-			if v.app.Bookmarks != nil {
-				if conn := v.app.Conn(); conn != nil && v.app.Bookmarks.IsBookmarked(msgID, conn.URL) {
-					icon = IconBookmark
-					clr = ColorAccent
-				}
-			}
-			return layout.Inset{Left: unit.Dp(4)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-				return v.layoutSmallIconAction(gtx, &v.actions[idx].bookmarkBtn, icon, clr)
-			})
-		}),
-		layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-			return layout.Inset{Left: unit.Dp(4)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-				return v.layoutSmallIconAction(gtx, &v.actions[idx].replyBtn, IconReply, ColorTextDim)
-			})
-		}),
-		// Pin — jen s ManageChannels nebo Admin
-		layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-			if !canPin {
-				return layout.Dimensions{}
-			}
-			pinLabel := "Pin"
-			if isPinned {
-				pinLabel = "Unpin"
-			}
-			return layout.Inset{Left: unit.Dp(4)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-				return v.layoutSmallAction(gtx, &v.actions[idx].pinBtn, pinLabel, ColorAccent)
-			})
-		}),
-		layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-			if isOwn {
-				return layout.Dimensions{}
-			}
-			hideLabel := "Hide"
-			if isHidden {
-				hideLabel = "Show"
-			}
-			return layout.Inset{Left: unit.Dp(4)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-				return v.layoutSmallAction(gtx, &v.actions[idx].hideBtn, hideLabel, ColorTextDim)
-			})
-		}),
-		// Edit — jen vlastní zprávy
-		layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-			if !isOwn {
-				return layout.Dimensions{}
-			}
-			return layout.Inset{Left: unit.Dp(4)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-				return v.layoutSmallIconAction(gtx, &v.actions[idx].editBtn, IconEdit, ColorTextDim)
-			})
-		}),
-		// Delete — autor nebo ManageMessages/Admin
-		layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-			if !isOwn && !canManage {
-				return layout.Dimensions{}
-			}
-			return layout.Inset{Left: unit.Dp(4)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-				return v.layoutSmallIconAction(gtx, &v.actions[idx].deleteBtn, IconDelete, ColorDanger)
-			})
-		}),
+		},
 	)
 }
 
@@ -2396,7 +2405,16 @@ func (v *MessageView) layoutSmallAction(gtx layout.Context, btn *widget.Clickabl
 			},
 			func(gtx layout.Context) layout.Dimensions {
 				return layout.Inset{Top: unit.Dp(2), Bottom: unit.Dp(2), Left: unit.Dp(6), Right: unit.Dp(6)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-					lbl := material.Caption(v.app.Theme.Material, text)
+					// Try Twemoji image for emoji text
+					if len(text) > 0 {
+						runes := []rune(text)
+						if len(runes) <= 2 && isEmojiRune(runes[0]) {
+							if dims, ok := layoutTwemoji(gtx, v.app, text, 20); ok {
+								return dims
+							}
+						}
+					}
+					lbl := material.Body2(v.app.Theme.Material, text)
 					lbl.Color = clr
 					return lbl.Layout(gtx)
 				})
@@ -2404,7 +2422,6 @@ func (v *MessageView) layoutSmallAction(gtx layout.Context, btn *widget.Clickabl
 		)
 	})
 }
-
 
 func (v *MessageView) layoutReplyRef(gtx layout.Context, reply *api.Message) layout.Dimensions {
 	author := v.app.ResolveUserName(reply.Author)
@@ -2526,7 +2543,7 @@ func (v *MessageView) layoutTypingIndicator(gtx layout.Context) layout.Dimension
 		return layout.Dimensions{}
 	}
 
-	// Build typing text — odfiltrovat staré (>5s) a vlastní user
+	// Build typing text — filter out old (>5s) and own user
 	names := ""
 	count := 0
 	now := time.Now()
@@ -2573,7 +2590,7 @@ func (v *MessageView) layoutTypingIndicator(gtx layout.Context) layout.Dimension
 func (v *MessageView) sendMessage() {
 	text := v.editor.Text()
 
-	// Sebrat výsledky hotových uploadů
+	// Collect results of completed uploads
 	v.uploadMu.Lock()
 	var results []api.UploadResult
 	for _, u := range v.pendingUploads {
@@ -2586,7 +2603,7 @@ func (v *MessageView) sendMessage() {
 	v.uploadChannelID = ""
 	v.uploadMu.Unlock()
 
-	// Zavřít upload popup
+	// Close upload popup
 	v.app.UploadDlg.Hide()
 
 	if text == "" && len(results) == 0 {
@@ -2605,7 +2622,7 @@ func (v *MessageView) sendMessage() {
 	}
 
 	go func() {
-		// Pokud máme zachycený channelID z uploadu (auto-send), použít ten
+		// If we have a captured channelID from upload (auto-send), use that
 		chID := savedChID
 		if chID == "" {
 			v.app.mu.RLock()
@@ -2818,7 +2835,7 @@ func (v *MessageView) ResetScrollState() {
 	v.ReplyToID = ""
 	v.EditingID = ""
 	v.editor.SetText("")
-	// Uploady se neruší — běží na pozadí s uploadChannelID
+	// Uploads are not cancelled — they run in background with uploadChannelID
 	v.showMentions = false
 	v.showPins = false
 	v.pinExpanded = false

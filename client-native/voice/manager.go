@@ -58,7 +58,7 @@ type Manager struct {
 	// Screen sharing
 	Streaming     bool
 	StreamViewers map[string]bool              // userID → watching
-	OnScreenFrame func(from string, data []byte) // callback pro příchozí frames
+	OnScreenFrame func(from string, data []byte) // callback for incoming frames
 	stopStream    chan struct{}
 
 	// Stream settings (set before StartStream)
@@ -130,7 +130,7 @@ func (m *Manager) JoinWithOptions(channelID, name, password string) {
 	}
 	m.sendWS("voice.join", payload)
 
-	// Vytvořit Opus codec
+	// Create Opus codec
 	codec, err := NewOpusCodec()
 	if err != nil {
 		log.Printf("voice: opus codec init failed: %v", err)
@@ -222,7 +222,7 @@ func (m *Manager) Leave() {
 	// Stop audio
 	m.audio.Stop()
 
-	// Uvolnit Opus codec
+	// Release Opus codec
 	m.mu.Lock()
 	if m.codec != nil {
 		m.codec.Close()
@@ -272,14 +272,14 @@ func (m *Manager) ToggleDeafen() {
 	}
 }
 
-// SetNoiseSuppression zapne/vypne noise suppression.
+// SetNoiseSuppression enables/disables noise suppression.
 func (m *Manager) SetNoiseSuppression(enabled bool) {
 	if m.NoiseGate != nil {
 		m.NoiseGate.Enabled = enabled
 	}
 }
 
-// IsNoiseSuppressionEnabled vrátí true pokud je noise suppression zapnutý.
+// IsNoiseSuppressionEnabled returns true if noise suppression is enabled.
 func (m *Manager) IsNoiseSuppressionEnabled() bool {
 	if m.NoiseGate != nil {
 		return m.NoiseGate.Enabled
@@ -456,10 +456,10 @@ func (m *Manager) HandleICE(from string, candidateJSON json.RawMessage) {
 	}
 }
 
-// isPrivateCandidate kontroluje zda ICE candidate obsahuje private/loopback IP
+// isPrivateCandidate checks whether an ICE candidate contains a private/loopback IP
 func isPrivateCandidate(c *webrtc.ICECandidate) bool {
 	addr := c.Address
-	// Kandidáty typu relay (TURN) nikdy nefiltrovat
+	// Never filter relay (TURN) type candidates
 	if c.Typ == webrtc.ICECandidateTypeRelay {
 		return false
 	}
@@ -516,12 +516,12 @@ func (m *Manager) createPeer(userID string) (*Peer, error) {
 		return nil, err
 	}
 
-	// Přidat lokální audio track (Opus, 48kHz, mono)
+	// Add local audio track (Opus, 48kHz, mono)
 	track, err := webrtc.NewTrackLocalStaticSample(
 		webrtc.RTPCodecCapability{
 			MimeType:  webrtc.MimeTypeOpus,
 			ClockRate: 48000,
-			Channels:  2, // Opus RTP vždy hlásí 2 kanály (RFC 7587), reálně mono
+			Channels:  2, // Opus RTP always reports 2 channels (RFC 7587), actually mono
 		},
 		"audio", "nora-voice",
 	)
@@ -558,7 +558,7 @@ func (m *Manager) createPeer(userID string) (*Peer, error) {
 		})
 	}
 
-	// Handle ICE candidates — filtrovat private IP adresy
+	// Handle ICE candidates — filter private IP addresses
 	pc.OnICECandidate(func(c *webrtc.ICECandidate) {
 		if c == nil {
 			return
@@ -623,7 +623,7 @@ func (m *Manager) captureLoop() {
 				applyVolume(samples, micVol)
 			}
 
-			// Noise gate — potlačí šum pod thresholdem
+			// Noise gate — suppresses noise below the threshold
 			if m.NoiseGate != nil {
 				m.NoiseGate.Process(samples)
 			}
@@ -642,10 +642,10 @@ func (m *Manager) captureLoop() {
 				m.invalidate()
 			}
 
-			// Encode do Opus
+			// Encode to Opus
 			var encoded []byte
 			if muted {
-				// Poslat ticho (Opus kódované nulové samples)
+				// Send silence (Opus encoded zero samples)
 				var err error
 				encoded, err = m.codec.EncodeSilence()
 				if err != nil {
@@ -722,18 +722,18 @@ func (m *Manager) mixerLoop() {
 	}
 }
 
-// playRemoteTrack čte audio z remote WebRTC tracku, dekóduje Opus a zapisuje do mixeru.
+// playRemoteTrack reads audio from a remote WebRTC track, decodes Opus, and writes to mixer.
 func (m *Manager) playRemoteTrack(userID string, remote *webrtc.TrackRemote) {
 	track := m.mixer.AddTrack(userID)
 
-	// Aplikovat per-user volume pokud nastavený
+	// Apply per-user volume if set
 	m.mu.Lock()
 	if vol, ok := m.UserVolumes[userID]; ok {
 		track.Volume = vol
 	}
 	m.mu.Unlock()
 
-	// Vytvořit per-track Opus decoder
+	// Create per-track Opus decoder
 	dec, err := NewOpusCodec()
 	if err != nil {
 		log.Printf("voice: opus decoder for %s: %v", userID, err)
@@ -760,7 +760,7 @@ func (m *Manager) playRemoteTrack(userID string, remote *webrtc.TrackRemote) {
 }
 
 // StartStream begins capturing screen and sending frames to viewers.
-// Pokusí se použít H.264 encoding přes ffmpeg, jinak fallback na JPEG.
+// Tries to use H.264 encoding via ffmpeg, otherwise falls back to JPEG.
 func (m *Manager) StartStream(captureFn func() ([]byte, error)) {
 	m.mu.Lock()
 	if m.Streaming {
@@ -788,10 +788,10 @@ func (m *Manager) StartStream(captureFn func() ([]byte, error)) {
 		maxH = 1080
 	}
 
-	// Mapování kvality na CRF + preset
+	// Map quality to CRF + preset
 	crf, preset := streamQualityParams(quality)
 
-	// Zkusit H.264 encoder
+	// Try H.264 encoder
 	if screen.FFmpegAvailable() {
 		rgba, w, h, err := screen.CaptureRaw(maxW, maxH)
 		if err == nil && len(rgba) > 0 {
@@ -817,7 +817,7 @@ func (m *Manager) StartStream(captureFn func() ([]byte, error)) {
 		}
 	}
 
-	// Fallback na JPEG
+	// Fallback to JPEG
 	log.Printf("screen: using JPEG fallback")
 	go m.streamLoop(captureFn)
 
@@ -826,7 +826,7 @@ func (m *Manager) StartStream(captureFn func() ([]byte, error)) {
 	}
 }
 
-// streamLoopH264 zachytává framy a posílá je do H.264 encoderu.
+// streamLoopH264 captures frames and sends them to the H.264 encoder.
 func (m *Manager) streamLoopH264(fps, maxW, maxH, crf int, preset string) {
 	interval := time.Second / time.Duration(fps)
 	ticker := time.NewTicker(interval)
@@ -854,7 +854,7 @@ func (m *Manager) streamLoopH264(fps, maxW, maxH, crf int, preset string) {
 				continue
 			}
 
-			// Detekce změny rozlišení → restart encoder
+			// Resolution change detection -> restart encoder
 			if w != encW || h != encH {
 				log.Printf("screen: resolution changed %dx%d → %dx%d, restarting encoder", encW, encH, w, h)
 				enc.Close()
@@ -872,17 +872,17 @@ func (m *Manager) streamLoopH264(fps, maxW, maxH, crf int, preset string) {
 				m.encoderHeight = h
 				m.mu.Unlock()
 
-				// Poslat novou metadata všem viewerům
+				// Send new metadata to all viewers
 				m.sendScreenData(screen.EncodeMetadata(w, h, fps))
 
-				// Nový encoder send loop
+				// New encoder send loop
 				go m.encoderSendLoop()
 
 				enc = newEnc
 			}
 
 			if err := enc.WriteFrame(rgba); err != nil {
-				// WriteFrame error je normální při StopStream (stdin closed)
+				// WriteFrame error is normal during StopStream (stdin closed)
 				m.mu.Lock()
 				streaming := m.Streaming
 				m.mu.Unlock()
@@ -896,7 +896,7 @@ func (m *Manager) streamLoopH264(fps, maxW, maxH, crf int, preset string) {
 	}
 }
 
-// encoderSendLoop čte H.264 chunky z encoderu a posílá je viewerům.
+// encoderSendLoop reads H.264 chunks from the encoder and sends them to viewers.
 func (m *Manager) encoderSendLoop() {
 	m.mu.Lock()
 	enc := m.encoder
@@ -911,7 +911,7 @@ func (m *Manager) encoderSendLoop() {
 	}
 }
 
-// sendScreenData posílá typovaná data všem aktivním viewerům přes DataChannel.
+// sendScreenData sends typed data to all active viewers via DataChannel.
 func (m *Manager) sendScreenData(data []byte) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -951,7 +951,7 @@ func (m *Manager) streamLoop(captureFn func() ([]byte, error)) {
 	}
 }
 
-// stopStreamOnError uklidí stream po fatální chybě encoderu.
+// stopStreamOnError cleans up the stream after a fatal encoder error.
 func (m *Manager) stopStreamOnError() {
 	m.mu.Lock()
 	if !m.Streaming {
@@ -1025,7 +1025,7 @@ func (m *Manager) AddViewer(userID string) {
 	fps := m.StreamFPS
 	m.mu.Unlock()
 
-	// Při H.264 módu poslat metadata novému viewerovi
+	// In H.264 mode, send metadata to the new viewer
 	if h264 && w > 0 && h > 0 {
 		meta := screen.EncodeMetadata(w, h, fps)
 		m.mu.Lock()
@@ -1063,7 +1063,7 @@ func (m *Manager) Destroy() {
 	m.Leave()
 }
 
-// streamQualityParams vrací CRF a preset pro daný quality level.
+// streamQualityParams returns CRF and preset for the given quality level.
 func streamQualityParams(quality int) (crf int, preset string) {
 	switch quality {
 	case 0:

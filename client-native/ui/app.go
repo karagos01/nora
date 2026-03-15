@@ -78,6 +78,7 @@ type App struct {
 	BanDlg         *BanDialog
 	CreateDlg      *CreateDialog
 	ChannelEditDlg *ChannelEditDialog
+	CatEditDlg     *CategoryEditDialog
 	CreateGroupDlg *CreateGroupDialog
 	InputDlg       *InputDialog
 	Settings       *SettingsView
@@ -113,15 +114,18 @@ type App struct {
 	DroppedFiles        chan []string
 	fileDropInitialized bool
 	useTransferDrop     bool
-	showDropOverlay     bool // vizuální indikace při drag-over (Wayland)
+	showDropOverlay     bool // visual indication during drag-over (Wayland)
 
 	// Global notification level
 	GlobalNotifyLevel store.NotifyLevel
 
 	// Sound settings
 	NotifVolume    float64 // 0.0-1.0 (default 1.0)
-	CustomNotifSnd string  // cesta ke custom notification zvuku
-	CustomDMSnd    string  // cesta ke custom DM zvuku
+	CustomNotifSnd string  // path to custom notification sound
+	CustomDMSnd    string  // path to custom DM sound
+
+	// Video settings
+	YouTubeQuality int // preferred height (360, 480, 720), 0 = auto
 
 	// User panel (bottom of channel sidebar)
 	userSettingsBtn widget.Clickable
@@ -147,10 +151,13 @@ type App struct {
 	// Toast notifications
 	Toasts *ToastManager
 
-	// Deep link (z os.Args)
+	// Deep link (from os.Args)
 	PendingDeepLink string
 
-	// Cursor tracking (window-space, pro context menu pozici)
+	// Deep link invite — queued for user confirmation
+	PendingDeepLinkInvite *DeepLinkInvite
+
+	// Cursor tracking (window-space, for context menu position)
 	cursorTag bool
 	dropTag   bool
 	CursorX   int
@@ -188,6 +195,7 @@ func NewApp(w *app.Window, version string) *App {
 	a.BanDlg = NewBanDialog(a)
 	a.CreateDlg = NewCreateDialog(a)
 	a.ChannelEditDlg = NewChannelEditDialog(a)
+	a.CatEditDlg = NewCategoryEditDialog(a)
 	a.CreateGroupDlg = NewCreateGroupDialog(a)
 	a.InputDlg = NewInputDialog(a)
 	a.Settings = NewSettingsView(a)
@@ -271,7 +279,7 @@ func (a *App) Layout(gtx layout.Context) layout.Dimensions {
 	}
 doneFileDrop:
 
-	// Cursor tracking — zpracovat eventy z minulého framu
+	// Cursor tracking — process events from previous frame
 	for {
 		ev, ok := gtx.Event(pointer.Filter{
 			Target: &a.cursorTag,
@@ -283,14 +291,14 @@ doneFileDrop:
 		if pe, ok := ev.(pointer.Event); ok {
 			a.CursorX = int(pe.Position.X)
 			a.CursorY = int(pe.Position.Y)
-			// Zaznamenat uživatelský input pro focus tracking (desktop notifikace)
+			// Record user input for focus tracking (desktop notifications)
 			if a.NotifMgr != nil {
 				a.NotifMgr.RecordInput()
 			}
 		}
 	}
 
-	// Pre-record cursor tracking ops (budou přidány na vrch Z-orderu)
+	// Pre-record cursor tracking ops (will be added on top of Z-order)
 	cursorMacro := op.Record(gtx.Ops)
 	st := clip.Rect{Max: gtx.Constraints.Max}.Push(gtx.Ops)
 	pr := pointer.PassOp{}.Push(gtx.Ops)
@@ -299,7 +307,7 @@ doneFileDrop:
 	st.Pop()
 	cursorOps := cursorMacro.Stop()
 
-	// Keyboard shortcuts (globální)
+	// Keyboard shortcuts (global)
 	a.handleKeyboardShortcuts(gtx)
 
 	var dims layout.Dimensions
@@ -307,19 +315,19 @@ doneFileDrop:
 	case ViewLogin:
 		dims = a.Login.Layout(gtx)
 	case ViewHome, ViewChannels, ViewDM, ViewGroup, ViewSettings, ViewUserSettings, ViewShares, ViewLibrary, ViewGameServers, ViewKanban, ViewCalendar, ViewNotifications:
-		// Call overlay je viditelný i z jiných views (incoming call)
+		// Call overlay is visible from other views too (incoming call)
 		hasCallOverlay := false
 		if conn := a.Conn(); conn != nil && conn.Call != nil && conn.Call.IsActive() && a.Mode != ViewDM {
 			hasCallOverlay = true
 		}
-		if a.ShowAddServer || a.UserPopup.Visible || a.ConfirmDlg.Visible || a.TimeoutDlg.Visible || a.BanDlg.Visible || a.CreateDlg.Visible || a.CreateGroupDlg.Visible || a.ChannelEditDlg.Visible || a.UploadDlg.Visible || a.SaveDlg.Visible || a.ZipUploadDlg.Visible || a.ZipExtractDlg.Visible || a.P2POfferDlg.Visible || a.ContextMenu.Visible || a.LinkFileDlg.Visible || a.LobbyJoinDlg.visible || a.QRDlg.Visible || a.KanbanDlg.Visible || a.CalendarDlg.Visible || hasCallOverlay {
+		if a.ShowAddServer || a.UserPopup.Visible || a.ConfirmDlg.Visible || a.TimeoutDlg.Visible || a.BanDlg.Visible || a.CreateDlg.Visible || a.CreateGroupDlg.Visible || a.ChannelEditDlg.Visible || a.CatEditDlg.Visible || a.UploadDlg.Visible || a.SaveDlg.Visible || a.ZipUploadDlg.Visible || a.ZipExtractDlg.Visible || a.P2POfferDlg.Visible || a.ContextMenu.Visible || a.LinkFileDlg.Visible || a.LobbyJoinDlg.visible || a.QRDlg.Visible || a.KanbanDlg.Visible || a.CalendarDlg.Visible || hasCallOverlay {
 			dims = a.layoutWithOverlay(gtx)
 		} else {
 			dims = a.layoutMain(gtx)
 		}
 	}
 
-	// Drop zone overlay (drag-over indikace)
+	// Drop zone overlay (drag-over indication)
 	if a.showDropOverlay {
 		dropMacro := op.Record(gtx.Ops)
 		a.layoutDropOverlay(gtx)
@@ -327,7 +335,7 @@ doneFileDrop:
 		dropOps.Add(gtx.Ops)
 	}
 
-	// Toast overlay (nad hlavním obsahem)
+	// Toast overlay (above main content)
 	if a.Toasts != nil {
 		toastMacro := op.Record(gtx.Ops)
 		toastGtx := gtx
@@ -337,14 +345,14 @@ doneFileDrop:
 		toastOps.Add(gtx.Ops)
 	}
 
-	// Cursor tracker na vrch Z-orderu (PassOp → eventy projdou dolů k obsahu)
+	// Cursor tracker on top of Z-order (PassOp → events pass down to content)
 	cursorOps.Add(gtx.Ops)
 	return dims
 }
 
 func (a *App) layoutWithOverlay(gtx layout.Context) layout.Dimensions {
 	a.layoutMain(gtx)
-	// Call overlay (viditelný z non-DM views)
+	// Call overlay (visible from non-DM views)
 	if conn := a.Conn(); conn != nil && conn.Call != nil && conn.Call.IsActive() && a.Mode != ViewDM {
 		return a.CallOverlay.Layout(gtx, conn.Call)
 	}
@@ -365,6 +373,9 @@ func (a *App) layoutWithOverlay(gtx layout.Context) layout.Dimensions {
 	}
 	if a.ChannelEditDlg.Visible {
 		return a.ChannelEditDlg.Layout(gtx)
+	}
+	if a.CatEditDlg.Visible {
+		return a.CatEditDlg.Layout(gtx)
 	}
 	if a.UploadDlg.Visible {
 		return a.UploadDlg.Layout(gtx)
@@ -410,6 +421,20 @@ func (a *App) layoutWithOverlay(gtx layout.Context) layout.Dimensions {
 
 func (a *App) layoutMain(gtx layout.Context) layout.Dimensions {
 	conn := a.Conn()
+
+	// Show confirmation dialog for pending deep link invite
+	if a.PendingDeepLinkInvite != nil && !a.ConfirmDlg.Visible {
+		inv := a.PendingDeepLinkInvite
+		a.PendingDeepLinkInvite = nil
+		server := inv.Server
+		code := inv.Code
+		a.ConfirmDlg.ShowConfirm("Join Server",
+			"Connect to server "+server+" with invite code?",
+			func() {
+				a.ConnectServer(server, "", code)
+			},
+		)
+	}
 
 	// User panel click handlers
 	if a.userSettingsBtn.Clicked(gtx) {
@@ -513,8 +538,8 @@ func (a *App) layoutMain(gtx layout.Context) layout.Dimensions {
 					if a.WhiteboardView != nil && a.WhiteboardView.Visible {
 						return a.WhiteboardView.Layout(gtx)
 					}
-					// VideoPlayer / StreamViewer overlay — musí být v Stack s CallOverlay
-					// aby call tlačítka (mute/hangup) zůstala viditelná
+					// VideoPlayer / StreamViewer overlay — must be in Stack with CallOverlay
+					// so call buttons (mute/hangup) remain visible
 					hasFullOverlay := (a.VideoPlayer != nil && a.VideoPlayer.Visible) || (a.StreamViewer != nil && a.StreamViewer.Visible)
 					if hasFullOverlay {
 						hasCall := conn != nil && conn.Call != nil && conn.Call.IsActive()
@@ -570,7 +595,7 @@ func (a *App) layoutMain(gtx layout.Context) layout.Dimensions {
 						return a.GroupView.Layout(gtx)
 					}
 					if a.Mode == ViewDM {
-						// Call overlay přes DM message area
+						// Call overlay over DM message area
 						if conn != nil && conn.Call != nil && conn.Call.IsActive() {
 							return layout.Stack{}.Layout(gtx,
 								layout.Expanded(func(gtx layout.Context) layout.Dimensions {
@@ -590,7 +615,7 @@ func (a *App) layoutMain(gtx layout.Context) layout.Dimensions {
 					if conn == nil || a.Mode == ViewSettings || a.Mode == ViewUserSettings || a.Mode == ViewShares || a.Mode == ViewLibrary || a.Mode == ViewGameServers || a.Mode == ViewKanban || a.Mode == ViewCalendar || a.Mode == ViewNotifications {
 						return layout.Dimensions{}
 					}
-					// Thread view nahrazuje member list
+					// Thread view replaces member list
 					if a.Mode == ViewChannels && a.ThreadView.Visible {
 						gtx.Constraints.Min.X = gtx.Dp(320)
 						gtx.Constraints.Max.X = gtx.Dp(320)
@@ -611,7 +636,7 @@ func (a *App) layoutMain(gtx layout.Context) layout.Dimensions {
 	)
 }
 
-// layoutUserPanel renderuje horizontální user bar dole v channel sidebaru (jako Discord)
+// layoutUserPanel renders the horizontal user bar at the bottom of the channel sidebar (like Discord)
 func (a *App) layoutUserPanel(gtx layout.Context) layout.Dimensions {
 	a.mu.RLock()
 	username := a.Username
@@ -640,7 +665,7 @@ func (a *App) layoutUserPanel(gtx layout.Context) layout.Dimensions {
 		},
 		func(gtx layout.Context) layout.Dimensions {
 			return layout.Flex{Axis: layout.Vertical}.Layout(gtx,
-				// Divider nahoře
+				// Divider on top
 				layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 					size := image.Pt(gtx.Constraints.Max.X, gtx.Dp(1))
 					paint.FillShape(gtx.Ops, ColorDivider, clip.Rect{Max: size}.Op())
@@ -784,7 +809,7 @@ func (a *App) FindUser(id string) *api.User {
 	return nil
 }
 
-// IsBlockedKey vrátí true pokud je public key blokovaný v klientském blocklistu (cross-server).
+// IsBlockedKey returns true if the public key is blocked in the client blocklist (cross-server).
 func (a *App) IsBlockedKey(publicKey string) bool {
 	if publicKey == "" || a.Contacts == nil {
 		return false
@@ -823,18 +848,18 @@ func (a *App) Destroy() {
 	a.cancel()
 }
 
-// handleKeyboardShortcuts zpracovává globální klávesové zkratky.
+// handleKeyboardShortcuts handles global keyboard shortcuts.
 func (a *App) handleKeyboardShortcuts(gtx layout.Context) {
 	if a.Mode == ViewLogin {
 		return
 	}
 
-	// Registrovat filtry pro klávesové zkratky
+	// Register filters for keyboard shortcuts
 	for {
 		ev, ok := gtx.Event(
-			// Escape — zavřít dialogy/overlaye
+			// Escape — close dialogs/overlays
 			key.Filter{Name: key.NameEscape},
-			// Ctrl+1..9 — přepnout server
+			// Ctrl+1..9 — switch server
 			key.Filter{Name: "1", Required: key.ModCtrl},
 			key.Filter{Name: "2", Required: key.ModCtrl},
 			key.Filter{Name: "3", Required: key.ModCtrl},
@@ -852,7 +877,7 @@ func (a *App) handleKeyboardShortcuts(gtx layout.Context) {
 		if !ok || e.State != key.Press {
 			continue
 		}
-		// Zaznamenat klávesový input pro focus tracking (desktop notifikace)
+		// Record keyboard input for focus tracking (desktop notifications)
 		if a.NotifMgr != nil {
 			a.NotifMgr.RecordInput()
 		}
@@ -873,9 +898,9 @@ func (a *App) handleKeyboardShortcuts(gtx layout.Context) {
 	}
 }
 
-// handleEscapeKey zavře nejvrchnější dialog/overlay.
+// handleEscapeKey closes the topmost dialog/overlay.
 func (a *App) handleEscapeKey() {
-	// Zavřít dialogy v pořadí priority (nejvrchnější první)
+	// Close dialogs in priority order (topmost first)
 	switch {
 	case a.ContextMenu.Visible:
 		a.ContextMenu.Visible = false

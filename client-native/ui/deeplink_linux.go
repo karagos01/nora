@@ -9,7 +9,7 @@ import (
 	"path/filepath"
 )
 
-// RegisterURLScheme registruje nora:// URL scheme na Linuxu přes .desktop soubor.
+// RegisterURLScheme registers the nora:// URL scheme on Linux via a .desktop file.
 func RegisterURLScheme() error {
 	home, err := os.UserHomeDir()
 	if err != nil {
@@ -40,7 +40,7 @@ NoDisplay=true
 		return err
 	}
 
-	// Registrovat jako handler
+	// Register as handler
 	exec.Command("xdg-mime", "default", "nora-handler.desktop", "x-scheme-handler/nora").Run()
 	exec.Command("update-desktop-database", desktopDir).Run()
 

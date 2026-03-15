@@ -31,7 +31,7 @@ func TestSafePathRoot(t *testing.T) {
 	gsID := "test-gs"
 	os.MkdirAll(filepath.Join(dir, gsID), 0755)
 
-	// Prázdná cesta = kořen serveru — povoleno
+	// Empty path = server root — allowed
 	path, err := m.SafePath(gsID, "")
 	if err != nil {
 		t.Fatalf("SafePath root: %v", err)
@@ -103,7 +103,7 @@ func TestListFiles(t *testing.T) {
 		t.Fatalf("expected 2 entries, got %d", len(entries))
 	}
 
-	// Najít server.toml a data/
+	// Find server.toml and data/
 	var foundFile, foundDir bool
 	for _, e := range entries {
 		if e.Name == "server.toml" && !e.IsDir {
@@ -192,7 +192,7 @@ func TestWriteFileCreatesParentDir(t *testing.T) {
 	gsID := "test-gs"
 	os.MkdirAll(filepath.Join(dir, gsID), 0755)
 
-	// Zápis do neexistujícího podadresáře
+	// Write to a non-existent subdirectory
 	if err := m.WriteFile(gsID, "config/deep/file.txt", "data"); err != nil {
 		t.Fatalf("WriteFile nested: %v", err)
 	}
@@ -230,7 +230,7 @@ func TestDeleteFileRoot(t *testing.T) {
 	gsID := "test-gs"
 	os.MkdirAll(filepath.Join(dir, gsID), 0755)
 
-	// Nelze smazat kořen serveru
+	// Cannot delete server root
 	if err := m.DeleteFile(gsID, ""); err == nil {
 		t.Fatal("should deny deleting root")
 	}
@@ -304,13 +304,13 @@ func TestCreateDeleteServerDir(t *testing.T) {
 		t.Fatalf("CreateServerDir: %v", err)
 	}
 
-	// server.toml by měl existovat
+	// server.toml should exist
 	tomlPath := filepath.Join(dir, gsID, "server.toml")
 	if _, err := os.Stat(tomlPath); err != nil {
 		t.Fatal("server.toml should exist")
 	}
 
-	// Config by měl být validní
+	// Config should be valid
 	cfg, err := ReadConfig(dir, gsID)
 	if err != nil {
 		t.Fatalf("ReadConfig: %v", err)
@@ -319,7 +319,7 @@ func TestCreateDeleteServerDir(t *testing.T) {
 		t.Error("image should not be empty")
 	}
 
-	// Smazat
+	// Delete
 	if err := m.DeleteServerDir(gsID); err != nil {
 		t.Fatalf("DeleteServerDir: %v", err)
 	}
@@ -334,7 +334,7 @@ func TestCreateServerDirUnknownPreset(t *testing.T) {
 	SeedPresets(presetsDir)
 	m := &Manager{DataDir: dir, PresetsDir: presetsDir}
 
-	// Neznámý preset — fallback na první dostupný
+	// Unknown preset — fallback to the first available
 	if err := m.CreateServerDir("fallback-test", "nonexistent"); err != nil {
 		t.Fatalf("CreateServerDir with unknown preset: %v", err)
 	}

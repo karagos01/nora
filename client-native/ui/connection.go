@@ -63,7 +63,7 @@ type ServerConnection struct {
 	OnlineUsers    map[string]bool
 	UserStatuses   map[string]string    // userID → status (away/dnd)
 	UserStatusText map[string]string    // userID → status text
-	TypingUsers    map[string]time.Time // userID → last typing time (aktivní kanál, legacy)
+	TypingUsers    map[string]time.Time // userID → last typing time (active channel, legacy)
 	TypingDMUsers  map[string]time.Time // userID → last DM typing time
 	ChannelTyping  map[string]map[string]time.Time // channelID → userID → lastTypingTime
 	UnreadCount    map[string]int       // channelID → unread count
@@ -89,7 +89,7 @@ type ServerConnection struct {
 	// File sharing
 	MyShares     []api.SharedDirectory
 	SharedWithMe []api.SharedDirectory
-	SharePaths   map[string]string // shareID → local path (jen owner)
+	SharePaths   map[string]string // shareID → local path (owner only)
 	Mounts       *mount.MountManager
 
 	// Game servers
@@ -107,10 +107,10 @@ type ServerConnection struct {
 	NotifyLevel   *store.NotifyLevel
 	ChannelNotify map[string]store.NotifyLevel
 
-	// Mapování userID → set role IDs (pro role colors a permissions)
+	// Mapping userID → set of role IDs (for role colors and permissions)
 	UserRolesMap map[string]map[string]bool
 
-	// Cached permissions (bitwise OR ze všech rolí uživatele)
+	// Cached permissions (bitwise OR of all user roles)
 	MyPermissions int64
 
 	// Server info
@@ -118,31 +118,31 @@ type ServerConnection struct {
 	StunURL string
 	Icon    image.Image
 
-	// Message cache (lokální cache channel zpráv)
+	// Message cache (local cache of channel messages)
 	MsgCache *store.MessageCache
 
 	// VPN Tunnels
 	Tunnels []api.Tunnel
 
 	// Lobby voice channels
-	LastVoiceError string // poslední voice error (e.g. "Wrong password")
+	LastVoiceError string // last voice error (e.g. "Wrong password")
 }
 
 // Unlock unlocks or creates an identity.
-// passwordVerifyPlaintext je známý string šifrovaný heslem pro detekci špatného hesla.
+// passwordVerifyPlaintext is a known string encrypted with the password for wrong password detection.
 const passwordVerifyPlaintext = "NORA"
 
 func (a *App) Unlock(username, password string) error {
 	ids, _ := store.LoadIdentities()
 
-	// Pokud existují identity, jen odemknout — nikdy nevytvářet novou
+	// If identities exist, just unlock — never create a new one
 	if len(ids) > 0 && password != "" {
 		for i, id := range ids {
-			// Rychlá kontrola přes PasswordVerify (pokud existuje)
+			// Quick check via PasswordVerify (if it exists)
 			if id.PasswordVerify != "" {
 				plain, err := crypto.DecryptKey(id.PasswordVerify, password)
 				if err != nil || plain != passwordVerifyPlaintext {
-					continue // špatné heslo pro tuto identitu
+					continue // wrong password for this identity
 				}
 			}
 
@@ -169,6 +169,7 @@ func (a *App) Unlock(username, password string) error {
 			if id.VideoVolume > 0 {
 				a.VideoPlayer.SetVolume(id.VideoVolume)
 			}
+			a.YouTubeQuality = id.YouTubeQuality
 
 			fs := id.FontScale
 			if fs == 0 {
@@ -187,7 +188,7 @@ func (a *App) Unlock(username, password string) error {
 				log.Printf("contacts DB open: %v", err)
 			}
 
-			// Migrace: doplnit PasswordVerify pro staré identity
+			// Migration: add PasswordVerify for old identities
 			if id.PasswordVerify == "" {
 				if verify, err := crypto.EncryptKey(passwordVerifyPlaintext, password); err == nil {
 					ids[i].PasswordVerify = verify
@@ -204,11 +205,11 @@ func (a *App) Unlock(username, password string) error {
 		return fmt.Errorf("wrong password")
 	}
 
-	// Žádné identity — vytvořit novou
+	// No identities — create a new one
 	return a.createIdentity(username, password)
 }
 
-// CreateNewIdentity explicitně vytvoří novou identitu (volá se z login UI v create mode).
+// CreateNewIdentity explicitly creates a new identity (called from login UI in create mode).
 func (a *App) CreateNewIdentity(username, password string) error {
 	if username == "" {
 		return fmt.Errorf("username is required")
@@ -365,17 +366,17 @@ func (a *App) setupServerConnection(serverURL, name, description, iconURL, stunU
 		SharePaths:    make(map[string]string),
 	}
 
-	// Načíst persistované SharePaths z identity
+	// Load persisted SharePaths from identity
 	if saved := store.GetSharePaths(a.PublicKey, serverURL); saved != nil {
 		for k, v := range saved {
 			conn.SharePaths[k] = v
 		}
 	}
 
-	// Inicializovat message cache pro tento server
+	// Initialize message cache for this server
 	conn.MsgCache = store.NewMessageCache(a.PublicKey, serverURL)
 
-	// Načíst notify settings z identity
+	// Load notify settings from identity
 	srvNotify, chNotify := store.GetServerNotifySettings(a.PublicKey, serverURL)
 	conn.NotifyLevel = srvNotify
 	if chNotify != nil {
@@ -384,7 +385,7 @@ func (a *App) setupServerConnection(serverURL, name, description, iconURL, stunU
 		conn.ChannelNotify = make(map[string]store.NotifyLevel)
 	}
 
-	// Auto-refresh callback — uložit nový refresh token
+	// Auto-refresh callback — save new refresh token
 	pubKey := a.PublicKey
 	client.OnTokenRefresh = func(_, refresh string) {
 		store.UpdateServerToken(pubKey, serverURL, refresh)
@@ -430,7 +431,7 @@ func (a *App) setupServerConnection(serverURL, name, description, iconURL, stunU
 		}
 	}
 
-	// Initialize call manager (mutual exclusion s voice)
+	// Initialize call manager (mutual exclusion with voice)
 	conn.Call = voice.NewCallManager(conn.StunURL, sendWS, invalidate, func() {
 		conn.Voice.Leave()
 	}, func() {
@@ -440,7 +441,7 @@ func (a *App) setupServerConnection(serverURL, name, description, iconURL, stunU
 	// Initialize P2P file transfer manager
 	conn.P2P = p2p.NewManager(conn.UserID, conn.StunURL, sendWS, invalidate)
 	conn.P2P.SetOnOffer(func(t *p2p.Transfer) {
-		// Najít username odesílatele
+		// Find sender's username
 		senderName := t.PeerID
 		a.mu.RLock()
 		for _, u := range conn.Users {
@@ -491,12 +492,12 @@ func (a *App) setupServerConnection(serverURL, name, description, iconURL, stunU
 	// Initialize swarm manager
 	conn.Swarm = p2p.NewSwarmManager(conn.UserID, conn.StunURL, sendWS, invalidate)
 
-	// Inicializovat MountManager pro sdílené adresáře
+	// Initialize MountManager for shared directories
 	conn.Mounts = mount.NewMountManager(serverURL, client, func(shareID, fileID, savePath string) error {
 		if conn.P2P == nil {
 			return fmt.Errorf("P2P not available")
 		}
-		// Najít ownerID pro tento share
+		// Find ownerID for this share
 		a.mu.RLock()
 		var ownerID string
 		for _, s := range conn.SharedWithMe {
@@ -510,7 +511,7 @@ func (a *App) setupServerConnection(serverURL, name, description, iconURL, stunU
 			return fmt.Errorf("owner not found for share %s", shareID)
 		}
 
-		// Zavolat RequestTransfer na API
+		// Call RequestTransfer API
 		resp, err := conn.Client.RequestTransfer(shareID, fileID)
 		if err != nil {
 			return fmt.Errorf("request transfer: %w", err)
@@ -520,14 +521,14 @@ func (a *App) setupServerConnection(serverURL, name, description, iconURL, stunU
 			return fmt.Errorf("no transfer_id in response")
 		}
 
-		// Počkat na registraci u ownera
+		// Wait for registration at the owner
 		time.Sleep(500 * time.Millisecond)
 
-		// Zahájit P2P download
+		// Start P2P download
 		conn.P2P.RequestDownload(ownerID, transferID, savePath)
 
-		// Čekat na dokončení (polling)
-		for i := 0; i < 600; i++ { // max 10 minut
+		// Wait for completion (polling)
+		for i := 0; i < 600; i++ { // max 10 minutes
 			time.Sleep(time.Second)
 			if conn.P2P.IsDownloaded(transferID) {
 				return nil
@@ -538,7 +539,7 @@ func (a *App) setupServerConnection(serverURL, name, description, iconURL, stunU
 		}
 		return fmt.Errorf("transfer timeout")
 	}, func(shareID, fileName, relativePath, stagedPath string, fileSize int64) error {
-		// Upload: zavolat RequestUpload API → dostat uploadID → registrovat staged file → pollovat
+		// Upload: call RequestUpload API → get uploadID → register staged file → poll
 		if conn.P2P == nil {
 			return fmt.Errorf("P2P not available")
 		}
@@ -552,11 +553,11 @@ func (a *App) setupServerConnection(serverURL, name, description, iconURL, stunU
 			return fmt.Errorf("no upload_id in response")
 		}
 
-		// Registrovat staged soubor v P2P — owner pošle file.request a HandleRequest auto-respond
+		// Register staged file in P2P — owner sends file.request and HandleRequest auto-responds
 		conn.P2P.RegisterFileForShare(uploadID, stagedPath, fileName, fileSize)
 
-		// Čekat na dokončení (owner stáhne soubor přes P2P)
-		for i := 0; i < 600; i++ { // max 10 minut
+		// Wait for completion (owner downloads the file via P2P)
+		for i := 0; i < 600; i++ { // max 10 minutes
 			time.Sleep(time.Second)
 			if conn.P2P.IsTransferSent(uploadID) {
 				return nil
@@ -577,14 +578,14 @@ func (a *App) setupServerConnection(serverURL, name, description, iconURL, stunU
 	a.Servers = append(a.Servers, conn)
 	a.mu.Unlock()
 
-	// Auto-remount dříve mountnutých shares
+	// Auto-remount previously mounted shares
 	if mounted := store.GetMountedShares(a.PublicKey, serverURL); len(mounted) > 0 {
 		go func() {
 			for shareID, msi := range mounted {
 				if conn.Mounts == nil {
 					continue
 				}
-				// Zjistit aktuální canWrite ze server dat (ne z uloženého stavu)
+				// Determine current canWrite from server data (not from saved state)
 				canWrite := msi.CanWrite
 				for _, s := range conn.SharedWithMe {
 					if s.ID == shareID {
@@ -599,7 +600,7 @@ func (a *App) setupServerConnection(serverURL, name, description, iconURL, stunU
 					log.Printf("Auto-remounted %s at %s (port=%d, canWrite=%v)", msi.DisplayName, info.Path, info.Port, canWrite)
 				}
 			}
-			// Persist aby se uložil případně nový port/letter
+			// Persist to save potentially new port/letter
 			if v := a.SharesView; v != nil {
 				v.persistMountedShares(conn)
 			}
@@ -635,6 +636,14 @@ func (a *App) ConnectServer(serverURL string, username string, inviteCode ...str
 		}
 	}
 	a.mu.RUnlock()
+
+	// Warn about unencrypted HTTP connections
+	if strings.HasPrefix(serverURL, "http://") {
+		go func() {
+			a.Toasts.Warning("Connecting over unencrypted HTTP. Traffic may be intercepted.")
+			a.Window.Invalidate()
+		}()
+	}
 
 	client := api.NewClient(serverURL)
 
@@ -725,7 +734,7 @@ func (a *App) loadServerData(conn *ServerConnection) {
 	if err == nil {
 		conn.Users = users
 		conn.Members = users
-		// Auto-create kontaktů
+		// Auto-create contacts
 		if a.Contacts != nil {
 			for _, u := range users {
 				if u.PublicKey != "" {
@@ -758,7 +767,7 @@ func (a *App) loadServerData(conn *ServerConnection) {
 	blocks, err := conn.Client.GetBlocks()
 	if err == nil {
 		conn.BlockedUsers = blocks
-		// Sync do klientského cross-server blocklistu
+		// Sync to client-side cross-server blocklist
 		if a.Contacts != nil {
 			for _, u := range blocks {
 				if u.PublicKey != "" {
@@ -778,7 +787,7 @@ func (a *App) loadServerData(conn *ServerConnection) {
 		conn.Roles = roles
 	}
 
-	// Načíst role mapping pro všechny uživatele (pro role colors)
+	// Load role mapping for all users (for role colors)
 	conn.UserRolesMap = make(map[string]map[string]bool)
 	for _, u := range conn.Members {
 		userRoles, err := conn.Client.GetUserRoles(u.ID)
@@ -791,7 +800,7 @@ func (a *App) loadServerData(conn *ServerConnection) {
 		}
 	}
 
-	// Spočítat permissions aktuálního uživatele
+	// Calculate permissions of the current user
 	myRoleIDs := conn.UserRolesMap[conn.UserID]
 	var perms int64
 	for _, r := range roles {
@@ -799,7 +808,7 @@ func (a *App) loadServerData(conn *ServerConnection) {
 			perms |= r.Permissions
 		}
 	}
-	// Owner má plný přístup
+	// Owner has full access
 	for _, u := range conn.Users {
 		if u.ID == conn.UserID && u.IsOwner {
 			perms = 0x7FFFFFFFFFFFFFFF
@@ -832,17 +841,17 @@ func (a *App) loadServerData(conn *ServerConnection) {
 		conn.LANMembers = lanResp.Members
 	}
 
-	// VPN Tunnels (tiché selhání — server nemusí mít WG povolený)
+	// VPN Tunnels (silent failure — server may not have WG enabled)
 	if tunnels, err := conn.Client.GetTunnels(); err == nil {
 		conn.Tunnels = tunnels
 	}
 
-	// Game servers (tiché selhání — server nemusí mít feature povolenu)
+	// Game servers (silent failure — server may not have the feature enabled)
 	if gsInstances, err := conn.Client.GetGameServers(); err == nil {
 		conn.GameServers = gsInstances
 	}
 
-	// Načíst členy game serverů na pozadí
+	// Load game server members in the background
 	if a.GameServers != nil {
 		a.GameServers.LoadMembers(conn)
 	}
@@ -855,7 +864,7 @@ func (a *App) loadServerData(conn *ServerConnection) {
 		if sharesResp.Accessible != nil {
 			conn.SharedWithMe = sharesResp.Accessible
 		}
-		// Aktualizovat canWrite na existujících mountech podle aktuálních permissions
+		// Update canWrite on existing mounts according to current permissions
 		if conn.Mounts != nil {
 			for _, s := range conn.SharedWithMe {
 				conn.Mounts.UpdateCanWrite(s.ID, s.CanWrite)
@@ -877,7 +886,7 @@ func (a *App) loadServerData(conn *ServerConnection) {
 	}
 }
 
-// messagesToCached konvertuje api.Message slice na CachedMessage slice.
+// messagesToCached converts an api.Message slice to a CachedMessage slice.
 func messagesToCached(msgs []api.Message) []store.CachedMessage {
 	cached := make([]store.CachedMessage, len(msgs))
 	for i, m := range msgs {
@@ -909,7 +918,7 @@ func messagesToCached(msgs []api.Message) []store.CachedMessage {
 	return cached
 }
 
-// cachedToMessages konvertuje CachedMessage slice na api.Message slice.
+// cachedToMessages converts a CachedMessage slice to an api.Message slice.
 func cachedToMessages(cached []store.CachedMessage) []api.Message {
 	msgs := make([]api.Message, len(cached))
 	for i, cm := range cached {
@@ -985,7 +994,7 @@ func (a *App) SelectChannel(id, name string) {
 	delete(conn.UnreadCount, id)
 	a.Mode = ViewChannels
 
-	// Načíst z lokální cache pro okamžité zobrazení
+	// Load from local cache for instant display
 	if conn.MsgCache != nil {
 		cached := conn.MsgCache.GetMessages(id)
 		if len(cached) > 0 {
@@ -1008,17 +1017,17 @@ func (a *App) SelectChannel(id, name string) {
 		a.mu.Unlock()
 		a.Window.Invalidate()
 
-		// Uložit do cache
+		// Save to cache
 		if conn.MsgCache != nil {
 			conn.MsgCache.SetMessages(id, messagesToCached(msgs))
 			conn.MsgCache.Save()
 		}
 	}()
 
-	// Načíst pinSeenID z uloženého stavu
+	// Load pinSeenID from saved state
 	a.MsgView.pinSeenID = store.GetPinSeenID(a.PublicKey, conn.URL, id)
 
-	// Načíst připnuté zprávy pro zobrazení v pin baru
+	// Load pinned messages for display in the pin bar
 	go func() {
 		pins, err := conn.Client.GetPinnedMessages(id)
 		if err == nil {
@@ -1163,7 +1172,7 @@ func (a *App) SelectDM(convID string) {
 	}()
 }
 
-// handlePendingDeepLink zpracuje deep link předaný z command line.
+// handlePendingDeepLink processes a deep link passed from the command line.
 func (a *App) handlePendingDeepLink() {
 	link := a.PendingDeepLink
 	if link == "" {
@@ -1188,10 +1197,9 @@ func (a *App) handlePendingDeepLink() {
 		}
 	case "invite":
 		if dl.Server != "" && dl.Code != "" {
-			log.Printf("Deep link: invite for %s code=%s", dl.Server, dl.Code)
-			if err := a.ConnectServer(dl.Server, "", dl.Code); err != nil {
-				log.Printf("Deep link connect error: %v", err)
-			}
+			log.Printf("Deep link: invite for %s code=%s (queued for confirmation)", dl.Server, dl.Code)
+			// Queue for confirmation — don't auto-connect to untrusted servers
+			a.PendingDeepLinkInvite = &DeepLinkInvite{Server: dl.Server, Code: dl.Code}
 			a.Window.Invalidate()
 		}
 	}

@@ -68,7 +68,7 @@ func (d *Deps) SwapRolePositions(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Actor nesmí přesouvat role nad svou vlastní position
+	// Actor must not move roles above their own position
 	minPos := role1.Position
 	if role2.Position < minPos {
 		minPos = role2.Position
@@ -108,7 +108,7 @@ func (d *Deps) CreateRole(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Kontrola: nemůže nastavit permissions, které sám nemá
+	// Check: cannot set permissions they don't have themselves
 	if !user.IsOwner {
 		actorPerms, err := d.Roles.GetUserPermissions(user.ID)
 		if err != nil {
@@ -155,7 +155,7 @@ func (d *Deps) UpdateRole(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Hierarchická kontrola — nesmí upravovat role s vyšší/stejnou position
+	// Hierarchy check — must not modify roles with higher/equal position
 	if err := d.canActOnRole(user, role.Position); err != nil {
 		util.Error(w, http.StatusForbidden, "cannot modify a role with higher or equal rank")
 		return
@@ -167,7 +167,7 @@ func (d *Deps) UpdateRole(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Kontrola: nemůže nastavit permissions, které sám nemá
+	// Check: cannot set permissions they don't have themselves
 	if req.Permissions != nil && !user.IsOwner {
 		actorPerms, err := d.Roles.GetUserPermissions(user.ID)
 		if err != nil {
@@ -190,7 +190,7 @@ func (d *Deps) UpdateRole(w http.ResponseWriter, r *http.Request) {
 		role.Color = *req.Color
 	}
 	if req.Position != nil {
-		// Kontrola: nesmí nastavit position vyšší (nižší číslo) než vlastní rank
+		// Check: must not set position higher (lower number) than own rank
 		if !user.IsOwner {
 			actorPos, _ := d.Roles.GetHighestPosition(user.ID, user.IsOwner)
 			if *req.Position <= actorPos {
@@ -224,7 +224,7 @@ func (d *Deps) DeleteRole(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Hierarchická kontrola
+	// Hierarchy check
 	role, err := d.Roles.GetByID(id)
 	if err != nil {
 		util.Error(w, http.StatusNotFound, "role not found")
@@ -268,7 +268,7 @@ func (d *Deps) AssignRole(w http.ResponseWriter, r *http.Request) {
 	userID := r.PathValue("userId")
 	roleID := r.PathValue("roleId")
 
-	// Hierarchická kontrola — nesmí přiřazovat role s vyšší/stejnou position
+	// Hierarchy check — must not assign roles with higher/equal position
 	role, err := d.Roles.GetByID(roleID)
 	if err != nil {
 		util.Error(w, http.StatusNotFound, "role not found")
@@ -299,7 +299,7 @@ func (d *Deps) RemoveRole(w http.ResponseWriter, r *http.Request) {
 	userID := r.PathValue("userId")
 	roleID := r.PathValue("roleId")
 
-	// Hierarchická kontrola — nesmí odebírat role s vyšší/stejnou position
+	// Hierarchy check — must not remove roles with higher/equal position
 	role, err := d.Roles.GetByID(roleID)
 	if err != nil {
 		util.Error(w, http.StatusNotFound, "role not found")

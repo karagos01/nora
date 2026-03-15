@@ -9,7 +9,7 @@ import (
 	"time"
 )
 
-// StoredBookmark je lokální záložka zprávy.
+// StoredBookmark is a local message bookmark.
 type StoredBookmark struct {
 	ID           string    `json:"id"`
 	ServerURL    string    `json:"server_url"`
@@ -23,7 +23,7 @@ type StoredBookmark struct {
 	Note         string    `json:"note,omitempty"`
 }
 
-// BookmarkStore spravuje lokální záložky zpráv per identita.
+// BookmarkStore manages local message bookmarks per identity.
 type BookmarkStore struct {
 	mu        sync.Mutex
 	publicKey string
@@ -70,7 +70,7 @@ func (s *BookmarkStore) Save() {
 	s.dirty = false
 }
 
-// Add přidá záložku (dedup by ID + ServerURL).
+// Add adds a bookmark (dedup by ID + ServerURL).
 func (s *BookmarkStore) Add(b StoredBookmark) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -84,7 +84,7 @@ func (s *BookmarkStore) Add(b StoredBookmark) {
 	s.dirty = true
 }
 
-// Remove odebere záložku.
+// Remove removes a bookmark.
 func (s *BookmarkStore) Remove(msgID, serverURL string) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -97,7 +97,7 @@ func (s *BookmarkStore) Remove(msgID, serverURL string) {
 	}
 }
 
-// IsBookmarked kontroluje zda je zpráva v záložkách.
+// IsBookmarked checks whether a message is bookmarked.
 func (s *BookmarkStore) IsBookmarked(msgID, serverURL string) bool {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -109,7 +109,7 @@ func (s *BookmarkStore) IsBookmarked(msgID, serverURL string) bool {
 	return false
 }
 
-// GetAll vrátí všechny záložky pro server (sorted by BookmarkedAt desc).
+// GetAll returns all bookmarks for a server (sorted by BookmarkedAt desc).
 func (s *BookmarkStore) GetAll(serverURL string) []StoredBookmark {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -125,7 +125,7 @@ func (s *BookmarkStore) GetAll(serverURL string) []StoredBookmark {
 	return result
 }
 
-// GetByChannel vrátí záložky pro server + kanál.
+// GetByChannel returns bookmarks for a server + channel.
 func (s *BookmarkStore) GetByChannel(serverURL, channelID string) []StoredBookmark {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -141,7 +141,7 @@ func (s *BookmarkStore) GetByChannel(serverURL, channelID string) []StoredBookma
 	return result
 }
 
-// UpdateNote edituje poznámku záložky.
+// UpdateNote edits a bookmark's note.
 func (s *BookmarkStore) UpdateNote(msgID, serverURL, note string) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -154,7 +154,7 @@ func (s *BookmarkStore) UpdateNote(msgID, serverURL, note string) {
 	}
 }
 
-// Count vrátí počet záložek pro server.
+// Count returns the number of bookmarks for a server.
 func (s *BookmarkStore) Count(serverURL string) int {
 	s.mu.Lock()
 	defer s.mu.Unlock()

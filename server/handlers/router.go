@@ -101,8 +101,8 @@ type Deps struct {
 	SecurityCfg config.SecurityConfig
 	RegMode     string
 
-	// SettingsMu chrání pole ServerName, ServerDesc, ServerIconURL, MaxUploadSize,
-	// OpenReg, GameServersEnabled, SwarmSharingEnabled proti datovému souběhu.
+	// SettingsMu protects the fields ServerName, ServerDesc, ServerIconURL, MaxUploadSize,
+	// OpenReg, GameServersEnabled, SwarmSharingEnabled against data races.
 	SettingsMu sync.RWMutex
 }
 
@@ -121,7 +121,7 @@ func NewRouter(d *Deps) http.Handler {
 	mux.HandleFunc("GET /api/source", d.SourceDownload)
 	mux.HandleFunc("GET /api/source/info", d.SourceInfo)
 
-	// Auth (veřejné) — challenge-response
+	// Auth (public) — challenge-response
 	mux.HandleFunc("POST /api/auth/challenge", d.Challenge)
 	mux.HandleFunc("POST /api/auth/verify", d.Verify)
 	mux.HandleFunc("POST /api/auth/refresh", d.Refresh)
@@ -129,29 +129,29 @@ func NewRouter(d *Deps) http.Handler {
 	// WebSocket
 	mux.HandleFunc("GET /api/ws", ws.UpgradeHandler(d.Hub, d.JWTService, d.Bans.IsBanned))
 
-	// Uploads (veřejné čtení)
+	// Uploads (public read)
 	mux.HandleFunc("GET /api/uploads/", d.ServeUpload)
 
-	// Webhook send (veřejné — token v URL)
+	// Webhook send (public — token in URL)
 	mux.HandleFunc("POST /api/webhooks/{id}/{token}", d.WebhookSend)
 
-	// Game server log stream (WS, auth přes query token)
+	// Game server log stream (WS, auth via query token)
 	mux.HandleFunc("GET /api/gameservers/{id}/logs", d.GameServerLogs)
 
-	// Chráněné endpointy
+	// Protected endpoints
 	protected := http.NewServeMux()
 
-	// Auth (chráněné)
+	// Auth (protected)
 	protected.HandleFunc("POST /api/auth/logout", d.Logout)
 
-	// Uživatelé
+	// Users
 	protected.HandleFunc("GET /api/users", d.ListUsers)
 	protected.HandleFunc("GET /api/users/{id}", d.GetUser)
 	protected.HandleFunc("PATCH /api/users/me", d.UpdateMe)
 	protected.HandleFunc("POST /api/users/me/avatar", d.UploadAvatar)
 	protected.HandleFunc("DELETE /api/users/me/avatar", d.DeleteAvatar)
 
-	// Kanály
+	// Channels
 	protected.HandleFunc("GET /api/channels", d.ListChannels)
 	protected.HandleFunc("POST /api/channels", d.CreateChannel)
 	protected.HandleFunc("POST /api/channels/reorder", d.ReorderChannels)
@@ -164,7 +164,7 @@ func NewRouter(d *Deps) http.Handler {
 	protected.HandleFunc("PUT /api/channels/{id}/permissions", d.SetChannelPermOverride)
 	protected.HandleFunc("DELETE /api/channels/{id}/permissions/{targetType}/{targetId}", d.DeleteChannelPermOverride)
 
-	// Zprávy
+	// Messages
 	protected.HandleFunc("GET /api/channels/{id}/messages", d.ListMessages)
 	protected.HandleFunc("POST /api/channels/{id}/messages", d.CreateMessage)
 	protected.HandleFunc("PATCH /api/messages/{id}", d.UpdateMessage)
@@ -231,7 +231,7 @@ func NewRouter(d *Deps) http.Handler {
 	protected.HandleFunc("GET /api/dm/{id}/pending", d.GetDMPending)
 	protected.HandleFunc("POST /api/dm/{id}/messages", d.CreateDMMessage)
 
-	// Ephemeral Groups (E2E encrypted, server neukládá zprávy)
+	// Ephemeral Groups (E2E encrypted, server does not store messages)
 	protected.HandleFunc("GET /api/groups", d.ListGroups)
 	protected.HandleFunc("POST /api/groups", d.CreateGroup)
 	protected.HandleFunc("GET /api/groups/{id}", d.GetGroup)
@@ -247,7 +247,7 @@ func NewRouter(d *Deps) http.Handler {
 	protected.HandleFunc("POST /api/emojis", d.CreateEmoji)
 	protected.HandleFunc("DELETE /api/emojis/{id}", d.DeleteEmoji)
 
-	// Kategorie kanálů
+	// Channel categories
 	protected.HandleFunc("GET /api/categories", d.ListCategories)
 	protected.HandleFunc("POST /api/categories", d.CreateCategory)
 	protected.HandleFunc("POST /api/categories/reorder", d.ReorderCategories)
@@ -281,13 +281,13 @@ func NewRouter(d *Deps) http.Handler {
 	// Polls
 	protected.HandleFunc("PUT /api/polls/{id}/vote", d.VotePoll)
 
-	// Webhooky
+	// Webhooks
 	protected.HandleFunc("GET /api/webhooks", d.ListWebhooks)
 	protected.HandleFunc("POST /api/webhooks", d.CreateWebhook)
 	protected.HandleFunc("PATCH /api/webhooks/{id}", d.UpdateWebhook)
 	protected.HandleFunc("DELETE /api/webhooks/{id}", d.DeleteWebhook)
 
-	// Media galerie
+	// Media gallery
 	protected.HandleFunc("GET /api/gallery", d.Gallery)
 
 	// File storage
@@ -407,7 +407,7 @@ func NewRouter(d *Deps) http.Handler {
 	protected.HandleFunc("POST /api/approvals/{userId}/approve", d.ApproveUser)
 	protected.HandleFunc("POST /api/approvals/{userId}/reject", d.RejectUser)
 
-	// LAN Party (jen pokud je WG manager povolený)
+	// LAN Party (only if WG manager is enabled)
 	if d.WG != nil {
 		protected.HandleFunc("GET /api/lan", d.GetLANParties)
 		protected.HandleFunc("POST /api/lan", d.CreateLANParty)
@@ -415,7 +415,7 @@ func NewRouter(d *Deps) http.Handler {
 		protected.HandleFunc("POST /api/lan/{id}/join", d.JoinLANParty)
 		protected.HandleFunc("DELETE /api/lan/{id}/leave", d.LeaveLANParty)
 
-		// VPN Tunnely
+		// VPN Tunnels
 		protected.HandleFunc("GET /api/tunnels", d.GetTunnels)
 		protected.HandleFunc("POST /api/tunnels", d.CreateTunnel)
 		protected.HandleFunc("POST /api/tunnels/{id}/accept", d.AcceptTunnel)
@@ -424,7 +424,7 @@ func NewRouter(d *Deps) http.Handler {
 
 	mux.Handle("/api/", authMW(protected))
 
-	// Root — JSON info (žádné SPA)
+	// Root — JSON info (no SPA)
 	mux.HandleFunc("GET /{$}", d.ServerInfo)
 
 	var handler http.Handler = mux

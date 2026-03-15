@@ -47,7 +47,7 @@ func (q *KanbanQueries) GetBoard(id string) (*models.KanbanBoard, error) {
 		return nil, err
 	}
 
-	// Načíst sloupce
+	// Load columns
 	colRows, err := q.DB.Query(
 		`SELECT id, board_id, title, position, color, created_at FROM kanban_columns WHERE board_id = ? ORDER BY position`, id,
 	)
@@ -64,7 +64,7 @@ func (q *KanbanQueries) GetBoard(id string) (*models.KanbanBoard, error) {
 		b.Columns = append(b.Columns, c)
 	}
 
-	// Načíst karty pro všechny sloupce + JOIN na users
+	// Load cards for all columns + JOIN on users
 	cardRows, err := q.DB.Query(`
 		SELECT c.id, c.column_id, c.board_id, c.title, c.description, c.position,
 		       c.assigned_to, c.created_by, c.color, c.due_date, c.created_at, c.updated_at,

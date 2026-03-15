@@ -15,14 +15,14 @@ func TestRateLimiterAllow(t *testing.T) {
 		burst:    5,
 	}
 
-	// Prvních 5 requestů by mělo projít (burst=5)
+	// First 5 requests should pass (burst=5)
 	for i := 0; i < 5; i++ {
 		if !rl.allow("192.168.1.1") {
 			t.Fatalf("request %d should be allowed within burst", i+1)
 		}
 	}
 
-	// 6. request by měl být odmítnut (burst vyčerpán)
+	// 6th request should be denied (burst exhausted)
 	if rl.allow("192.168.1.1") {
 		t.Fatal("request after burst should be denied")
 	}
@@ -35,7 +35,7 @@ func TestRateLimiterDifferentIPs(t *testing.T) {
 		burst:    2,
 	}
 
-	// Dva různí klienti mají nezávislé limity
+	// Two different clients have independent limits
 	if !rl.allow("10.0.0.1") {
 		t.Fatal("first IP should be allowed")
 	}
@@ -49,7 +49,7 @@ func TestRateLimiterDifferentIPs(t *testing.T) {
 		t.Fatal("second IP second request should be allowed (burst=2)")
 	}
 
-	// Oba by teď měli být na limitu
+	// Both should now be at the limit
 	if rl.allow("10.0.0.1") {
 		t.Fatal("first IP should be rate limited")
 	}
@@ -69,7 +69,7 @@ func TestRateLimiterMiddleware429(t *testing.T) {
 		w.WriteHeader(http.StatusOK)
 	}))
 
-	// První request projde
+	// First request passes
 	req := httptest.NewRequest("GET", "/test", nil)
 	req.RemoteAddr = "1.2.3.4:12345"
 	rec := httptest.NewRecorder()
@@ -78,7 +78,7 @@ func TestRateLimiterMiddleware429(t *testing.T) {
 		t.Fatalf("first request: got %d, want 200", rec.Code)
 	}
 
-	// Druhý request — rate limited
+	// Second request — rate limited
 	rec = httptest.NewRecorder()
 	handler.ServeHTTP(rec, req)
 	if rec.Code != http.StatusTooManyRequests {
@@ -168,7 +168,7 @@ func TestResolveTierRelaxed(t *testing.T) {
 func TestResolveTierNormalDefault(t *testing.T) {
 	erl := &EndpointRateLimiter{rules: buildRules()}
 
-	// POST na normální endpointy → TierNormal (default)
+	// POST to normal endpoints → TierNormal (default)
 	cases := []struct {
 		method string
 		path   string
@@ -204,7 +204,7 @@ func TestResolveTierMethodMatters(t *testing.T) {
 func TestResolveTierGameserverNonUpload(t *testing.T) {
 	erl := &EndpointRateLimiter{rules: buildRules()}
 
-	// GET /api/gameservers/abc/files → TierNormal (ne upload)
+	// GET /api/gameservers/abc/files → TierNormal (not upload)
 	if got := erl.resolveTier("GET", "/api/gameservers/abc/files"); got != TierNormal {
 		t.Errorf("GET gameserver files: got %d, want TierNormal(%d)", got, TierNormal)
 	}
@@ -221,7 +221,7 @@ func TestEndpointRateLimiterMiddleware(t *testing.T) {
 		w.WriteHeader(http.StatusOK)
 	}))
 
-	// Strict tier (burst=5) — 5 requestů projde, 6. ne
+	// Strict tier (burst=5) — 5 requests pass, 6th doesn't
 	for i := 0; i < 5; i++ {
 		req := httptest.NewRequest("POST", "/api/auth/challenge", nil)
 		req.RemoteAddr = "5.5.5.5:9999"
@@ -239,7 +239,7 @@ func TestEndpointRateLimiterMiddleware(t *testing.T) {
 		t.Fatalf("strict 6th request: got %d, want 429", rec.Code)
 	}
 
-	// Jiná IP na relaxed tieru by měla projít nezávisle
+	// Different IP on relaxed tier should pass independently
 	req = httptest.NewRequest("GET", "/api/health", nil)
 	req.RemoteAddr = "6.6.6.6:1234"
 	rec = httptest.NewRecorder()
@@ -258,7 +258,7 @@ func TestEndpointRateLimiterTierIsolation(t *testing.T) {
 
 	ip := "7.7.7.7:4321"
 
-	// Vyčerpat strict tier (burst=5)
+	// Exhaust strict tier (burst=5)
 	for i := 0; i < 5; i++ {
 		req := httptest.NewRequest("POST", "/api/auth/challenge", nil)
 		req.RemoteAddr = ip
@@ -266,7 +266,7 @@ func TestEndpointRateLimiterTierIsolation(t *testing.T) {
 		handler.ServeHTTP(rec, req)
 	}
 
-	// Strict tier by měl být vyčerpaný
+	// Strict tier should be exhausted
 	req := httptest.NewRequest("POST", "/api/auth/challenge", nil)
 	req.RemoteAddr = ip
 	rec := httptest.NewRecorder()
@@ -275,7 +275,7 @@ func TestEndpointRateLimiterTierIsolation(t *testing.T) {
 		t.Fatalf("strict should be exhausted: got %d, want 429", rec.Code)
 	}
 
-	// Ale relaxed tier ze stejné IP by měl stále projít
+	// But relaxed tier from the same IP should still pass
 	req = httptest.NewRequest("GET", "/api/health", nil)
 	req.RemoteAddr = ip
 	rec = httptest.NewRecorder()
@@ -284,7 +284,7 @@ func TestEndpointRateLimiterTierIsolation(t *testing.T) {
 		t.Fatalf("relaxed tier should be independent: got %d, want 200", rec.Code)
 	}
 
-	// A normal tier taky
+	// And normal tier too
 	req = httptest.NewRequest("POST", "/api/channels", nil)
 	req.RemoteAddr = ip
 	rec = httptest.NewRecorder()
@@ -295,7 +295,7 @@ func TestEndpointRateLimiterTierIsolation(t *testing.T) {
 }
 
 func TestEndpointRateLimiterNormalConfigFromToml(t *testing.T) {
-	// Ověřit, že normal tier přebírá hodnoty z configu
+	// Verify that normal tier takes values from config
 	erl := NewEndpointRateLimiter(15, 3)
 
 	handler := erl.Middleware(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -337,8 +337,8 @@ func TestCORSPreflight(t *testing.T) {
 	if rec.Code != http.StatusNoContent {
 		t.Fatalf("status: got %d, want 204", rec.Code)
 	}
-	if got := rec.Header().Get("Access-Control-Allow-Origin"); got != "*" {
-		t.Errorf("ACAO: got %q, want *", got)
+	if got := rec.Header().Get("Access-Control-Allow-Origin"); got != "http://example.com" {
+		t.Errorf("ACAO: got %q, want origin echo", got)
 	}
 	if got := rec.Header().Get("Access-Control-Allow-Headers"); got == "" {
 		t.Error("ACAH should be set")
@@ -380,8 +380,8 @@ func TestCORSNormalRequest(t *testing.T) {
 	if rec.Code != http.StatusOK {
 		t.Fatalf("status: got %d, want 200", rec.Code)
 	}
-	if got := rec.Header().Get("Access-Control-Allow-Origin"); got != "*" {
-		t.Errorf("ACAO: got %q, want *", got)
+	if got := rec.Header().Get("Access-Control-Allow-Origin"); got != "http://example.com" {
+		t.Errorf("ACAO: got %q, want origin echo", got)
 	}
 }
 
@@ -389,7 +389,7 @@ func TestCORSNormalRequest(t *testing.T) {
 
 func TestLoggingDefaultStatus(t *testing.T) {
 	handler := Logging(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		// Nenapíšeme WriteHeader — default 200
+		// We don't call WriteHeader — default 200
 	}))
 
 	req := httptest.NewRequest("GET", "/test", nil)

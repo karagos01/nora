@@ -24,13 +24,25 @@ type catPickerItem struct {
 
 var categoryColorPresets = []string{
 	"#555555", // grey (default)
-	"#7c5cbf", // purple (accent)
+	"#7c5cbf", // purple
 	"#3498db", // blue
 	"#2ecc71", // green
 	"#f1c40f", // yellow
 	"#e67e22", // orange
 	"#e74c3c", // red
 	"#e91e63", // pink
+	"#00bcd4", // cyan
+	"#009688", // teal
+	"#8bc34a", // lime
+	"#3f51b5", // indigo
+	"#795548", // brown
+	"#607d8b", // slate
+	"#9b59b6", // lavender
+	"#1abc9c", // mint
+	"#2c3e50", // navy
+	"#ff5722", // coral
+	"#f44336", // crimson
+	"#ffc107", // amber
 }
 
 type CreateDialog struct {
@@ -60,7 +72,7 @@ type CreateDialog struct {
 	selectedCat  *string // nil = no category
 
 	// Category fields
-	colorBtns        [8]widget.Clickable
+	colorBtns        [20]widget.Clickable
 	selectedColor    int
 	childCatBtns     []widget.Clickable
 	selectedChildren map[string]bool // cat IDs to move inside new root
@@ -106,13 +118,13 @@ func (d *CreateDialog) submit() {
 					log.Printf("CreateChannel: %v", err)
 					return
 				}
-				// Kanál se přidá přes WS event channel.create
+				// Channel will be added via WS event channel.create
 				d.app.Window.Invalidate()
 			}
 		}()
 	} else {
 		clr := categoryColorPresets[d.selectedColor]
-		// Zkopírovat vybrané children
+		// Copy selected children
 		children := make(map[string]bool)
 		for k, v := range d.selectedChildren {
 			children[k] = v
@@ -124,7 +136,7 @@ func (d *CreateDialog) submit() {
 					log.Printf("CreateCategory: %v", err)
 					return
 				}
-				// Přesunout vybrané kategorie dovnitř nové root
+				// Move selected categories inside the new root
 				for childID := range children {
 					if err := c.Client.SetCategoryParent(childID, cat.ID); err != nil {
 						log.Printf("SetCategoryParent: %v", err)
@@ -151,8 +163,8 @@ func (d *CreateDialog) Layout(gtx layout.Context) layout.Dimensions {
 		copy(cats, conn.Categories)
 		d.app.mu.RUnlock()
 	}
-	// Flat list přiřaditelných kategorií pro channel mode:
-	// všechny kategorie (root i child)
+	// Flat list of assignable categories for channel mode:
+	// all categories (root and child)
 	var assignableCats []catPickerItem
 	for _, cat := range cats {
 		assignableCats = append(assignableCats, catPickerItem{id: cat.ID, name: cat.Name, color: cat.Color})
@@ -360,7 +372,7 @@ func (d *CreateDialog) layoutContent(gtx layout.Context, cats []api.ChannelCateg
 			})
 		}))
 
-		// Channel: category selection (hierarchický — standalone + child kategorie)
+		// Channel: category selection (hierarchical — standalone + child categories)
 		if len(assignableCats) > 0 {
 			items = append(items, layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 				return layout.Inset{Top: unit.Dp(12)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
@@ -401,7 +413,7 @@ func (d *CreateDialog) layoutContent(gtx layout.Context, cats []api.ChannelCateg
 			})
 		}))
 
-		// Include existing categories (optional) — přesun dovnitř nové root
+		// Include existing categories (optional) — move inside new root
 		if len(cats) > 0 {
 			items = append(items, layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 				return layout.Inset{Top: unit.Dp(12)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
@@ -434,11 +446,11 @@ func (d *CreateDialog) layoutContent(gtx layout.Context, cats []api.ChannelCateg
 		return layout.Inset{Top: unit.Dp(20)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
 			return layout.Flex{Spacing: layout.SpaceStart}.Layout(gtx,
 				layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-					return d.layoutBtn(gtx, &d.cancelBtn, "Cancel", ColorInput, ColorText)
+					return layoutDialogBtn(gtx, d.app.Theme, &d.cancelBtn, "Cancel", ColorInput, ColorText)
 				}),
 				layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 					return layout.Inset{Left: unit.Dp(8)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-						return d.layoutBtn(gtx, &d.createBtn, "Create", ColorAccent, color.NRGBA{R: 255, G: 255, B: 255, A: 255})
+						return layoutDialogBtn(gtx, d.app.Theme, &d.createBtn, "Create", ColorAccent, color.NRGBA{R: 255, G: 255, B: 255, A: 255})
 					})
 				}),
 			)
@@ -449,16 +461,28 @@ func (d *CreateDialog) layoutContent(gtx layout.Context, cats []api.ChannelCateg
 }
 
 func (d *CreateDialog) layoutColorGrid(gtx layout.Context) layout.Dimensions {
-	var items []layout.FlexChild
-	for i := range categoryColorPresets {
-		idx := i
-		items = append(items, layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-			return layout.Inset{Right: unit.Dp(6), Bottom: unit.Dp(6)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-				return d.layoutColorSwatch(gtx, idx)
-			})
+	const colsPerRow = 10
+	var rows []layout.FlexChild
+	for start := 0; start < len(categoryColorPresets); start += colsPerRow {
+		rowStart := start
+		rowEnd := start + colsPerRow
+		if rowEnd > len(categoryColorPresets) {
+			rowEnd = len(categoryColorPresets)
+		}
+		rows = append(rows, layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+			var items []layout.FlexChild
+			for i := rowStart; i < rowEnd; i++ {
+				idx := i
+				items = append(items, layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+					return layout.Inset{Right: unit.Dp(6), Bottom: unit.Dp(6)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+						return d.layoutColorSwatch(gtx, idx)
+					})
+				}))
+			}
+			return layout.Flex{}.Layout(gtx, items...)
 		}))
 	}
-	return layout.Flex{}.Layout(gtx, items...)
+	return layout.Flex{Axis: layout.Vertical}.Layout(gtx, rows...)
 }
 
 func (d *CreateDialog) layoutColorSwatch(gtx layout.Context, idx int) layout.Dimensions {
@@ -622,34 +646,3 @@ func (d *CreateDialog) layoutCatBtn(gtx layout.Context, btn *widget.Clickable, n
 	})
 }
 
-func (d *CreateDialog) layoutBtn(gtx layout.Context, btn *widget.Clickable, text string, bg, fg color.NRGBA) layout.Dimensions {
-	return btn.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-		hoverBg := bg
-		if btn.Hovered() {
-			hoverBg = color.NRGBA{
-				R: min8(bg.R + 20),
-				G: min8(bg.G + 20),
-				B: min8(bg.B + 20),
-				A: 255,
-			}
-		}
-		return layout.Background{}.Layout(gtx,
-			func(gtx layout.Context) layout.Dimensions {
-				bounds := image.Rect(0, 0, gtx.Constraints.Min.X, gtx.Constraints.Min.Y)
-				rr := gtx.Dp(6)
-				paint.FillShape(gtx.Ops, hoverBg, clip.RRect{
-					Rect: bounds,
-					NE:   rr, NW: rr, SE: rr, SW: rr,
-				}.Op(gtx.Ops))
-				return layout.Dimensions{Size: bounds.Max}
-			},
-			func(gtx layout.Context) layout.Dimensions {
-				return layout.Inset{Top: unit.Dp(8), Bottom: unit.Dp(8), Left: unit.Dp(16), Right: unit.Dp(16)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-					lbl := material.Body2(d.app.Theme.Material, text)
-					lbl.Color = fg
-					return lbl.Layout(gtx)
-				})
-			},
-		)
-	})
-}

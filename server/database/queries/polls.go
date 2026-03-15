@@ -87,7 +87,7 @@ func (q *PollQueries) GetByID(pollID string) (*models.Poll, error) {
 		return nil, err
 	}
 
-	// Načíst options
+	// Load options
 	rows, err := q.DB.Query(
 		`SELECT id, poll_id, label, position FROM poll_options WHERE poll_id = ? ORDER BY position`,
 		pollID,
@@ -105,7 +105,7 @@ func (q *PollQueries) GetByID(pollID string) (*models.Poll, error) {
 		poll.Options = append(poll.Options, opt)
 	}
 
-	// Načíst hlasy
+	// Load votes
 	voteRows, err := q.DB.Query(
 		`SELECT option_id, GROUP_CONCAT(user_id), COUNT(*) FROM poll_votes WHERE poll_id = ? GROUP BY option_id`,
 		pollID,
@@ -235,7 +235,7 @@ func (q *PollQueries) GetByMessageIDs(ids []string) (map[string]*models.Poll, er
 		votes[pollID+"|"+optID] = voteInfo{count: count, userIDs: strings.Split(userIDs, ",")}
 	}
 
-	// Sestavit finální poll objekty
+	// Build final poll objects
 	for _, p := range polls {
 		p.Options = optionsByPoll[p.ID]
 		for i := range p.Options {

@@ -20,7 +20,7 @@ import (
 	"github.com/google/uuid"
 )
 
-// sanitizeFilename odstraní nebezpečné znaky z filename pro Content-Disposition header.
+// sanitizeFilename removes dangerous characters from filename for Content-Disposition header.
 func sanitizeFilename(name string) string {
 	name = filepath.Base(name)
 	name = strings.Map(func(r rune) rune {
@@ -39,9 +39,9 @@ func sanitizeFilename(name string) string {
 
 type UploadRateLimiter struct {
 	mu    sync.Mutex
-	count map[string]int       // userID → počet uploadů v aktuálním okně
+	count map[string]int       // userID → upload count in current window
 	reset map[string]time.Time // userID → reset time
-	limit int                  // max uploadů za minutu
+	limit int                  // max uploads per minute
 }
 
 func NewUploadRateLimiter(limit int) *UploadRateLimiter {
@@ -119,7 +119,7 @@ func (s *UploadSessionStore) cleanupLoop() {
 			if now.After(sess.ExpiresAt) {
 				os.Remove(sess.TempPath)
 				delete(s.sessions, id)
-				slog.Debug("vyčištěna expirovaná upload session", "session_id", id)
+				slog.Debug("cleaned up expired upload session", "session_id", id)
 			}
 		}
 		s.mu.Unlock()
@@ -152,7 +152,7 @@ func (d *Deps) Upload(w http.ResponseWriter, r *http.Request) {
 	}
 	defer file.Close()
 
-	// Detekce MIME type (pro audit log)
+	// Detect MIME type (for audit log)
 	buf := make([]byte, 512)
 	n, _ := file.Read(buf)
 	mimeType := http.DetectContentType(buf[:n])
@@ -177,13 +177,13 @@ func (d *Deps) Upload(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Spočítat SHA-256 obsahu souboru
+	// Compute SHA-256 of file content
 	dst.Seek(0, io.SeekStart)
 	h := sha256.New()
 	io.Copy(h, dst)
 	contentHash := hex.EncodeToString(h.Sum(nil))
 
-	// Deduplikace: pokud soubor se stejným hashem už existuje, smazat nový a vrátit existující
+	// Deduplication: if a file with the same hash already exists, delete the new one and return the existing
 	if existing, err := d.Attachments.FindByContentHash(contentHash); err == nil && existing != "" {
 		newPath := filepath.Join(d.UploadsDir, filename)
 		os.Remove(newPath)
@@ -202,7 +202,7 @@ func (d *Deps) Upload(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// InitUpload zahájí chunked upload session
+// InitUpload starts a chunked upload session
 func (d *Deps) InitUpload(w http.ResponseWriter, r *http.Request) {
 	user := auth.GetUser(r)
 	if err := d.requirePermission(user, models.PermUpload); err != nil {
@@ -263,7 +263,7 @@ func (d *Deps) InitUpload(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// UploadChunk přijme chunk dat pro chunked upload
+// UploadChunk receives a data chunk for chunked upload
 func (d *Deps) UploadChunk(w http.ResponseWriter, r *http.Request) {
 	user := auth.GetUser(r)
 
@@ -282,7 +282,7 @@ func (d *Deps) UploadChunk(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Kontrola offsetu z headeru
+	// Check offset from header
 	offsetHeader := r.Header.Get("Upload-Offset")
 	if offsetHeader == "" {
 		util.Error(w, http.StatusBadRequest, "Upload-Offset header required")
@@ -294,7 +294,7 @@ func (d *Deps) UploadChunk(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Omezit velikost chunku (256KB + margin)
+	// Limit chunk size (256KB + margin)
 	r.Body = http.MaxBytesReader(w, r.Body, 300*1024)
 
 	f, err := os.OpenFile(sess.TempPath, os.O_WRONLY|os.O_APPEND, 0644)
@@ -313,7 +313,7 @@ func (d *Deps) UploadChunk(w http.ResponseWriter, r *http.Request) {
 	sess.Offset += n
 	sess.ExpiresAt = time.Now().Add(30 * time.Minute)
 
-	// Auto-complete když offset == size
+	// Auto-complete when offset == size
 	if sess.Offset >= sess.Size {
 		d.completeUpload(w, sess)
 		return
@@ -324,7 +324,7 @@ func (d *Deps) UploadChunk(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// UploadStatus vrátí aktuální stav upload session (pro resume)
+// UploadStatus returns the current state of the upload session (for resume)
 func (d *Deps) UploadStatus(w http.ResponseWriter, r *http.Request) {
 	user := auth.GetUser(r)
 
@@ -345,9 +345,9 @@ func (d *Deps) UploadStatus(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNoContent)
 }
 
-// completeUpload dokončí upload — MIME check, přesun souboru, cleanup session
+// completeUpload finalizes upload — MIME check, move file, cleanup session
 func (d *Deps) completeUpload(w http.ResponseWriter, sess *UploadSession) {
-	// MIME detekce z prvních 512B temp souboru
+	// MIME detection from the first 512B of the temp file
 	f, err := os.Open(sess.TempPath)
 	if err != nil {
 		util.Error(w, http.StatusInternalServerError, "failed to read temp file")
@@ -359,7 +359,7 @@ func (d *Deps) completeUpload(w http.ResponseWriter, sess *UploadSession) {
 
 	mimeType := http.DetectContentType(buf[:n])
 
-	// Přesun do finální lokace
+	// Move to final location
 	ext := filepath.Ext(sess.Filename)
 	finalID, _ := uuid.NewV7()
 	filename := finalID.String() + ext
@@ -370,7 +370,7 @@ func (d *Deps) completeUpload(w http.ResponseWriter, sess *UploadSession) {
 		return
 	}
 
-	// Spočítat SHA-256 finálního souboru
+	// Compute SHA-256 of the final file
 	ff, err := os.Open(finalPath)
 	var contentHash string
 	if err == nil {
@@ -380,7 +380,7 @@ func (d *Deps) completeUpload(w http.ResponseWriter, sess *UploadSession) {
 		contentHash = hex.EncodeToString(h.Sum(nil))
 	}
 
-	// Deduplikace: pokud soubor se stejným hashem už existuje, smazat nový a vrátit existující
+	// Deduplication: if a file with the same hash already exists, delete the new one and return the existing
 	if contentHash != "" {
 		if existing, err := d.Attachments.FindByContentHash(contentHash); err == nil && existing != "" {
 			os.Remove(finalPath)
@@ -421,14 +421,14 @@ func (d *Deps) ServeUpload(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Vypnout write deadline pro stahování souborů (videa, zipy).
-	// Globální WriteTimeout (15s) nestačí pro pomalé klienty streamující video.
+	// Disable write deadline for file downloads (videos, zips).
+	// Global WriteTimeout (15s) is not enough for slow clients streaming video.
 	rc := http.NewResponseController(w)
 	rc.SetWriteDeadline(time.Time{})
 
 	w.Header().Set("X-Content-Type-Options", "nosniff")
 
-	// Podpora stažení s originálním názvem (sanitizace proti header injection)
+	// Support download with original filename (sanitized against header injection)
 	if name := r.URL.Query().Get("name"); name != "" {
 		safe := sanitizeFilename(name)
 		if safe != "" {

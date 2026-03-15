@@ -116,7 +116,7 @@ func (q *LANQueries) GetMemberByUser(partyID, userID string) (*models.LANPartyMe
 	return m, nil
 }
 
-// GetUserPeer najde existující WG peer uživatele (libovolná aktivní party)
+// GetUserPeer finds an existing WG peer of the user (any active party)
 func (q *LANQueries) GetUserPeer(userID string) (*models.LANPartyMember, error) {
 	m := &models.LANPartyMember{}
 	err := q.DB.QueryRow(
@@ -133,7 +133,7 @@ func (q *LANQueries) GetUserPeer(userID string) (*models.LANPartyMember, error) 
 	return m, nil
 }
 
-// GetAllActivePeers vrátí všechny peery ze všech aktivních parties (pro WG recovery)
+// GetAllActivePeers returns all peers from all active parties (for WG recovery)
 func (q *LANQueries) GetAllActivePeers() ([]models.LANPartyMember, error) {
 	rows, err := q.DB.Query(
 		`SELECT DISTINCT m.public_key, m.assigned_ip
@@ -157,7 +157,7 @@ func (q *LANQueries) GetAllActivePeers() ([]models.LANPartyMember, error) {
 	return members, rows.Err()
 }
 
-// IsUserInOtherParty zkontroluje zda je user členem jiné aktivní party
+// IsUserInOtherParty checks if the user is a member of another active party
 func (q *LANQueries) IsUserInOtherParty(partyID, userID string) (bool, error) {
 	var count int
 	err := q.DB.QueryRow(
@@ -172,7 +172,7 @@ func (q *LANQueries) IsUserInOtherParty(partyID, userID string) (bool, error) {
 	return count > 0, nil
 }
 
-// GetNextIPSimple vrátí globální next IP
+// GetNextIPSimple returns the global next IP
 func (q *LANQueries) GetNextIPSimple() (int, error) {
 	rows, err := q.DB.Query(
 		`SELECT m.assigned_ip FROM lan_party_members m
@@ -199,7 +199,7 @@ func (q *LANQueries) GetNextIPSimple() (int, error) {
 	return maxHost + 1, rows.Err()
 }
 
-// GetAllActiveMemberUserIDs vrátí unikátní user IDs ze všech aktivních LAN parties
+// GetAllActiveMemberUserIDs returns unique user IDs from all active LAN parties
 func (q *LANQueries) GetAllActiveMemberUserIDs() ([]string, error) {
 	rows, err := q.DB.Query(
 		`SELECT DISTINCT m.user_id FROM lan_party_members m

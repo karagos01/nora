@@ -26,7 +26,7 @@ type PollBuilder struct {
 	removeOptionBtns [10]widget.Clickable
 	createBtn      widget.Clickable
 	cancelBtn      widget.Clickable
-	// Expiration (hodiny, 0 = bez expirace)
+	// Expiration (hours, 0 = no expiration)
 	expiresEditor  widget.Editor
 	expiresBtns    [4]widget.Clickable // 1h, 6h, 24h, none
 }
@@ -66,7 +66,7 @@ var pollTypeValues = [3]string{"simple", "multi", "anonymous"}
 func (pb *PollBuilder) Layout(gtx layout.Context) layout.Dimensions {
 	th := pb.app.Theme.Material
 
-	// Zpracovat kliknutí
+	// Handle clicks
 	for i := range pb.typeBtns {
 		if pb.typeBtns[i].Clicked(gtx) {
 			pb.pollType = i
@@ -82,7 +82,7 @@ func (pb *PollBuilder) Layout(gtx layout.Context) layout.Dimensions {
 	}
 	for i := 0; i < pb.optionCount; i++ {
 		if pb.removeOptionBtns[i].Clicked(gtx) && pb.optionCount > 2 {
-			// Posunout editory dolů
+			// Shift editors down
 			for j := i; j < pb.optionCount-1; j++ {
 				pb.optionEditors[j].SetText(pb.optionEditors[j+1].Text())
 			}
@@ -287,17 +287,17 @@ func layoutPillBtn(gtx layout.Context, th *material.Theme, text string, bg, fg c
 	)
 }
 
-// GetPollType vrátí string typ pollu.
+// GetPollType returns the string type of the poll.
 func (pb *PollBuilder) GetPollType() string {
 	return pollTypeValues[pb.pollType]
 }
 
-// GetQuestion vrátí text otázky.
+// GetQuestion returns the question text.
 func (pb *PollBuilder) GetQuestion() string {
 	return pb.questionEditor.Text()
 }
 
-// GetOptions vrátí labels všech options.
+// GetOptions returns the labels of all options.
 func (pb *PollBuilder) GetOptions() []string {
 	opts := make([]string, 0, pb.optionCount)
 	for i := 0; i < pb.optionCount; i++ {
@@ -306,7 +306,7 @@ func (pb *PollBuilder) GetOptions() []string {
 	return opts
 }
 
-// IsValid vrátí true pokud je anketa připravena k odeslání.
+// IsValid returns true if the poll is ready to be sent.
 func (pb *PollBuilder) IsValid() bool {
 	if pb.questionEditor.Text() == "" {
 		return false
@@ -319,7 +319,7 @@ func (pb *PollBuilder) IsValid() bool {
 	return true
 }
 
-// GetExpiresAt vrátí čas expirace pollu, nebo nil pokud bez expirace.
+// GetExpiresAt returns the poll expiration time, or nil if no expiration.
 func (pb *PollBuilder) GetExpiresAt() *time.Time {
 	txt := pb.expiresEditor.Text()
 	if txt == "" {
@@ -347,7 +347,7 @@ func (pb *PollBuilder) layoutExpiresBtn(gtx layout.Context, th *material.Theme, 
 	})
 }
 
-// FormatExpiration vrátí lidsky čitelný popis expirace.
+// FormatExpiration returns a human-readable description of the expiration.
 func FormatExpiration(expiresAt *time.Time) string {
 	if expiresAt == nil {
 		return ""

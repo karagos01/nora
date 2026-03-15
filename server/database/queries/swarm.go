@@ -42,7 +42,7 @@ func (q *SwarmQueries) ListSeeders(fileCacheID string) ([]string, error) {
 	return ids, rows.Err()
 }
 
-// ListFileSeederCounts vrátí počet seederů pro každý soubor v daném share
+// ListFileSeederCounts returns the number of seeders for each file in a given share
 func (q *SwarmQueries) ListFileSeederCounts(directoryID string) (map[string]int, error) {
 	rows, err := q.DB.Query(
 		`SELECT sfc.id, COUNT(ss.id)

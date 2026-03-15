@@ -20,7 +20,7 @@ type Contact struct {
 	FirstSeenServer string
 	FirstSeenAt     time.Time
 	Notes           string
-	Blocked         bool   // cross-server block (klientský blocklist)
+	Blocked         bool   // cross-server block (client-side blocklist)
 }
 
 type ServerName struct {
@@ -35,12 +35,12 @@ type ContactsDB struct {
 	db *sql.DB
 }
 
-// OpenContacts otevře SQLite contacts DB pro danou identitu.
+// OpenContacts opens the SQLite contacts DB for the given identity.
 func OpenContacts(publicKey string) (*ContactsDB, error) {
 	if err := os.MkdirAll(noraDir(), 0700); err != nil {
 		return nil, err
 	}
-	// Dekódovat hex klíč pro prefix
+	// Decode hex key for prefix
 	prefix := publicKey
 	if len(prefix) > 8 {
 		prefix = prefix[:8]
@@ -80,7 +80,7 @@ func OpenContacts(publicKey string) (*ContactsDB, error) {
 		return nil, err
 	}
 
-	// Migrace: přidat blocked sloupec
+	// Migration: add blocked column
 	db.Exec("ALTER TABLE contacts ADD COLUMN blocked INTEGER NOT NULL DEFAULT 0")
 
 	return &ContactsDB{db: db}, nil
@@ -92,12 +92,12 @@ func (c *ContactsDB) Close() {
 	}
 }
 
-// Discriminant vrátí první 4 hex znaků z public key.
+// Discriminant returns the first 4 hex characters of a public key.
 func Discriminant(publicKey string) string {
-	// Public key je hex-encoded (64 znaků pro ed25519)
+	// Public key is hex-encoded (64 chars for ed25519)
 	clean := strings.TrimSpace(publicKey)
 	if len(clean) >= 4 {
-		// Ověřit že jsou to validní hex znaky
+		// Verify they are valid hex characters
 		if _, err := hex.DecodeString(clean[:4]); err == nil {
 			return strings.ToLower(clean[:4])
 		}
@@ -105,7 +105,7 @@ func Discriminant(publicKey string) string {
 	return "0000"
 }
 
-// EnsureContact vytvoří kontakt pokud neexistuje, aktualizuje server name.
+// EnsureContact creates a contact if it doesn't exist, updates server name.
 func (c *ContactsDB) EnsureContact(pubKey, name, serverURL, serverName string) {
 	if c == nil || c.db == nil || pubKey == "" {
 		return
@@ -126,7 +126,7 @@ func (c *ContactsDB) EnsureContact(pubKey, name, serverURL, serverName string) {
 	}
 }
 
-// UpdateServerName aktualizuje jméno uživatele na daném serveru.
+// UpdateServerName updates the user's name on the given server.
 func (c *ContactsDB) UpdateServerName(pubKey, serverURL, srvName, displayName string) {
 	if c == nil || c.db == nil || pubKey == "" {
 		return
@@ -144,7 +144,7 @@ func (c *ContactsDB) UpdateServerName(pubKey, serverURL, srvName, displayName st
 	}
 }
 
-// GetContact vrátí kontakt pro daný public key.
+// GetContact returns the contact for the given public key.
 func (c *ContactsDB) GetContact(pubKey string) *Contact {
 	if c == nil || c.db == nil {
 		return nil
@@ -166,7 +166,7 @@ func (c *ContactsDB) GetContact(pubKey string) *Contact {
 	return &ct
 }
 
-// SetCustomName nastaví uživatelské jméno (přezdívku).
+// SetCustomName sets the user's custom name (nickname).
 func (c *ContactsDB) SetCustomName(pubKey, name string) error {
 	if c == nil || c.db == nil {
 		return nil
@@ -175,7 +175,7 @@ func (c *ContactsDB) SetCustomName(pubKey, name string) error {
 	return err
 }
 
-// SetNotes nastaví poznámku ke kontaktu.
+// SetNotes sets the note for a contact.
 func (c *ContactsDB) SetNotes(pubKey, notes string) error {
 	if c == nil || c.db == nil {
 		return nil
@@ -184,7 +184,7 @@ func (c *ContactsDB) SetNotes(pubKey, notes string) error {
 	return err
 }
 
-// GetServerNames vrátí všechna jména uživatele na různých serverech.
+// GetServerNames returns all names of the user across different servers.
 func (c *ContactsDB) GetServerNames(pubKey string) []ServerName {
 	if c == nil || c.db == nil {
 		return nil
@@ -210,7 +210,7 @@ func (c *ContactsDB) GetServerNames(pubKey string) []ServerName {
 	return result
 }
 
-// AllContacts vrátí všechny kontakty.
+// AllContacts returns all contacts.
 func (c *ContactsDB) AllContacts() []Contact {
 	if c == nil || c.db == nil {
 		return nil
@@ -236,7 +236,7 @@ func (c *ContactsDB) AllContacts() []Contact {
 	return result
 }
 
-// Search hledá kontakty podle jména (LIKE search).
+// Search searches contacts by name (LIKE search).
 func (c *ContactsDB) Search(query string) []Contact {
 	if c == nil || c.db == nil || query == "" {
 		return nil
@@ -265,7 +265,7 @@ func (c *ContactsDB) Search(query string) []Contact {
 	return result
 }
 
-// SetBlocked nastaví cross-server block pro kontakt identifikovaný public key.
+// SetBlocked sets a cross-server block for a contact identified by public key.
 func (c *ContactsDB) SetBlocked(pubKey string, blocked bool) error {
 	if c == nil || c.db == nil || pubKey == "" {
 		return nil
@@ -274,13 +274,13 @@ func (c *ContactsDB) SetBlocked(pubKey string, blocked bool) error {
 	if blocked {
 		val = 1
 	}
-	// Pokud kontakt neexistuje, vytvořit ho
+	// If the contact doesn't exist, create it
 	c.EnsureContact(pubKey, "", "", "")
 	_, err := c.db.Exec("UPDATE contacts SET blocked = ? WHERE public_key = ?", val, pubKey)
 	return err
 }
 
-// IsBlocked vrátí true pokud je kontakt blokovaný (cross-server).
+// IsBlocked returns true if the contact is blocked (cross-server).
 func (c *ContactsDB) IsBlocked(pubKey string) bool {
 	if c == nil || c.db == nil || pubKey == "" {
 		return false
@@ -293,7 +293,7 @@ func (c *ContactsDB) IsBlocked(pubKey string) bool {
 	return blocked != 0
 }
 
-// HasNameCollision zjistí jestli existují dva nebo více kontaktů se stejným auto_name.
+// HasNameCollision checks whether two or more contacts share the same auto_name.
 func (c *ContactsDB) HasNameCollision(name string) bool {
 	if c == nil || c.db == nil || name == "" {
 		return false

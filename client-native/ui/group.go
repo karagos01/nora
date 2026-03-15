@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"gioui.org/f32"
+	"gioui.org/io/pointer"
 	"gioui.org/layout"
 	"gioui.org/op"
 	"gioui.org/op/clip"
@@ -28,12 +29,12 @@ import (
 	"nora-client/store"
 )
 
-// groupMsgAction drží klikací tlačítka pro attachmenty jedné group zprávy.
+// groupMsgAction holds clickable buttons for attachments of a single group message.
 type groupMsgAction struct {
 	attBtns [4]widget.Clickable
 }
 
-// groupPendingUpload sleduje stav nahrávaného souboru v group chatu.
+// groupPendingUpload tracks the state of an uploading file in group chat.
 type groupPendingUpload struct {
 	filename string
 	size     int64
@@ -311,7 +312,7 @@ func (v *GroupViewUI) Layout(gtx layout.Context) layout.Dimensions {
 		}
 	}
 
-	// Zajistit dostatečný počet action widgetů
+	// Ensure enough action widgets
 	if len(v.actions) < len(messages) {
 		old := v.actions
 		v.actions = make([]groupMsgAction, len(messages)+20)
@@ -679,6 +680,7 @@ func (v *GroupViewUI) layoutHeaderIconBtn(gtx layout.Context, btn *widget.Clicka
 	return btn.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
 		bg := ColorInput
 		if btn.Hovered() {
+			pointer.CursorPointer.Add(gtx.Ops)
 			bg = color.NRGBA{R: bg.R + 15, G: bg.G + 15, B: bg.B + 15, A: 255}
 		}
 		return layout.Background{}.Layout(gtx,
@@ -704,6 +706,7 @@ func (v *GroupViewUI) layoutHeaderBtn(gtx layout.Context, btn *widget.Clickable,
 	return btn.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
 		bg := ColorInput
 		if btn.Hovered() {
+			pointer.CursorPointer.Add(gtx.Ops)
 			bg = color.NRGBA{R: bg.R + 15, G: bg.G + 15, B: bg.B + 15, A: 255}
 		}
 		return layout.Background{}.Layout(gtx,
@@ -813,7 +816,7 @@ func (v *GroupViewUI) sendGroupMessage() {
 				CreatedAt: now,
 			})
 
-			// Counter-based key rotation (po N odeslaných zprávách)
+			// Counter-based key rotation (after N sent messages)
 			v.app.GroupHistory.IncrementCount(groupID)
 			if v.app.GroupHistory.NeedsRotation(groupID) {
 				log.Printf("Group key rotation triggered for %s (threshold reached)", groupID)
@@ -942,6 +945,7 @@ func (v *GroupViewUI) layoutGroupEmojiTab(gtx layout.Context, btn *widget.Clicka
 			if active {
 				bg = ColorAccentDim
 			} else if btn.Hovered() {
+				pointer.CursorPointer.Add(gtx.Ops)
 				bg = ColorHover
 			}
 			return layout.Background{}.Layout(gtx,
@@ -985,6 +989,7 @@ func (v *GroupViewUI) layoutGroupCustomEmojiList(gtx layout.Context, emojis []ap
 		return v.emojiClickBtns[idx].Layout(gtx, func(gtx layout.Context) layout.Dimensions {
 			bg := color.NRGBA{}
 			if v.emojiClickBtns[idx].Hovered() {
+				pointer.CursorPointer.Add(gtx.Ops)
 				bg = ColorHover
 			}
 			return layout.Background{}.Layout(gtx,
@@ -1081,6 +1086,7 @@ func (v *GroupViewUI) layoutGroupUnicodeEmojiGrid(gtx layout.Context, catIdx int
 				return v.unicodeEmojiBtns[bIdx].Layout(gtx, func(gtx layout.Context) layout.Dimensions {
 					bg := color.NRGBA{}
 					if v.unicodeEmojiBtns[bIdx].Hovered() {
+						pointer.CursorPointer.Add(gtx.Ops)
 						bg = ColorHover
 					}
 					sz := image.Pt(cellSize, cellSize)
@@ -1112,7 +1118,7 @@ func (v *GroupViewUI) layoutGroupUnicodeEmojiGrid(gtx layout.Context, catIdx int
 	})
 }
 
-// pickGroupFiles otevře file dialog a nahraje vybrané soubory přes chunked upload.
+// pickGroupFiles opens a file dialog and uploads selected files via chunked upload.
 func (v *GroupViewUI) pickGroupFiles() {
 	paths := openMultiFileDialog()
 	if len(paths) == 0 {
@@ -1159,7 +1165,7 @@ func (v *GroupViewUI) pickGroupFiles() {
 				pending.sent = pending.size
 			}
 
-			// Pokud jsou všechny hotové, odeslat zprávu
+			// If all are done, send the message
 			allDone := true
 			for _, u := range v.pendingUploads {
 				if u.status == 0 {
@@ -1178,7 +1184,7 @@ func (v *GroupViewUI) pickGroupFiles() {
 	}
 }
 
-// sendGroupMessageWithPendingUploads odešle group zprávu se všemi nahranými soubory.
+// sendGroupMessageWithPendingUploads sends a group message with all uploaded files.
 func (v *GroupViewUI) sendGroupMessageWithPendingUploads() {
 	v.uploadMu.Lock()
 	var attachments []api.GroupAttachmentPayload
@@ -1212,7 +1218,7 @@ func (v *GroupViewUI) sendGroupMessageWithPendingUploads() {
 		return
 	}
 
-	// Získat group klíč
+	// Get group key
 	groupKey := ""
 	if v.app.GroupHistory != nil {
 		groupKey = v.app.GroupHistory.GetKey(groupID)
@@ -1231,7 +1237,7 @@ func (v *GroupViewUI) sendGroupMessageWithPendingUploads() {
 		v.distributeGroupKey(groupID, groupKey)
 	}
 
-	// Popis příloh jako text zprávy
+	// Attachment description as message text
 	var names []string
 	for _, a := range attachments {
 		names = append(names, a.Filename)
@@ -1249,7 +1255,7 @@ func (v *GroupViewUI) sendGroupMessageWithPendingUploads() {
 		return
 	}
 
-	// Uložit do lokální historie
+	// Save to local history
 	now := time.Now()
 	msgID := now.Format("20060102150405.999999")
 
@@ -1280,7 +1286,7 @@ func (v *GroupViewUI) sendGroupMessageWithPendingUploads() {
 		v.app.GroupHistory.Save()
 	}
 
-	// Přidat do view
+	// Add to view
 	var apiAtts []api.Attachment
 	for _, a := range attachments {
 		apiAtts = append(apiAtts, api.Attachment{
@@ -1306,7 +1312,7 @@ func (v *GroupViewUI) sendGroupMessageWithPendingUploads() {
 	v.app.Window.Invalidate()
 }
 
-// layoutGroupAttachments vykreslí přílohy group zprávy (inline obrázky, klikací soubory).
+// layoutGroupAttachments renders group message attachments (inline images, clickable files).
 func (v *GroupViewUI) layoutGroupAttachments(gtx layout.Context, msgIdx int, msg api.GroupMessage, serverURL string) layout.Dimensions {
 	if len(msg.Attachments) == 0 {
 		return layout.Dimensions{}
@@ -1325,11 +1331,12 @@ func (v *GroupViewUI) layoutGroupAttachments(gtx layout.Context, msgIdx int, msg
 				if strings.HasPrefix(a.MimeType, "image/") && serverURL != "" {
 					return v.layoutGroupImagePreview(gtx, msgIdx, attIdx, a, serverURL)
 				}
-				// Klikací odkaz na soubor
+				// Clickable file link
 				btn := &v.actions[msgIdx].attBtns[attIdx]
 				return btn.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
 					bg := ColorInput
 					if btn.Hovered() {
+						pointer.CursorPointer.Add(gtx.Ops)
 						bg = ColorHover
 					}
 					return layout.Background{}.Layout(gtx,
@@ -1358,7 +1365,7 @@ func (v *GroupViewUI) layoutGroupAttachments(gtx layout.Context, msgIdx int, msg
 	return layout.Flex{Axis: layout.Vertical}.Layout(gtx, items...)
 }
 
-// layoutGroupImagePreview vykreslí inline náhled obrázku s možností kliknutí.
+// layoutGroupImagePreview renders an inline image preview with click support.
 func (v *GroupViewUI) layoutGroupImagePreview(gtx layout.Context, msgIdx, attIdx int, att api.Attachment, serverURL string) layout.Dimensions {
 	url := serverURL + att.URL
 	ci := v.app.Images.Get(url, func() { v.app.Window.Invalidate() })
@@ -1383,7 +1390,7 @@ func (v *GroupViewUI) layoutGroupImagePreview(gtx layout.Context, msgIdx, attIdx
 		})
 	}
 
-	// Spočítat zobrazovací rozměry (max 400x300, zachovat poměr stran)
+	// Calculate display dimensions (max 400x300, preserve aspect ratio)
 	imgBounds := ci.img.Bounds()
 	imgW := imgBounds.Dx()
 	imgH := imgBounds.Dy()
@@ -1428,7 +1435,7 @@ func (v *GroupViewUI) layoutGroupImagePreview(gtx layout.Context, msgIdx, attIdx
 	})
 }
 
-// downloadGroupFile stáhne soubor z URL a uloží na disk.
+// downloadGroupFile downloads a file from URL and saves it to disk.
 func (v *GroupViewUI) downloadGroupFile(fileURL, savePath, filename, token string) {
 	req, err := http.NewRequest("GET", fileURL, nil)
 	if err != nil {

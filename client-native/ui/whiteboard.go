@@ -28,7 +28,7 @@ import (
 
 var wbCanvasBg = color.NRGBA{R: 20, G: 20, B: 35, A: 255}
 
-// WhiteboardView je fullscreen overlay pro kreslicí plátno.
+// WhiteboardView is a fullscreen overlay for the drawing canvas.
 type WhiteboardView struct {
 	app     *App
 	Visible bool
@@ -79,7 +79,7 @@ type WhiteboardView struct {
 	// Text tool
 	showTextInput    bool
 	textEditor       widget.Editor
-	textPos          f32.Point // normalizovaná pozice
+	textPos          f32.Point // normalized position
 	textSizeIdx      int
 	textSubmitBtn    widget.Clickable
 	textCancelBtn    widget.Clickable
@@ -155,7 +155,7 @@ func NewWhiteboardView(a *App) *WhiteboardView {
 	return wv
 }
 
-// Open zobrazí whiteboard picker.
+// Open displays the whiteboard picker.
 func (wv *WhiteboardView) Open() {
 	wv.Visible = true
 	wv.showPicker = true
@@ -184,7 +184,7 @@ func (wv *WhiteboardView) Open() {
 	}()
 }
 
-// OpenBoard otevře konkrétní board.
+// OpenBoard opens a specific board.
 func (wv *WhiteboardView) OpenBoard(boardID, boardName, creatorID string) {
 	wv.showPicker = false
 	wv.BoardID = boardID
@@ -738,7 +738,7 @@ func (wv *WhiteboardView) layoutToolbarRow1(gtx layout.Context) layout.Dimension
 		}),
 		layout.Rigid(wbSpacer(2)),
 
-		// Clear (jen owner/admin)
+		// Clear (owner/admin only)
 		layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 			if !canClear {
 				return layout.Dimensions{}
@@ -904,7 +904,7 @@ func (wv *WhiteboardView) layoutDrawArea(gtx layout.Context) layout.Dimensions {
 	// Background
 	paint.FillShape(gtx.Ops, wbCanvasBg, clip.Rect{Max: canvasSize}.Op())
 
-	// Zpracovat pointer eventy
+	// Handle pointer events
 	for {
 		ev, ok := gtx.Event(pointer.Filter{
 			Target:  &wv.canvasTag,
@@ -930,7 +930,7 @@ func (wv *WhiteboardView) layoutDrawArea(gtx layout.Context) layout.Dimensions {
 				if wv.zoom > 4.0 {
 					wv.zoom = 4.0
 				}
-				// Pivot kolem myši
+				// Pivot around mouse
 				ratio := wv.zoom / oldZoom
 				wv.panX = pe.Position.X - (pe.Position.X-wv.panX)*ratio
 				wv.panY = pe.Position.Y - (pe.Position.Y-wv.panY)*ratio
@@ -991,12 +991,12 @@ func (wv *WhiteboardView) layoutDrawArea(gtx layout.Context) layout.Dimensions {
 		}
 	}
 
-	// Render existující strokes
+	// Render existing strokes
 	for _, s := range wv.strokes {
 		wv.renderStroke(gtx, s, canvasSize)
 	}
 
-	// Render aktuální tah (pen/eraser)
+	// Render current stroke (pen/eraser)
 	if wv.drawing && len(wv.currentPath) > 1 && !isShapeTool(wv.tool) {
 		clr := wv.getStrokeColor()
 		if wv.tool == "eraser" {
@@ -1054,7 +1054,7 @@ func (wv *WhiteboardView) layoutDrawArea(gtx layout.Context) layout.Dimensions {
 func (wv *WhiteboardView) layoutTextInput(gtx layout.Context, canvasSize image.Point) {
 	pos := wv.normToScreen(wv.textPos.X, wv.textPos.Y, canvasSize)
 
-	// Clamp overlay pozice aby se vešla na canvas
+	// Clamp overlay position to fit on canvas
 	overlayW := gtx.Dp(220)
 	overlayH := gtx.Dp(90)
 	ox := int(pos.X)
@@ -1196,7 +1196,7 @@ func (wv *WhiteboardView) renderStroke(gtx layout.Context, s api.WhiteboardStrok
 		}
 
 	default:
-		// pen / eraser — séria bodů
+		// pen / eraser — series of points
 		if len(points) < 2 {
 			return
 		}
@@ -1278,7 +1278,7 @@ func (wv *WhiteboardView) finishShapeStroke(canvasSize image.Point) {
 	dx := wv.shapeEnd.X - wv.shapeStart.X
 	dy := wv.shapeEnd.Y - wv.shapeStart.Y
 	if dx*dx+dy*dy < 4 {
-		return // příliš malý shape
+		return // shape too small
 	}
 
 	p0 := wv.screenToNorm(wv.shapeStart, canvasSize)
@@ -1493,7 +1493,7 @@ func drawArrowLine(ops *op.Ops, p0, p1 f32.Point, clr color.NRGBA, width float32
 		return
 	}
 
-	// Jednotkový vektor směrem k hrotu
+	// Unit vector towards the tip
 	ux := dx / length
 	uy := dy / length
 	// Perpendikular
@@ -1506,7 +1506,7 @@ func drawArrowLine(ops *op.Ops, p0, p1 f32.Point, clr color.NRGBA, width float32
 	}
 	headW := headLen * 0.6
 
-	// Trojúhelník hrotu
+	// Triangle tip
 	tip := p1
 	left := f32.Point{X: p1.X - ux*headLen + px*headW/2, Y: p1.Y - uy*headLen + py*headW/2}
 	right := f32.Point{X: p1.X - ux*headLen - px*headW/2, Y: p1.Y - uy*headLen - py*headW/2}
@@ -1576,7 +1576,7 @@ func wbDivider(gtx layout.Context) layout.Dimensions {
 	return layout.Dimensions{Size: size}
 }
 
-// isAdmin kontroluje zda uživatel je owner nebo má ADMIN permission.
+// isAdmin checks whether the user is the owner or has ADMIN permission.
 func (a *App) isAdmin(conn *ServerConnection) bool {
 	if conn == nil {
 		return false
@@ -1591,7 +1591,7 @@ func (a *App) isAdmin(conn *ServerConnection) bool {
 
 // --- PNG Export ---
 
-// exportPNG vykreslí strokes do image.RGBA a uloží jako PNG přes save dialog.
+// exportPNG renders strokes to image.RGBA and saves as PNG via save dialog.
 func (wv *WhiteboardView) exportPNG(strokes []api.WhiteboardStroke, canvasW, canvasH int) {
 	if canvasW < 100 {
 		canvasW = 1920
@@ -1619,11 +1619,11 @@ func (wv *WhiteboardView) exportPNG(strokes []api.WhiteboardStroke, canvasW, can
 	log.Printf("whiteboard: exported to %s", path)
 }
 
-// renderStrokesToImage vykreslí všechny strokes do RGBA obrázku.
+// renderStrokesToImage renders all strokes into an RGBA image.
 func renderStrokesToImage(strokes []api.WhiteboardStroke, width, height int) *image.NRGBA {
 	img := image.NewNRGBA(image.Rect(0, 0, width, height))
 
-	// Vyplnit pozadím (wbCanvasBg)
+	// Fill with background (wbCanvasBg)
 	for y := 0; y < height; y++ {
 		for x := 0; x < width; x++ {
 			img.SetNRGBA(x, y, wbCanvasBg)
@@ -1634,7 +1634,7 @@ func renderStrokesToImage(strokes []api.WhiteboardStroke, width, height int) *im
 
 	for _, s := range strokes {
 		if s.Tool == "text" {
-			// Text strokes — renderovat jako jednoduché bloky bodů
+			// Text strokes — render as simple dot blocks
 			renderTextStrokeToImage(img, s, cs)
 			continue
 		}
@@ -1679,7 +1679,7 @@ func renderStrokesToImage(strokes []api.WhiteboardStroke, width, height int) *im
 			}
 
 		default:
-			// pen / eraser — séria bodů
+			// pen / eraser — series of points
 			if len(points) < 2 {
 				continue
 			}
@@ -1699,8 +1699,8 @@ func renderStrokesToImage(strokes []api.WhiteboardStroke, width, height int) *im
 	return img
 }
 
-// renderTextStrokeToImage renderuje text stroke jako obdélníkový blok barvy.
-// Plný font rendering bez externích závislostí není možný, tak kreslíme marker.
+// renderTextStrokeToImage renders a text stroke as a rectangular color block.
+// Full font rendering without external dependencies is not possible, so we draw a marker.
 func renderTextStrokeToImage(img *image.NRGBA, s api.WhiteboardStroke, cs image.Point) {
 	var td struct {
 		Text string  `json:"text"`
@@ -1718,7 +1718,7 @@ func renderTextStrokeToImage(img *image.NRGBA, s api.WhiteboardStroke, cs image.
 	if sz < 8 {
 		sz = 8
 	}
-	// Obdélníkový marker pro text (šířka úměrná délce textu)
+	// Rectangular marker for text (width proportional to text length)
 	w := len(td.Text) * sz * 2 / 3
 	h := sz + 4
 	for dy := 0; dy < h; dy++ {
@@ -1728,20 +1728,20 @@ func renderTextStrokeToImage(img *image.NRGBA, s api.WhiteboardStroke, cs image.
 	}
 }
 
-// --- Image kreslicí primitiva (Bresenham + thick lines) ---
+// --- Image drawing primitives (Bresenham + thick lines) ---
 
-// imgDrawLine kreslí čáru s danou šířkou do image.RGBA.
+// imgDrawLine draws a line with the given width into image.RGBA.
 func imgDrawLine(img *image.NRGBA, x0, y0, x1, y1 int, clr color.NRGBA, width int) {
 	if width <= 1 {
 		imgBresenham(img, x0, y0, x1, y1, clr)
 		return
 	}
-	// Tlustá čára — kreslit kruhy (filled circles) podél Bresenhamovy čáry
+	// Thick line — draw circles (filled circles) along the Bresenham line
 	r := width / 2
 	imgBresenhamThick(img, x0, y0, x1, y1, clr, r)
 }
 
-// imgBresenham kreslí 1px čáru (Bresenham algorithm).
+// imgBresenham draws a 1px line (Bresenham algorithm).
 func imgBresenham(img *image.NRGBA, x0, y0, x1, y1 int, clr color.NRGBA) {
 	dx := x1 - x0
 	dy := y1 - y0
@@ -1779,7 +1779,7 @@ func imgBresenham(img *image.NRGBA, x0, y0, x1, y1 int, clr color.NRGBA) {
 	}
 }
 
-// imgBresenhamThick kreslí tlustou čáru — pro každý bod Bresenham vyplní kruh s poloměrem r.
+// imgBresenhamThick draws a thick line — for each Bresenham point fills a circle with radius r.
 func imgBresenhamThick(img *image.NRGBA, x0, y0, x1, y1 int, clr color.NRGBA, r int) {
 	dx := x1 - x0
 	dy := y1 - y0
@@ -1817,7 +1817,7 @@ func imgBresenhamThick(img *image.NRGBA, x0, y0, x1, y1 int, clr color.NRGBA, r 
 	}
 }
 
-// imgFillCircle vyplní kruh se středem (cx,cy) a poloměrem r.
+// imgFillCircle fills a circle centered at (cx,cy) with radius r.
 func imgFillCircle(img *image.NRGBA, cx, cy, r int, clr color.NRGBA) {
 	r2 := r * r
 	for dy := -r; dy <= r; dy++ {
@@ -1829,7 +1829,7 @@ func imgFillCircle(img *image.NRGBA, cx, cy, r int, clr color.NRGBA) {
 	}
 }
 
-// imgSetPixelBlend nastaví pixel s alpha blendingem.
+// imgSetPixelBlend sets a pixel with alpha blending.
 func imgSetPixelBlend(img *image.NRGBA, x, y int, clr color.NRGBA) {
 	bounds := img.Bounds()
 	if x < bounds.Min.X || x >= bounds.Max.X || y < bounds.Min.Y || y >= bounds.Max.Y {
@@ -1855,7 +1855,7 @@ func imgSetPixelBlend(img *image.NRGBA, x, y int, clr color.NRGBA) {
 	img.SetNRGBA(x, y, out)
 }
 
-// imgDrawRectOutline kreslí obrys obdélníku.
+// imgDrawRectOutline draws a rectangle outline.
 func imgDrawRectOutline(img *image.NRGBA, x0, y0, x1, y1 int, clr color.NRGBA, width int) {
 	minX, maxX := x0, x1
 	if minX > maxX {
@@ -1871,7 +1871,7 @@ func imgDrawRectOutline(img *image.NRGBA, x0, y0, x1, y1 int, clr color.NRGBA, w
 	imgDrawLine(img, minX, maxY, minX, minY, clr, width)
 }
 
-// imgDrawFilledRect kreslí vyplněný obdélník.
+// imgDrawFilledRect draws a filled rectangle.
 func imgDrawFilledRect(img *image.NRGBA, x0, y0, x1, y1 int, clr color.NRGBA) {
 	minX, maxX := x0, x1
 	if minX > maxX {
@@ -1888,7 +1888,7 @@ func imgDrawFilledRect(img *image.NRGBA, x0, y0, x1, y1 int, clr color.NRGBA) {
 	}
 }
 
-// imgDrawEllipseOutline kreslí obrys elipsy.
+// imgDrawEllipseOutline draws an ellipse outline.
 func imgDrawEllipseOutline(img *image.NRGBA, x0, y0, x1, y1 int, clr color.NRGBA, width int) {
 	cx := (x0 + x1) / 2
 	cy := (y0 + y1) / 2
@@ -1918,7 +1918,7 @@ func imgDrawEllipseOutline(img *image.NRGBA, x0, y0, x1, y1 int, clr color.NRGBA
 	}
 }
 
-// imgDrawFilledEllipse kreslí vyplněnou elipsu.
+// imgDrawFilledEllipse draws a filled ellipse.
 func imgDrawFilledEllipse(img *image.NRGBA, x0, y0, x1, y1 int, clr color.NRGBA) {
 	cx := (x0 + x1) / 2
 	cy := (y0 + y1) / 2
@@ -1948,7 +1948,7 @@ func imgDrawFilledEllipse(img *image.NRGBA, x0, y0, x1, y1 int, clr color.NRGBA)
 	}
 }
 
-// imgDrawArrowLine kreslí čáru se šipkou na konci.
+// imgDrawArrowLine draws a line with an arrow at the end.
 func imgDrawArrowLine(img *image.NRGBA, x0, y0, x1, y1 int, clr color.NRGBA, width int) {
 	imgDrawLine(img, x0, y0, x1, y1, clr, width)
 
@@ -1970,7 +1970,7 @@ func imgDrawArrowLine(img *image.NRGBA, x0, y0, x1, y1 int, clr color.NRGBA, wid
 	}
 	headW := headLen * 0.6
 
-	// Trojúhelník hrotu — vyplnit
+	// Triangle tip — fill
 	tipX, tipY := x1, y1
 	lx := int(float64(x1) - ux*headLen + px*headW/2)
 	ly := int(float64(y1) - uy*headLen + py*headW/2)
@@ -1980,9 +1980,9 @@ func imgDrawArrowLine(img *image.NRGBA, x0, y0, x1, y1 int, clr color.NRGBA, wid
 	imgFillTriangle(img, tipX, tipY, lx, ly, rx, ry, clr)
 }
 
-// imgFillTriangle vyplní trojúhelník (scanline).
+// imgFillTriangle fills a triangle (scanline).
 func imgFillTriangle(img *image.NRGBA, x0, y0, x1, y1, x2, y2 int, clr color.NRGBA) {
-	// Seřadit body dle Y
+	// Sort points by Y
 	if y0 > y1 {
 		x0, y0, x1, y1 = x1, y1, x0, y0
 	}

@@ -13,7 +13,7 @@ import (
 	"time"
 )
 
-// BackupDatabase vytvoří konzistentní snapshot SQLite databáze a vrátí jako download.
+// BackupDatabase creates a consistent snapshot of the SQLite database and returns it as a download.
 func (d *Deps) BackupDatabase(w http.ResponseWriter, r *http.Request) {
 	user := auth.GetUser(r)
 	if !user.IsOwner {
@@ -21,10 +21,10 @@ func (d *Deps) BackupDatabase(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Vytvořit temp soubor pro backup
+	// Create temp file for backup
 	tmpFile, err := os.CreateTemp("", "nora-backup-*.db")
 	if err != nil {
-		slog.Error("backup: vytvoření temp souboru selhalo", "error", err)
+		slog.Error("backup: failed to create temp file", "error", err)
 		util.Error(w, http.StatusInternalServerError, "backup failed")
 		return
 	}
@@ -32,20 +32,20 @@ func (d *Deps) BackupDatabase(w http.ResponseWriter, r *http.Request) {
 	tmpFile.Close()
 	defer os.Remove(tmpPath)
 
-	// VACUUM INTO vytvoří konzistentní kopii bez WAL
-	// Escape single quotes v tmpPath (tmpPath je z os.CreateTemp, ale pro jistotu)
+	// VACUUM INTO creates a consistent copy without WAL
+	// Escape single quotes in tmpPath (tmpPath is from os.CreateTemp, but just in case)
 	escaped := strings.ReplaceAll(tmpPath, "'", "''")
 	_, err = d.DB.Exec(fmt.Sprintf("VACUUM INTO '%s'", escaped))
 	if err != nil {
-		slog.Error("backup: VACUUM INTO selhalo", "error", err)
+		slog.Error("backup: VACUUM INTO failed", "error", err)
 		util.Error(w, http.StatusInternalServerError, "backup failed")
 		return
 	}
 
-	// Otevřít backup soubor pro čtení
+	// Open backup file for reading
 	f, err := os.Open(tmpPath)
 	if err != nil {
-		slog.Error("backup: otevření backup souboru selhalo", "error", err)
+		slog.Error("backup: failed to open backup file", "error", err)
 		util.Error(w, http.StatusInternalServerError, "backup failed")
 		return
 	}
@@ -60,8 +60,8 @@ func (d *Deps) BackupDatabase(w http.ResponseWriter, r *http.Request) {
 	io.Copy(w, f)
 }
 
-// RestoreDatabase nahraje .db soubor a nahradí databázi.
-// NEBEZPEČNÁ OPERACE — pouze owner.
+// RestoreDatabase uploads a .db file and replaces the database.
+// DANGEROUS OPERATION — owner only.
 func (d *Deps) RestoreDatabase(w http.ResponseWriter, r *http.Request) {
 	user := auth.GetUser(r)
 	if !user.IsOwner {
@@ -79,7 +79,7 @@ func (d *Deps) RestoreDatabase(w http.ResponseWriter, r *http.Request) {
 	}
 	defer file.Close()
 
-	// Ověřit SQLite magic bytes
+	// Verify SQLite magic bytes
 	magic := make([]byte, 16)
 	if _, err := io.ReadFull(file, magic); err != nil {
 		util.Error(w, http.StatusBadRequest, "invalid file")
@@ -89,13 +89,13 @@ func (d *Deps) RestoreDatabase(w http.ResponseWriter, r *http.Request) {
 		util.Error(w, http.StatusBadRequest, "not a valid SQLite database")
 		return
 	}
-	// Přetočit zpět na začátek
+	// Seek back to beginning
 	file.Seek(0, io.SeekStart)
 
-	// Uložit do temp souboru
+	// Save to temp file
 	tmpFile, err := os.CreateTemp(filepath.Dir(d.DBPath), "nora-restore-*.db")
 	if err != nil {
-		slog.Error("restore: vytvoření temp souboru selhalo", "error", err)
+		slog.Error("restore: failed to create temp file", "error", err)
 		util.Error(w, http.StatusInternalServerError, "restore failed")
 		return
 	}
@@ -104,44 +104,44 @@ func (d *Deps) RestoreDatabase(w http.ResponseWriter, r *http.Request) {
 	if _, err := io.Copy(tmpFile, file); err != nil {
 		tmpFile.Close()
 		os.Remove(tmpPath)
-		slog.Error("restore: kopírování dat selhalo", "error", err)
+		slog.Error("restore: failed to copy data", "error", err)
 		util.Error(w, http.StatusInternalServerError, "restore failed")
 		return
 	}
 	tmpFile.Close()
 
-	// Zavřít stávající DB
+	// Close existing DB
 	d.DB.Close()
 
-	// Vytvořit zálohu stávající DB
+	// Create backup of existing DB
 	backupPath := d.DBPath + ".pre-restore"
 	if err := os.Rename(d.DBPath, backupPath); err != nil {
-		slog.Error("restore: přejmenování stávající DB selhalo", "error", err)
-		// Zkusit znovu otevřít stávající
+		slog.Error("restore: failed to rename existing DB", "error", err)
+		// Try to reopen existing
 		d.reopenDB()
 		os.Remove(tmpPath)
 		util.Error(w, http.StatusInternalServerError, "restore failed")
 		return
 	}
 
-	// Přesunout novou DB na místo
+	// Move new DB into place
 	if err := os.Rename(tmpPath, d.DBPath); err != nil {
-		slog.Error("restore: přesun nové DB selhalo", "error", err)
-		// Vrátit zpět starou DB
+		slog.Error("restore: failed to move new DB", "error", err)
+		// Revert to old DB
 		os.Rename(backupPath, d.DBPath)
 		d.reopenDB()
 		util.Error(w, http.StatusInternalServerError, "restore failed")
 		return
 	}
 
-	// Smazat WAL a SHM soubory (staré)
+	// Delete WAL and SHM files (old)
 	os.Remove(d.DBPath + "-wal")
 	os.Remove(d.DBPath + "-shm")
 
-	// Otevřít novou DB
+	// Open new DB
 	if err := d.reopenDB(); err != nil {
-		slog.Error("restore: otevření nové DB selhalo, vracím starou", "error", err)
-		os.Rename(d.DBPath, tmpPath) // odložit novou
+		slog.Error("restore: failed to open new DB, reverting to old", "error", err)
+		os.Rename(d.DBPath, tmpPath) // set aside new one
 		os.Rename(backupPath, d.DBPath)
 		d.reopenDB()
 		os.Remove(tmpPath)
@@ -149,14 +149,14 @@ func (d *Deps) RestoreDatabase(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Úspěch — smazat zálohu
+	// Success — delete backup
 	os.Remove(backupPath)
-	slog.Info("databáze obnovena z uploadu", "user", user.ID)
+	slog.Info("database restored from upload", "user", user.ID)
 
 	util.JSON(w, http.StatusOK, map[string]string{"status": "ok", "message": "database restored, server restart recommended"})
 }
 
-// BackupInfo vrátí informace o databázi.
+// BackupInfo returns information about the database.
 func (d *Deps) BackupInfo(w http.ResponseWriter, r *http.Request) {
 	user := auth.GetUser(r)
 	if !user.IsOwner {
@@ -182,7 +182,7 @@ func (d *Deps) BackupInfo(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// reopenDB znovu otevře databázi a aktualizuje všechny queries.
+// reopenDB reopens the database and updates all query structs.
 func (d *Deps) reopenDB() error {
 	db, err := d.DB.Reopen(d.DBPath)
 	if err != nil {
@@ -190,7 +190,7 @@ func (d *Deps) reopenDB() error {
 	}
 	d.DB = db
 
-	// Aktualizovat všechny query structs
+	// Update all query structs
 	sqlDB := db.DB
 	d.Users.DB = sqlDB
 	d.Channels.DB = sqlDB

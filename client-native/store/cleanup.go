@@ -16,7 +16,7 @@ type DiskUsage struct {
 	Total        int64
 }
 
-// ScanDiskUsage spočítá velikost souborů v ~/.nora/.
+// ScanDiskUsage calculates the size of files in ~/.nora/.
 func ScanDiskUsage() DiskUsage {
 	dir := noraDir()
 	var u DiskUsage
@@ -84,7 +84,7 @@ type cachedFile struct {
 	modTime int64 // UnixNano
 }
 
-// CleanupCache maže nejstarší soubory z ~/.nora/cache/ dokud celková velikost nepřesáhne maxBytes.
+// CleanupCache deletes the oldest files from ~/.nora/cache/ until total size is within maxBytes.
 func CleanupCache(maxBytes int64) (freedBytes int64, err error) {
 	cacheDir := filepath.Join(noraDir(), "cache")
 
@@ -112,7 +112,7 @@ func CleanupCache(maxBytes int64) (freedBytes int64, err error) {
 		return 0, nil
 	}
 
-	// Seřadit oldest-first
+	// Sort oldest-first
 	sort.Slice(files, func(i, j int) bool {
 		return files[i].modTime < files[j].modTime
 	})
@@ -127,7 +127,7 @@ func CleanupCache(maxBytes int64) (freedBytes int64, err error) {
 		}
 	}
 
-	// Odstranit prázdné adresáře (os.Remove selže na neprázdných — to je OK)
+	// Remove empty directories (os.Remove fails on non-empty — that's OK)
 	filepath.WalkDir(cacheDir, func(path string, d os.DirEntry, err error) error {
 		if err != nil || !d.IsDir() || path == cacheDir {
 			return nil
@@ -139,7 +139,7 @@ func CleanupCache(maxBytes int64) (freedBytes int64, err error) {
 	return freedBytes, nil
 }
 
-// CleanupCacheAll smaže celý ~/.nora/cache/ a znovu vytvoří prázdný adresář.
+// CleanupCacheAll deletes the entire ~/.nora/cache/ and recreates an empty directory.
 func CleanupCacheAll() error {
 	cacheDir := filepath.Join(noraDir(), "cache")
 	if err := os.RemoveAll(cacheDir); err != nil {

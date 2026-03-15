@@ -14,6 +14,7 @@ import (
 
 	"gioui.org/f32"
 	"gioui.org/io/key"
+	"gioui.org/io/pointer"
 	"gioui.org/layout"
 	"gioui.org/op"
 	"gioui.org/op/clip"
@@ -48,11 +49,11 @@ type DMViewUI struct {
 	actions    []dmMsgAction
 
 	// Reply
-	replyToMsg     *api.DMPendingMessage // zpráva na kterou odpovídáme
+	replyToMsg     *api.DMPendingMessage // message we're replying to
 	cancelReplyBtn widget.Clickable
 
 	// Edit
-	editingMsg    *api.DMPendingMessage // zpráva kterou editujeme
+	editingMsg    *api.DMPendingMessage // message being edited
 	cancelEditBtn widget.Clickable
 
 	// Call
@@ -193,7 +194,7 @@ func (v *DMViewUI) LayoutSidebar(gtx layout.Context) layout.Dimensions {
 	activeGroupID := conn.ActiveGroupID
 	v.app.mu.RUnlock()
 
-	// Cross-server blocklist: filtrovat konverzace s blokovanými uživateli
+	// Cross-server blocklist: filter conversations with blocked users
 	var convs []api.DMConversation
 	for _, conv := range allConvs {
 		blocked := false
@@ -425,6 +426,7 @@ func (v *DMViewUI) LayoutSidebar(gtx layout.Context) layout.Dimensions {
 									return layout.Inset{Right: unit.Dp(8)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
 										delBg := color.NRGBA{}
 										if v.delBtns[idx].Hovered() {
+											pointer.CursorPointer.Add(gtx.Ops)
 											delBg = color.NRGBA{R: 80, G: 30, B: 30, A: 255}
 										}
 										return layout.Background{}.Layout(gtx,
@@ -441,9 +443,7 @@ func (v *DMViewUI) LayoutSidebar(gtx layout.Context) layout.Dimensions {
 											},
 											func(gtx layout.Context) layout.Dimensions {
 												return layout.UniformInset(unit.Dp(4)).Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-													lbl := material.Caption(v.app.Theme.Material, "X")
-													lbl.Color = ColorDanger
-													return lbl.Layout(gtx)
+													return layoutIcon(gtx, IconDelete, 14, ColorDanger)
 												})
 											},
 										)
@@ -468,8 +468,13 @@ func (v *DMViewUI) LayoutSidebar(gtx layout.Context) layout.Dimensions {
 							layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 								return v.joinGroupBtn.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
 									return layout.Inset{Right: unit.Dp(6)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-										lbl := material.Caption(v.app.Theme.Material, "Join")
-										lbl.Color = ColorAccent
+										clr := ColorAccent
+										if v.joinGroupBtn.Hovered() {
+											pointer.CursorPointer.Add(gtx.Ops)
+											clr = ColorText
+										}
+										lbl := material.Body2(v.app.Theme.Material, "Join")
+										lbl.Color = clr
 										return lbl.Layout(gtx)
 									})
 								})
@@ -477,8 +482,13 @@ func (v *DMViewUI) LayoutSidebar(gtx layout.Context) layout.Dimensions {
 							layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 								return v.createGroupBtn.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
 									return layout.Inset{Right: unit.Dp(8)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-										lbl := material.Caption(v.app.Theme.Material, "+")
-										lbl.Color = ColorAccent
+										clr := ColorAccent
+										if v.createGroupBtn.Hovered() {
+											pointer.CursorPointer.Add(gtx.Ops)
+											clr = ColorText
+										}
+										lbl := material.Body2(v.app.Theme.Material, "Create")
+										lbl.Color = clr
 										return lbl.Layout(gtx)
 									})
 								})
@@ -522,6 +532,7 @@ func (v *DMViewUI) LayoutSidebar(gtx layout.Context) layout.Dimensions {
 					if active {
 						bg = ColorSelected
 					} else if v.groupBtns[gi].Hovered() {
+						pointer.CursorPointer.Add(gtx.Ops)
 						bg = ColorHover
 					}
 
@@ -689,7 +700,7 @@ func (v *DMViewUI) LayoutMessages(gtx layout.Context) layout.Dimensions {
 						return lbl.Layout(gtx)
 					}),
 					layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-						// Call button — jen pokud peer online a žádný hovor neprobíhá
+						// Call button — only if peer is online and no call in progress
 						callActive := conn.Call != nil && conn.Call.IsActive()
 						canCall := peerOnline && !callActive && dmPeerID != ""
 						btnColor := ColorAccent
@@ -699,6 +710,7 @@ func (v *DMViewUI) LayoutMessages(gtx layout.Context) layout.Dimensions {
 							textColor = ColorTextDim
 						}
 						if v.callBtn.Hovered() && canCall {
+							pointer.CursorPointer.Add(gtx.Ops)
 							btnColor = ColorAccentHover
 						}
 						return v.callBtn.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
@@ -806,7 +818,7 @@ func (v *DMViewUI) LayoutMessages(gtx layout.Context) layout.Dimensions {
 			// Handle P2P download clicks
 			for i, msg := range messages {
 				if v.p2pBtns[i].Clicked(gtx) {
-					// Dešifrovat obsah pro parsing
+					// Decrypt content for parsing
 					content := msg.DecryptedContent
 					if content == "" {
 						content = msg.EncryptedContent
@@ -978,7 +990,7 @@ func (v *DMViewUI) LayoutMessages(gtx layout.Context) layout.Dimensions {
 							)
 						})
 					}),
-					// Emoji button (napravo od editoru)
+					// Emoji button (to the right of editor)
 					layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 						return layout.Inset{Left: unit.Dp(2)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
 							return layoutDMCircleIconBtn(gtx, v.app, &v.emojiBtn, IconEmoji)
@@ -1099,6 +1111,7 @@ func (v *DMViewUI) layoutDMMessage(gtx layout.Context, username, avatarURL, cont
 										lbl := material.Body2(v.app.Theme.Material, username)
 										lbl.Color = UserColor(username)
 										if act.nameBtn.Hovered() {
+											pointer.CursorPointer.Add(gtx.Ops)
 											lbl.Color = ColorAccentHover
 										}
 										lbl.Font.Weight = 600
@@ -1259,6 +1272,7 @@ func (v *DMViewUI) layoutDMEmojiTab(gtx layout.Context, btn *widget.Clickable, n
 			if active {
 				bg = ColorAccentDim
 			} else if btn.Hovered() {
+				pointer.CursorPointer.Add(gtx.Ops)
 				bg = ColorHover
 			}
 			return layout.Background{}.Layout(gtx,
@@ -1302,6 +1316,7 @@ func (v *DMViewUI) layoutDMCustomEmojiList(gtx layout.Context, emojis []api.Cust
 		return v.emojiClickBtns[idx].Layout(gtx, func(gtx layout.Context) layout.Dimensions {
 			bg := color.NRGBA{}
 			if v.emojiClickBtns[idx].Hovered() {
+				pointer.CursorPointer.Add(gtx.Ops)
 				bg = ColorHover
 			}
 			return layout.Background{}.Layout(gtx,
@@ -1398,6 +1413,7 @@ func (v *DMViewUI) layoutDMUnicodeEmojiGrid(gtx layout.Context, catIdx int) layo
 				return v.unicodeEmojiBtns[bIdx].Layout(gtx, func(gtx layout.Context) layout.Dimensions {
 					bg := color.NRGBA{}
 					if v.unicodeEmojiBtns[bIdx].Hovered() {
+						pointer.CursorPointer.Add(gtx.Ops)
 						bg = ColorHover
 					}
 					sz := image.Pt(cellSize, cellSize)
@@ -1577,7 +1593,7 @@ func (v *DMViewUI) sendDM() {
 	go v.sendDMText(text, replyToID)
 }
 
-// sendDMText pošle libovolný text jako šifrovanou DM zprávu.
+// sendDMText sends arbitrary text as an encrypted DM message.
 func (v *DMViewUI) sendDMText(text, replyToID string) {
 	conn := v.app.Conn()
 	if conn == nil {
@@ -1633,7 +1649,7 @@ func (v *DMViewUI) sendDMText(text, replyToID string) {
 	}
 }
 
-// editDMMessage pošle edit přes WS relay a aktualizuje lokálně.
+// editDMMessage sends an edit via WS relay and updates locally.
 func (v *DMViewUI) editDMMessage(msg *api.DMPendingMessage, newText string) {
 	conn := v.app.Conn()
 	if conn == nil {
@@ -1656,7 +1672,7 @@ func (v *DMViewUI) editDMMessage(msg *api.DMPendingMessage, newText string) {
 		return
 	}
 
-	// Najít peer user ID
+	// Find peer user ID
 	var peerUserID string
 	v.app.mu.RLock()
 	for _, c := range conn.DMConversations {
@@ -1672,7 +1688,7 @@ func (v *DMViewUI) editDMMessage(msg *api.DMPendingMessage, newText string) {
 	}
 	v.app.mu.RUnlock()
 
-	// Poslat edit přes WS relay
+	// Send edit via WS relay
 	if peerUserID != "" && conn.WS != nil {
 		conn.WS.SendJSON("dm.message.edit", map[string]string{
 			"to":                peerUserID,
@@ -1682,7 +1698,7 @@ func (v *DMViewUI) editDMMessage(msg *api.DMPendingMessage, newText string) {
 		})
 	}
 
-	// Aktualizovat lokálně
+	// Update locally
 	v.app.mu.Lock()
 	if conn.ActiveDMID == convID {
 		for i, m := range conn.DMMessages {
@@ -1695,7 +1711,7 @@ func (v *DMViewUI) editDMMessage(msg *api.DMPendingMessage, newText string) {
 	}
 	v.app.mu.Unlock()
 
-	// Aktualizovat lokální historii
+	// Update local history
 	if v.app.DMHistory != nil {
 		v.app.DMHistory.UpdateMessage(convID, msg.ID, newText)
 		v.app.DMHistory.Save()
@@ -1793,7 +1809,7 @@ func (v *DMViewUI) layoutDMTypingIndicator(gtx layout.Context) layout.Dimensions
 
 // --- P2P file sharing v DM ---
 
-// layoutDMCircleIconBtn renderuje kulaté tlačítko s ikonou (standalone, bez MessageView).
+// layoutDMCircleIconBtn renders a round icon button (standalone, without MessageView).
 func layoutDMCircleIconBtn(gtx layout.Context, app *App, btn *widget.Clickable, icon *NIcon) layout.Dimensions {
 	return btn.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
 		size := gtx.Dp(36)
@@ -1801,6 +1817,7 @@ func layoutDMCircleIconBtn(gtx layout.Context, app *App, btn *widget.Clickable, 
 		gtx.Constraints.Max = gtx.Constraints.Min
 		bg := ColorInput
 		if btn.Hovered() {
+			pointer.CursorPointer.Add(gtx.Ops)
 			bg = ColorHover
 		}
 		rr := size / 2
@@ -1817,6 +1834,7 @@ func layoutDMCircleIconBtn(gtx layout.Context, app *App, btn *widget.Clickable, 
 func (v *DMViewUI) layoutNavBtn(gtx layout.Context, btn *widget.Clickable, icon *NIcon, label string) layout.Dimensions {
 	bg := ColorCard
 	if btn.Hovered() {
+		pointer.CursorPointer.Add(gtx.Ops)
 		bg = ColorHover
 	}
 	return btn.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
@@ -1838,7 +1856,7 @@ func (v *DMViewUI) layoutNavBtn(gtx layout.Context, btn *widget.Clickable, icon 
 	})
 }
 
-// pickFilesDM otevře dialog pro výběr souborů a nabídne upload/P2P.
+// pickFilesDM opens a file dialog and offers upload/P2P.
 func (v *DMViewUI) pickFilesDM() {
 	paths := openMultiFileDialog()
 	if len(paths) == 0 {
@@ -1861,7 +1879,7 @@ func (v *DMViewUI) pickFilesDM() {
 	v.app.Window.Invalidate()
 }
 
-// startP2PSendDM registruje soubory v P2P manageru a pošle P2P link jako šifrovanou DM.
+// startP2PSendDM registers files in the P2P manager and sends a P2P link as an encrypted DM.
 func (v *DMViewUI) startP2PSendDM(paths []string) {
 	conn := v.app.Conn()
 	if conn == nil || conn.P2P == nil {
@@ -1893,7 +1911,7 @@ func (v *DMViewUI) startP2PSendDM(paths []string) {
 	}
 }
 
-// startUploadsDM nahraje soubory na server a pošle URL jako šifrovanou DM.
+// startUploadsDM uploads files to the server and sends the URL as an encrypted DM.
 func (v *DMViewUI) startUploadsDM(paths []string) {
 	conn := v.app.Conn()
 	if conn == nil {
@@ -1911,7 +1929,7 @@ func (v *DMViewUI) startUploadsDM(paths []string) {
 			att, err := conn.Client.UploadFile(fname, fileData)
 			if err != nil {
 				log.Printf("DM upload error: %v", err)
-				// P2P fallback při size limitu
+				// P2P fallback when size limit exceeded
 				errStr := err.Error()
 				if conn.P2P != nil && (strings.Contains(errStr, "413") || strings.Contains(errStr, "too large") || strings.Contains(errStr, "file size")) {
 					v.app.ConfirmDlg.Show("File too large", "File exceeds server limit. Share directly via P2P?", func() {
@@ -1921,7 +1939,7 @@ func (v *DMViewUI) startUploadsDM(paths []string) {
 				}
 				return
 			}
-			// Poslat URL souboru jako DM
+			// Send file URL as DM
 			url := att.URL
 			if !strings.HasPrefix(url, "http") {
 				url = conn.URL + url
@@ -1931,7 +1949,7 @@ func (v *DMViewUI) startUploadsDM(paths []string) {
 	}
 }
 
-// layoutDMP2PBlock renderuje P2P odkaz ve zprávě.
+// layoutDMP2PBlock renders a P2P link in a message.
 func (v *DMViewUI) layoutDMP2PBlock(gtx layout.Context, info *p2pLinkInfo, idx int, isOwn bool) layout.Dimensions {
 	conn := v.app.Conn()
 
@@ -1995,6 +2013,7 @@ func (v *DMViewUI) layoutDMP2PBlock(gtx layout.Context, info *p2pLinkInfo, idx i
 	renderBlock := func(gtx layout.Context) layout.Dimensions {
 		bg := ColorInput
 		if clickable && btn.Hovered() {
+			pointer.CursorPointer.Add(gtx.Ops)
 			bg = ColorHover
 		}
 		return layout.Background{}.Layout(gtx,
@@ -2032,7 +2051,7 @@ func (v *DMViewUI) layoutDMP2PBlock(gtx layout.Context, info *p2pLinkInfo, idx i
 	return renderBlock(gtx)
 }
 
-// dmP2PTransferActive vrátí true pokud je transfer v aktivním stavu.
+// dmP2PTransferActive returns true if the transfer is in an active state.
 func (v *DMViewUI) dmP2PTransferActive(conn *ServerConnection, transferID string) bool {
 	for _, t := range conn.P2P.GetActiveTransfers() {
 		if t.ID == transferID && (t.Status == p2p.StatusWaiting || t.Status == p2p.StatusConnecting || t.Status == p2p.StatusTransferring) {
@@ -2042,7 +2061,7 @@ func (v *DMViewUI) dmP2PTransferActive(conn *ServerConnection, transferID string
 	return false
 }
 
-// layoutDMP2PPanel zobrazí progress bary pro P2P příjem v DM.
+// layoutDMP2PPanel displays progress bars for P2P reception in DM.
 func (v *DMViewUI) layoutDMP2PPanel(gtx layout.Context) layout.Dimensions {
 	conn := v.app.Conn()
 	if conn == nil || conn.P2P == nil {
@@ -2068,7 +2087,7 @@ func (v *DMViewUI) layoutDMP2PPanel(gtx layout.Context) layout.Dimensions {
 		return visible[i].ID < visible[j].ID
 	})
 
-	// Zpracovat kliky na bary
+	// Handle clicks on bars
 	for _, t := range visible {
 		btn, ok := v.p2pBarBtns[t.ID]
 		if !ok {
@@ -2116,7 +2135,7 @@ func (v *DMViewUI) layoutDMP2PPanel(gtx layout.Context) layout.Dimensions {
 	})
 }
 
-// layoutDMP2PBar renderuje jednotlivý P2P progress bar.
+// layoutDMP2PBar renders an individual P2P progress bar.
 func (v *DMViewUI) layoutDMP2PBar(gtx layout.Context, t *p2p.Transfer) layout.Dimensions {
 	btn, ok := v.p2pBarBtns[t.ID]
 	if !ok {
@@ -2161,6 +2180,7 @@ func (v *DMViewUI) layoutDMP2PBar(gtx layout.Context, t *p2p.Transfer) layout.Di
 	renderBar := func(gtx layout.Context) layout.Dimensions {
 		bg := ColorSidebar
 		if btn.Hovered() {
+			pointer.CursorPointer.Add(gtx.Ops)
 			bg = ColorHover
 		}
 		return layout.Inset{Bottom: unit.Dp(2)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
@@ -2215,7 +2235,7 @@ func (v *DMViewUI) layoutDMP2PBar(gtx layout.Context, t *p2p.Transfer) layout.Di
 	return btn.Layout(gtx, renderBar)
 }
 
-// pasteClipboardImageDM zkusí přečíst obrázek z clipboard a uploadnout ho jako DM.
+// pasteClipboardImageDM tries to read an image from clipboard and upload it as a DM.
 func (v *DMViewUI) pasteClipboardImageDM() {
 	data := readClipboardImage()
 	if data == nil {

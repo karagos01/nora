@@ -101,7 +101,7 @@ func (c *Client) handleEvent(event IncomingEvent) {
 		c.hub.Broadcast(msg)
 
 	case EventChannelTyping:
-		// Channel typing — broadcast do všech klientů (klient filtruje podle channel_id)
+		// Channel typing — broadcast to all clients (client filters by channel_id)
 		var payload struct {
 			ChannelID string `json:"channel_id"`
 		}
@@ -115,7 +115,7 @@ func (c *Client) handleEvent(event IncomingEvent) {
 		if err != nil {
 			return
 		}
-		// Broadcast všem kromě odesílatele
+		// Broadcast to all except the sender
 		c.hub.mu.RLock()
 		for client := range c.hub.clients {
 			if client.UserID != c.UserID {
@@ -160,7 +160,7 @@ func (c *Client) handleEvent(event IncomingEvent) {
 		c.handleLobbyPassword(event)
 
 	default:
-		slog.Warn("ws: neznámý typ eventu", "type", event.Type)
+		slog.Warn("ws: unknown event type", "type", event.Type)
 	}
 }
 
@@ -176,24 +176,24 @@ func (c *Client) handleVoiceJoin(event IncomingEvent) {
 
 	targetChannelID := payload.ChannelID
 
-	// Zjistit zda kanál je lobby → spawne nový sub-kanál
+	// Check if channel is a lobby -> spawn a new sub-channel
 	if c.hub.isLobbyFn != nil && c.hub.isLobbyFn(payload.ChannelID) {
 		newID, err := c.hub.SpawnFromLobby(payload.ChannelID, c.UserID, payload.Name, payload.Password)
 		if err != nil {
-			slog.Error("lobby: chyba při vytváření roomu", "error", err)
+			slog.Error("lobby: error creating room", "error", err)
 			c.sendError("voice.error", "Failed to create lobby room")
 			return
 		}
 		targetChannelID = newID
 
-		// Broadcast channel.create pro nový sub-kanál
+		// Broadcast channel.create for the new sub-channel
 		if c.hub.lobbyCreateFn != nil {
-			// Channel data se broadcastne z lobbyCreateFn callback (v main.go)
-			// Ale potřebujeme broadcast — delegujeme to na callbackový kód v main
+			// Channel data is broadcast from lobbyCreateFn callback (in main.go)
+			// But we need broadcast — we delegate to the callback code in main
 		}
 	}
 
-	// Ověřit heslo pro dynamický sub-kanál
+	// Verify password for dynamic sub-channel
 	if c.hub.IsDynamic(targetChannelID) {
 		if !c.hub.CheckDynamicPassword(targetChannelID, payload.Password) {
 			c.sendError("voice.error", "Wrong password")
@@ -222,7 +222,7 @@ func (c *Client) handleVoiceLeave() {
 	})
 	c.hub.Broadcast(msg)
 
-	// Cleanup dynamického lobby sub-kanálu pokud prázdný
+	// Cleanup dynamic lobby sub-channel if empty
 	c.hub.checkDynamicCleanup(channelID)
 }
 
@@ -244,10 +244,10 @@ func (c *Client) handleLobbyRename(event IncomingEvent) {
 		return
 	}
 
-	// Přejmenovat v DB přes callback
+	// Rename in DB via callback
 	if c.hub.lobbyRenameFn != nil {
 		if err := c.hub.lobbyRenameFn(payload.ChannelID, payload.Name); err != nil {
-			slog.Error("lobby: přejmenování selhalo", "channel_id", payload.ChannelID, "error", err)
+			slog.Error("lobby: rename failed", "channel_id", payload.ChannelID, "error", err)
 			return
 		}
 	}
@@ -280,7 +280,7 @@ func (c *Client) handleLobbyPassword(event IncomingEvent) {
 	}
 }
 
-// sendError posílá chybový event zpět klientovi
+// sendError sends an error event back to the client
 func (c *Client) sendError(eventType, message string) {
 	msg, err := NewEvent(EventType(eventType), map[string]string{"error": message})
 	if err != nil {
@@ -316,7 +316,7 @@ func (c *Client) relayFileEvent(event IncomingEvent) {
 		return
 	}
 
-	// Přidat "from" do payloadu (anti-spoof)
+	// Add "from" to the payload (anti-spoof)
 	var payload map[string]any
 	if err := json.Unmarshal(event.Payload, &payload); err != nil {
 		return
@@ -345,7 +345,7 @@ func (c *Client) handleScreenShare(event IncomingEvent) {
 		return
 	}
 
-	// Trackovat screen share stav v hubu
+	// Track screen share state in the hub
 	c.hub.SetScreenShare(c.UserID, payload.ChannelID, payload.Sharing)
 
 	msg, _ := NewEvent(EventScreenShare, map[string]any{

@@ -62,7 +62,7 @@ func (d *Deps) CreateStorageFolder(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Ověřit parent existuje
+	// Verify parent exists
 	if req.ParentID != nil {
 		if _, err := d.FileStorage.GetFolder(*req.ParentID); err != nil {
 			util.Error(w, http.StatusNotFound, "parent folder not found")
@@ -130,7 +130,7 @@ func (d *Deps) DeleteStorageFolder(w http.ResponseWriter, r *http.Request) {
 
 	folderID := r.PathValue("id")
 
-	// Smazat soubory z disku
+	// Delete files from disk
 	absUploads, _ := filepath.Abs(d.UploadsDir)
 	filepaths, _ := d.FileStorage.GetFilesInFolder(folderID)
 	for _, fp := range filepaths {
@@ -143,7 +143,7 @@ func (d *Deps) DeleteStorageFolder(w http.ResponseWriter, r *http.Request) {
 			continue
 		}
 		if err := os.Remove(p); err != nil && !os.IsNotExist(err) {
-			slog.Error("smazání storage souboru selhalo", "path", p, "error", err)
+			slog.Error("failed to delete storage file", "path", p, "error", err)
 		}
 	}
 
@@ -204,19 +204,19 @@ func (d *Deps) UploadStorageFile(w http.ResponseWriter, r *http.Request) {
 	}
 	defer file.Close()
 
-	// Přečíst prvních 512 bytů pro MIME detekci
+	// Read first 512 bytes for MIME detection
 	buf := make([]byte, 512)
 	n, _ := file.Read(buf)
 	mimeType := http.DetectContentType(buf[:n])
 	file.Seek(0, 0)
 
-	// Validovat MIME typ
+	// Validate MIME type
 	if !d.isAllowedType(mimeType) {
 		util.Error(w, http.StatusBadRequest, "file type not allowed")
 		return
 	}
 
-	// Uložit soubor
+	// Save file
 	fileID, _ := uuid.NewV7()
 	ext := filepath.Ext(header.Filename)
 	diskName := fileID.String() + ext
@@ -315,14 +315,14 @@ func (d *Deps) DeleteStorageFile(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Smazat z disku (path traversal ochrana)
+	// Delete from disk (path traversal protection)
 	if !strings.Contains(fp, "..") {
 		p := filepath.Join(d.UploadsDir, fp)
 		absP, absErr := filepath.Abs(p)
 		absUploads, _ := filepath.Abs(d.UploadsDir)
 		if absErr == nil && strings.HasPrefix(absP, absUploads+string(filepath.Separator)) {
 			if err := os.Remove(absP); err != nil && !os.IsNotExist(err) {
-				slog.Error("smazání storage souboru selhalo", "path", absP, "error", err)
+				slog.Error("failed to delete storage file", "path", absP, "error", err)
 			}
 		}
 	}
@@ -333,7 +333,7 @@ func (d *Deps) DeleteStorageFile(w http.ResponseWriter, r *http.Request) {
 	util.JSON(w, http.StatusOK, map[string]string{"status": "ok"})
 }
 
-// isAllowedType kontroluje MIME typ proti whitelist
+// isAllowedType checks MIME type against the whitelist
 func (d *Deps) isAllowedType(mimeType string) bool {
 	for _, allowed := range d.AllowedTypes {
 		if mimeType == allowed {

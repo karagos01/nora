@@ -10,7 +10,7 @@ import (
 	"time"
 )
 
-// CachedAttachment je příloha uložená v message cache.
+// CachedAttachment is an attachment stored in the message cache.
 type CachedAttachment struct {
 	Filename string `json:"filename"`
 	URL      string `json:"url"`
@@ -18,7 +18,7 @@ type CachedAttachment struct {
 	MimeType string `json:"mime_type"`
 }
 
-// CachedMessage je channel zpráva uložená v lokální cache.
+// CachedMessage is a channel message stored in the local cache.
 type CachedMessage struct {
 	ID          string             `json:"id"`
 	ChannelID   string             `json:"channel_id"`
@@ -34,7 +34,7 @@ type CachedMessage struct {
 
 const maxCachedPerChannel = 200
 
-// MessageCache ukládá channel zprávy lokálně pro rychlejší načítání.
+// MessageCache stores channel messages locally for faster loading.
 type MessageCache struct {
 	mu       sync.Mutex
 	filePath string
@@ -42,7 +42,7 @@ type MessageCache struct {
 	dirty    bool
 }
 
-// NewMessageCache vytvoří message cache pro daný server a identitu.
+// NewMessageCache creates a message cache for the given server and identity.
 func NewMessageCache(publicKey, serverURL string) *MessageCache {
 	short := publicKey
 	if len(short) > 16 {
@@ -67,7 +67,7 @@ func (mc *MessageCache) load() {
 	json.Unmarshal(data, &mc.messages)
 }
 
-// Save uloží cache na disk.
+// Save writes the cache to disk.
 func (mc *MessageCache) Save() {
 	mc.mu.Lock()
 	defer mc.mu.Unlock()
@@ -83,7 +83,7 @@ func (mc *MessageCache) Save() {
 	mc.dirty = false
 }
 
-// GetMessages vrátí cached zprávy pro kanál.
+// GetMessages returns cached messages for a channel.
 func (mc *MessageCache) GetMessages(channelID string) []CachedMessage {
 	mc.mu.Lock()
 	defer mc.mu.Unlock()
@@ -93,7 +93,7 @@ func (mc *MessageCache) GetMessages(channelID string) []CachedMessage {
 	return result
 }
 
-// SetMessages nastaví zprávy pro kanál (nahradí existující cache).
+// SetMessages sets messages for a channel (replaces existing cache).
 func (mc *MessageCache) SetMessages(channelID string, msgs []CachedMessage) {
 	mc.mu.Lock()
 	defer mc.mu.Unlock()
@@ -104,7 +104,7 @@ func (mc *MessageCache) SetMessages(channelID string, msgs []CachedMessage) {
 	mc.dirty = true
 }
 
-// AddMessage přidá zprávu do cache (deduplikace dle ID).
+// AddMessage adds a message to the cache (deduplication by ID).
 func (mc *MessageCache) AddMessage(msg CachedMessage) {
 	mc.mu.Lock()
 	defer mc.mu.Unlock()
@@ -115,14 +115,14 @@ func (mc *MessageCache) AddMessage(msg CachedMessage) {
 		}
 	}
 	mc.messages[msg.ChannelID] = append(msgs, msg)
-	// Trim pokud přesahuje limit
+	// Trim if exceeds limit
 	if len(mc.messages[msg.ChannelID]) > maxCachedPerChannel {
 		mc.messages[msg.ChannelID] = mc.messages[msg.ChannelID][len(mc.messages[msg.ChannelID])-maxCachedPerChannel:]
 	}
 	mc.dirty = true
 }
 
-// UpdateMessage aktualizuje obsah zprávy v cache.
+// UpdateMessage updates message content in the cache.
 func (mc *MessageCache) UpdateMessage(msgID, content string) {
 	mc.mu.Lock()
 	defer mc.mu.Unlock()
@@ -137,7 +137,7 @@ func (mc *MessageCache) UpdateMessage(msgID, content string) {
 	}
 }
 
-// DeleteMessage smaže zprávu z cache.
+// DeleteMessage removes a message from the cache.
 func (mc *MessageCache) DeleteMessage(msgID string) {
 	mc.mu.Lock()
 	defer mc.mu.Unlock()
@@ -152,7 +152,7 @@ func (mc *MessageCache) DeleteMessage(msgID string) {
 	}
 }
 
-// UpdatePin aktualizuje pin stav zprávy.
+// UpdatePin updates the pin state of a message.
 func (mc *MessageCache) UpdatePin(msgID string, pinned bool) {
 	mc.mu.Lock()
 	defer mc.mu.Unlock()
@@ -167,7 +167,7 @@ func (mc *MessageCache) UpdatePin(msgID string, pinned bool) {
 	}
 }
 
-// UpdateHidden aktualizuje hidden stav zprávy.
+// UpdateHidden updates the hidden state of a message.
 func (mc *MessageCache) UpdateHidden(msgID string, hidden bool, content string) {
 	mc.mu.Lock()
 	defer mc.mu.Unlock()
@@ -183,7 +183,7 @@ func (mc *MessageCache) UpdateHidden(msgID string, hidden bool, content string) 
 	}
 }
 
-// DeleteByUser smaže všechny zprávy od daného uživatele.
+// DeleteByUser removes all messages from the given user.
 func (mc *MessageCache) DeleteByUser(userID string) {
 	mc.mu.Lock()
 	defer mc.mu.Unlock()
@@ -199,7 +199,7 @@ func (mc *MessageCache) DeleteByUser(userID string) {
 	mc.dirty = true
 }
 
-// HideByUser skryje všechny zprávy od daného uživatele.
+// HideByUser hides all messages from the given user.
 func (mc *MessageCache) HideByUser(userID string) {
 	mc.mu.Lock()
 	defer mc.mu.Unlock()
@@ -213,7 +213,7 @@ func (mc *MessageCache) HideByUser(userID string) {
 	mc.dirty = true
 }
 
-// MessageCount vrátí celkový počet cached zpráv.
+// MessageCount returns the total number of cached messages.
 func (mc *MessageCache) MessageCount() int {
 	mc.mu.Lock()
 	defer mc.mu.Unlock()

@@ -76,7 +76,7 @@ func (d *Deps) CreateChannel(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Validace existence kategorie
+	// Validate category existence
 	if req.CategoryID != nil && *req.CategoryID != "" {
 		if _, err := d.Categories.GetByID(*req.CategoryID); err != nil {
 			util.Error(w, http.StatusBadRequest, "category not found")
@@ -106,7 +106,7 @@ func (d *Deps) CreateChannel(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Pro LAN kanál automaticky vytvořit lan_party záznam
+	// For LAN channel, automatically create lan_party record
 	if ch.Type == "lan" && d.LAN != nil {
 		party := &models.LANParty{
 			ID:        ch.ID,
@@ -115,7 +115,7 @@ func (d *Deps) CreateChannel(w http.ResponseWriter, r *http.Request) {
 			Active:    true,
 		}
 		if err := d.LAN.CreateParty(party); err != nil {
-			slog.Error("vytvoření LAN party pro kanál selhalo", "channel_id", ch.ID, "error", err)
+			slog.Error("failed to create LAN party for channel", "channel_id", ch.ID, "error", err)
 		}
 	}
 
@@ -211,7 +211,7 @@ func (d *Deps) ReorderChannels(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Validace: všechna ID musí existovat
+	// Validation: all IDs must exist
 	for _, id := range req.ChannelIDs {
 		if _, err := d.Channels.GetByID(id); err != nil {
 			util.Error(w, http.StatusBadRequest, "channel not found: "+id)
@@ -224,7 +224,7 @@ func (d *Deps) ReorderChannels(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Broadcast channel.update pro každý změněný kanál
+	// Broadcast channel.update for each changed channel
 	for _, id := range req.ChannelIDs {
 		ch, err := d.Channels.GetByID(id)
 		if err != nil {
@@ -250,14 +250,14 @@ func (d *Deps) DeleteChannel(w http.ResponseWriter, r *http.Request) {
 
 	id := r.PathValue("id")
 
-	// Načíst název kanálu před smazáním
+	// Load channel name before deletion
 	ch, _ := d.Channels.GetByID(id)
 	chName := ""
 	if ch != nil {
 		chName = ch.Name
 	}
 
-	// Pro LAN kanál vyčistit LAN party + WG peery
+	// For LAN channel, clean up LAN party + WG peers
 	if ch != nil && ch.Type == "lan" && d.LAN != nil {
 		members, _ := d.LAN.GetMembers(ch.ID)
 		d.LAN.DeactivateParty(ch.ID)

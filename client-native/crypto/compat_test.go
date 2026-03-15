@@ -7,8 +7,8 @@ import (
 	"golang.org/x/crypto/curve25519"
 )
 
-// Test, že ed25519→x25519 konverze produkuje validní X25519 klíče
-// a ECDH funguje symetricky (A→B == B→A).
+// Test that ed25519→x25519 conversion produces valid X25519 keys
+// and ECDH works symmetrically (A→B == B→A).
 func TestECDHSymmetry(t *testing.T) {
 	kp1, _ := GenerateKeypair()
 	kp2, _ := GenerateKeypair()
@@ -30,17 +30,17 @@ func TestECDHSymmetry(t *testing.T) {
 	}
 
 	if hex.EncodeToString(shared1) != hex.EncodeToString(shared2) {
-		t.Fatal("ECDH není symetrický!")
+		t.Fatal("ECDH is not symmetric!")
 	}
 }
 
-// Test, že šifrování/dešifrování je cross-kompatibilní (A šifruje, B dešifruje).
+// Test that encryption/decryption is cross-compatible (A encrypts, B decrypts).
 func TestDMCrossDecrypt(t *testing.T) {
 	kp1, _ := GenerateKeypair()
 	kp2, _ := GenerateKeypair()
 
 	// A → B
-	enc, err := EncryptDM(kp1.SecretKey, kp2.PublicKey, "Testovací zpráva od A")
+	enc, err := EncryptDM(kp1.SecretKey, kp2.PublicKey, "Test message from A")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -49,12 +49,12 @@ func TestDMCrossDecrypt(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if dec != "Testovací zpráva od A" {
-		t.Fatalf("B dešifroval špatně: %q", dec)
+	if dec != "Test message from A" {
+		t.Fatalf("B decrypted incorrectly: %q", dec)
 	}
 
 	// B → A
-	enc2, err := EncryptDM(kp2.SecretKey, kp1.PublicKey, "Odpověď od B")
+	enc2, err := EncryptDM(kp2.SecretKey, kp1.PublicKey, "Reply from B")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -63,16 +63,16 @@ func TestDMCrossDecrypt(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if dec2 != "Odpověď od B" {
-		t.Fatalf("A dešifroval špatně: %q", dec2)
+	if dec2 != "Reply from B" {
+		t.Fatalf("A decrypted incorrectly: %q", dec2)
 	}
 }
 
-// Test, že sign/verify pro challenge-response funguje.
+// Test that sign/verify works for challenge-response.
 func TestSignVerify(t *testing.T) {
 	kp, _ := GenerateKeypair()
 
-	// Simulace server nonce (hex)
+	// Simulated server nonce (hex)
 	nonce := "deadbeef01020304050607080910111213141516171819202122232425262728"
 
 	sig, err := Sign(kp.SecretKey, nonce)
@@ -80,8 +80,8 @@ func TestSignVerify(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	// Ověření
-	if len(sig) != 128 { // 64 bajtů = 128 hex znaků
-		t.Fatalf("podpis má %d znaků, očekáváno 128", len(sig))
+	// Verification
+	if len(sig) != 128 { // 64 bytes = 128 hex chars
+		t.Fatalf("signature has %d chars, expected 128", len(sig))
 	}
 }

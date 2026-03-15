@@ -24,7 +24,7 @@ type SidebarView struct {
 	notifBtn       widget.Clickable
 	addBtn         widget.Clickable
 	serverBtns     []widget.Clickable
-	serverRightTags []bool // pointer event tags pro right-click
+	serverRightTags []bool // pointer event tags for right-click
 }
 
 func NewSidebarView(a *App) *SidebarView {
@@ -46,7 +46,7 @@ func (v *SidebarView) Layout(gtx layout.Context) layout.Dimensions {
 		v.serverRightTags = make([]bool, serverCount+5)
 	}
 
-	// Zpracovat right-click eventy na serverech
+	// Process right-click events on servers
 	for i := 0; i < serverCount; i++ {
 		for {
 			ev, ok := gtx.Event(pointer.Filter{
@@ -155,7 +155,7 @@ func (v *SidebarView) Layout(gtx layout.Context) layout.Dimensions {
 					})
 				}
 
-				// Right-click area pro notification menu (PassOp propustí kliky dolů ke Clickable)
+				// Right-click area for notification menu (PassOp passes clicks down to Clickable)
 				areaStack := clip.Rect{Max: dims.Size}.Push(gtx.Ops)
 				pr := pointer.PassOp{}.Push(gtx.Ops)
 				event.Op(gtx.Ops, &v.serverRightTags[i])
@@ -196,6 +196,7 @@ func (v *SidebarView) layoutIconBtn(gtx layout.Context, btn *widget.Clickable, t
 		if active {
 			bg = ColorAccent
 		} else if btn.Hovered() {
+			pointer.CursorPointer.Add(gtx.Ops)
 			bg = ColorHover
 		}
 
@@ -307,6 +308,7 @@ func (v *SidebarView) layoutIconBtnIcon(gtx layout.Context, btn *widget.Clickabl
 		if active {
 			bg = ColorAccent
 		} else if btn.Hovered() {
+			pointer.CursorPointer.Add(gtx.Ops)
 			bg = ColorHover
 		}
 
@@ -360,6 +362,7 @@ func (v *SidebarView) layoutAddBtn(gtx layout.Context) layout.Dimensions {
 		rr := size / 2
 		bg := color.NRGBA{R: 40, G: 120, B: 60, A: 255}
 		if v.addBtn.Hovered() {
+			pointer.CursorPointer.Add(gtx.Ops)
 			bg = color.NRGBA{R: 50, G: 150, B: 75, A: 255}
 		}
 		paint.FillShape(gtx.Ops, bg, clip.RRect{

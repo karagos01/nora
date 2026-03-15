@@ -10,7 +10,7 @@ type CalendarQueries struct {
 	DB *sql.DB
 }
 
-// CreateEvent vloží nový event do DB.
+// CreateEvent inserts a new event into DB.
 func (q *CalendarQueries) CreateEvent(e *models.Event) error {
 	_, err := q.DB.Exec(
 		`INSERT INTO events (id, title, description, creator_id, starts_at, ends_at, location, color, all_day, recurrence_rule, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
@@ -19,7 +19,7 @@ func (q *CalendarQueries) CreateEvent(e *models.Event) error {
 	return err
 }
 
-// UpdateEvent aktualizuje existující event.
+// UpdateEvent updates an existing event.
 func (q *CalendarQueries) UpdateEvent(e *models.Event) error {
 	_, err := q.DB.Exec(
 		`UPDATE events SET title = ?, description = ?, starts_at = ?, ends_at = ?, location = ?, color = ?, all_day = ?, recurrence_rule = ? WHERE id = ?`,
@@ -28,13 +28,13 @@ func (q *CalendarQueries) UpdateEvent(e *models.Event) error {
 	return err
 }
 
-// DeleteEvent smaže event (kaskádově smaže i remindery).
+// DeleteEvent deletes an event (cascades to reminders).
 func (q *CalendarQueries) DeleteEvent(id string) error {
 	_, err := q.DB.Exec(`DELETE FROM events WHERE id = ?`, id)
 	return err
 }
 
-// GetEvent vrátí event s creator JOINem.
+// GetEvent returns an event with creator JOIN.
 func (q *CalendarQueries) GetEvent(id string) (*models.Event, error) {
 	var e models.Event
 	var endsAt sql.NullTime
@@ -73,7 +73,7 @@ func (q *CalendarQueries) GetEvent(id string) (*models.Event, error) {
 	return &e, nil
 }
 
-// ListEvents vrátí eventy v daném časovém rozsahu (bez recurring expanze — tu dělá handler).
+// ListEvents returns events in a given time range (without recurring expansion — that is done by the handler).
 func (q *CalendarQueries) ListEvents(from, to time.Time) ([]models.Event, error) {
 	rows, err := q.DB.Query(`
 		SELECT e.id, e.title, e.description, e.creator_id, e.starts_at, e.ends_at,
@@ -122,7 +122,7 @@ func (q *CalendarQueries) ListEvents(from, to time.Time) ([]models.Event, error)
 	return events, nil
 }
 
-// GetRecurringEvents vrátí eventy s neprázdným recurrence_rule.
+// GetRecurringEvents returns events with a non-empty recurrence_rule.
 func (q *CalendarQueries) GetRecurringEvents() ([]models.Event, error) {
 	rows, err := q.DB.Query(`
 		SELECT e.id, e.title, e.description, e.creator_id, e.starts_at, e.ends_at,
@@ -171,7 +171,7 @@ func (q *CalendarQueries) GetRecurringEvents() ([]models.Event, error) {
 	return events, nil
 }
 
-// CreateReminder vytvoří reminder pro uživatele.
+// CreateReminder creates a reminder for a user.
 func (q *CalendarQueries) CreateReminder(r *models.EventReminder) error {
 	_, err := q.DB.Exec(
 		`INSERT INTO event_reminders (id, event_id, user_id, remind_at, reminded, created_at) VALUES (?, ?, ?, ?, 0, ?)`,
@@ -180,7 +180,7 @@ func (q *CalendarQueries) CreateReminder(r *models.EventReminder) error {
 	return err
 }
 
-// DeleteReminder smaže reminder pro daného uživatele a event.
+// DeleteReminder deletes a reminder for a given user and event.
 func (q *CalendarQueries) DeleteReminder(eventID, userID string) error {
 	_, err := q.DB.Exec(
 		`DELETE FROM event_reminders WHERE event_id = ? AND user_id = ?`, eventID, userID,
@@ -188,7 +188,7 @@ func (q *CalendarQueries) DeleteReminder(eventID, userID string) error {
 	return err
 }
 
-// GetUserReminder vrátí reminder uživatele pro daný event (nebo nil).
+// GetUserReminder returns the user's reminder for a given event (or nil).
 func (q *CalendarQueries) GetUserReminder(eventID, userID string) (*models.EventReminder, error) {
 	var r models.EventReminder
 	var reminded int
@@ -203,14 +203,14 @@ func (q *CalendarQueries) GetUserReminder(eventID, userID string) (*models.Event
 	return &r, nil
 }
 
-// DueReminder obsahuje reminder + název eventu pro notifikaci.
+// DueReminder contains a reminder + event title for notification.
 type DueReminder struct {
 	models.EventReminder
 	EventTitle string
 	StartsAt   time.Time
 }
 
-// ListDueReminders vrátí remindery které jsou splatné a ještě nebyly odeslány.
+// ListDueReminders returns reminders that are due and have not been sent yet.
 func (q *CalendarQueries) ListDueReminders(now time.Time) ([]DueReminder, error) {
 	rows, err := q.DB.Query(`
 		SELECT r.id, r.event_id, r.user_id, r.remind_at, r.reminded, e.title, e.starts_at
@@ -236,7 +236,7 @@ func (q *CalendarQueries) ListDueReminders(now time.Time) ([]DueReminder, error)
 	return reminders, nil
 }
 
-// MarkReminded označí reminder jako odeslaný.
+// MarkReminded marks a reminder as sent.
 func (q *CalendarQueries) MarkReminded(id string) error {
 	_, err := q.DB.Exec(`UPDATE event_reminders SET reminded = 1 WHERE id = ?`, id)
 	return err

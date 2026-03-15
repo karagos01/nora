@@ -39,7 +39,7 @@ func NewThreadView(a *App) *ThreadView {
 	return v
 }
 
-// Open otevře thread pro danou zprávu.
+// Open opens the thread for a given message.
 func (v *ThreadView) Open(parentID string) {
 	v.ParentID = parentID
 	v.Visible = true
@@ -67,7 +67,7 @@ func (v *ThreadView) Open(parentID string) {
 	}()
 }
 
-// Close zavře thread view.
+// Close closes the thread view.
 func (v *ThreadView) Close() {
 	v.Visible = false
 	v.ParentID = ""
@@ -75,7 +75,7 @@ func (v *ThreadView) Close() {
 	v.actions = nil
 }
 
-// AddReply přidá novou reply do threadu (z WS eventu).
+// AddReply adds a new reply to the thread (from a WS event).
 func (v *ThreadView) AddReply(msg api.Message) {
 	v.Messages = append(v.Messages, msg)
 	if len(v.actions) < len(v.Messages) {
@@ -169,7 +169,7 @@ func (v *ThreadView) layoutHeader(gtx layout.Context) layout.Dimensions {
 }
 
 func (v *ThreadView) layoutMessages(gtx layout.Context) layout.Dimensions {
-	// Zajistit dostatek action slotů
+	// Ensure enough action slots
 	if len(v.actions) < len(v.Messages) {
 		v.actions = make([]msgAction, len(v.Messages)+10)
 	}
@@ -185,7 +185,7 @@ func (v *ThreadView) layoutMessages(gtx layout.Context) layout.Dimensions {
 		}
 
 		return layout.Flex{Axis: layout.Vertical}.Layout(gtx,
-			// Parent divider (po parent zprávě)
+			// Parent divider (after parent message)
 			layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 				if !isParent {
 					return layout.Dimensions{}
@@ -355,7 +355,7 @@ func (v *ThreadView) sendReply() {
 	}()
 }
 
-// handleLinkClicks zpracuje kliknutí na linky v thread zprávách.
+// handleLinkClicks handles link clicks in thread messages.
 func (v *ThreadView) handleLinkClicks(gtx layout.Context) {
 	for i := range v.actions {
 		if i >= len(v.Messages) {

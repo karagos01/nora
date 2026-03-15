@@ -30,7 +30,7 @@ type pinListAction struct {
 }
 
 func (v *MessageView) layoutPinBar(gtx layout.Context) layout.Dimensions {
-	// Bar s poslední připnutou zprávou
+	// Bar with the latest pinned message
 	latest := v.pinnedMsgs[0]
 	author := v.app.ResolveUserName(latest.Author)
 
@@ -45,7 +45,7 @@ func (v *MessageView) layoutPinBar(gtx layout.Context) layout.Dimensions {
 
 	expanded := v.pinExpanded
 
-	// Červený obrys jen když pin ještě nebyl viděn
+	// Red outline only when pin hasn't been seen yet
 	isNew := v.pinSeenID != latest.ID
 
 	return layout.Inset{Left: unit.Dp(16), Right: unit.Dp(16), Top: unit.Dp(2), Bottom: unit.Dp(2)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
@@ -54,7 +54,7 @@ func (v *MessageView) layoutPinBar(gtx layout.Context) layout.Dimensions {
 				bounds := image.Rect(0, 0, gtx.Constraints.Max.X, gtx.Constraints.Min.Y)
 				rr := gtx.Dp(6)
 				if isNew {
-					// Červený obrys kolem dokola
+					// Red outline all around
 					borderColor := color.NRGBA{R: 200, G: 50, B: 50, A: 255}
 					bw := gtx.Dp(2)
 					paint.FillShape(gtx.Ops, borderColor, clip.RRect{
@@ -81,11 +81,11 @@ func (v *MessageView) layoutPinBar(gtx layout.Context) layout.Dimensions {
 			func(gtx layout.Context) layout.Dimensions {
 				return layout.Inset{Top: unit.Dp(6), Bottom: unit.Dp(6), Left: unit.Dp(10), Right: unit.Dp(10)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
 					return layout.Flex{Axis: layout.Vertical}.Layout(gtx,
-						// Kompaktní řádek: pin ikona + autor + preview + šipka
+						// Compact row: pin icon + author + preview + arrow
 						layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 							return v.pinBarBtn.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
 								return layout.Flex{Alignment: layout.Middle}.Layout(gtx,
-									// Pin ikona
+									// Pin icon
 									layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 										pinClr := ColorTextDim
 										if isNew {
@@ -93,7 +93,7 @@ func (v *MessageView) layoutPinBar(gtx layout.Context) layout.Dimensions {
 										}
 										return layoutIcon(gtx, IconPin, 14, pinClr)
 									}),
-									// Autor
+									// Author
 									layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 										return layout.Inset{Left: unit.Dp(6)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
 											lbl := material.Caption(v.app.Theme.Material, author)
@@ -106,7 +106,7 @@ func (v *MessageView) layoutPinBar(gtx layout.Context) layout.Dimensions {
 											return lbl.Layout(gtx)
 										})
 									}),
-									// Oříznutý preview (jen první řádek)
+									// Truncated preview (first line only)
 									layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
 										if expanded || latest.Content == "" {
 											return layout.Dimensions{}
@@ -125,7 +125,7 @@ func (v *MessageView) layoutPinBar(gtx layout.Context) layout.Dimensions {
 											return lbl.Layout(gtx)
 										})
 									}),
-									// Expand/collapse šipka
+									// Expand/collapse arrow
 									layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 										return layout.Inset{Left: unit.Dp(4)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
 											arrow := "▼"
@@ -140,7 +140,7 @@ func (v *MessageView) layoutPinBar(gtx layout.Context) layout.Dimensions {
 								)
 							})
 						}),
-						// Rozbalený obsah
+						// Expanded content
 						layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 							if !expanded {
 								return layout.Dimensions{}
@@ -179,7 +179,7 @@ func (v *MessageView) layoutPinBar(gtx layout.Context) layout.Dimensions {
 								return layout.Flex{Axis: layout.Vertical}.Layout(gtx, items...)
 							})
 						}),
-						// Akční tlačítka (jen když rozbalené)
+						// Action buttons (only when expanded)
 						layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 							if !expanded {
 								return layout.Dimensions{}
@@ -283,7 +283,7 @@ func (v *MessageView) layoutPinAttachment(gtx layout.Context, idx int, att api.A
 		}
 	}
 
-	// Soubor / video — klikatelný link
+	// File / video — clickable link
 	btn := &v.pinAttBtns[idx]
 	return btn.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
 		bg := ColorInput
@@ -331,7 +331,7 @@ func (v *MessageView) layoutPinnedMessages(gtx layout.Context) layout.Dimensions
 	gtx.Constraints.Max.Y = maxH
 	v.pinsList.Axis = layout.Vertical
 
-	// Zajistit dostatek slotů
+	// Ensure enough slots
 	for len(v.pinsListLinks) < len(v.pinnedMsgs) {
 		v.pinsListLinks = append(v.pinsListLinks, MsgLinks{})
 	}
@@ -367,7 +367,7 @@ func (v *MessageView) layoutPinnedMessages(gtx layout.Context) layout.Dimensions
 			},
 			func(gtx layout.Context) layout.Dimensions {
 				return layout.UniformInset(unit.Dp(8)).Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-					// Přeskočit první zprávu — ta je v pin baru
+					// Skip the first message — it's in the pin bar
 					listLen := len(v.pinnedMsgs) - 1
 					if listLen < 0 {
 						listLen = 0
@@ -382,7 +382,7 @@ func (v *MessageView) layoutPinnedMessages(gtx layout.Context) layout.Dimensions
 
 						return layout.Inset{Bottom: unit.Dp(6)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
 							var rows []layout.FlexChild
-							// Autor + čas
+							// Author + time
 							rows = append(rows, layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 								return layout.Flex{Alignment: layout.End}.Layout(gtx,
 									layout.Rigid(func(gtx layout.Context) layout.Dimensions {
@@ -404,13 +404,13 @@ func (v *MessageView) layoutPinnedMessages(gtx layout.Context) layout.Dimensions
 									}),
 								)
 							}))
-							// Obsah
+							// Content
 							if msg.Content != "" {
 								rows = append(rows, layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 									return layoutMessageContent(gtx, v.app.Theme, msg.Content, emojis, &v.pinsListLinks[realIdx], nil, nil, nil, &v.pinsListSels[realIdx], v.app, sURL)
 								}))
 							}
-							// Přílohy (image preview + soubory)
+							// Attachments (image preview + files)
 							for j, att := range msg.Attachments {
 								if j >= len(act.attBtns) {
 									break
@@ -525,7 +525,7 @@ func (v *MessageView) layoutPinnedMessages(gtx layout.Context) layout.Dimensions
 									})
 								}))
 							}
-							// Akční tlačítka
+							// Action buttons
 							rows = append(rows, layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 								return layout.Inset{Top: unit.Dp(2)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
 									var btns []layout.FlexChild
@@ -619,7 +619,7 @@ func (v *MessageView) layoutPinsListAttachment(gtx layout.Context, act *pinListA
 		}
 	}
 
-	// Soubor / video
+	// File / video
 	btn := &act.attBtns[idx]
 	return btn.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
 		bg := ColorInput

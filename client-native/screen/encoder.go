@@ -10,7 +10,7 @@ import (
 	"time"
 )
 
-// Encoder obaluje ffmpeg process pro H.264 kódování raw RGBA framů.
+// Encoder wraps an ffmpeg process for H.264 encoding of raw RGBA frames.
 type Encoder struct {
 	cmd    *exec.Cmd
 	stdin  io.WriteCloser
@@ -23,9 +23,9 @@ type Encoder struct {
 	once   sync.Once
 }
 
-// NewEncoder spustí ffmpeg H.264 encoder.
-// Vstup: raw RGBA frames přes stdin, výstup: H.264 Annex-B přes stdout.
-// crf: 0-51, nižší = lepší kvalita (18=výborná, 23=default). preset: ultrafast/veryfast/fast/...
+// NewEncoder starts an ffmpeg H.264 encoder.
+// Input: raw RGBA frames via stdin, output: H.264 Annex-B via stdout.
+// crf: 0-51, lower = better quality (18=excellent, 23=default). preset: ultrafast/veryfast/fast/...
 func NewEncoder(width, height, fps int, crf int, preset string) (*Encoder, error) {
 	if crf < 0 || crf > 51 {
 		crf = 20
@@ -45,8 +45,8 @@ func NewEncoder(width, height, fps int, crf int, preset string) (*Encoder, error
 		"-preset", preset,
 		"-crf", fmt.Sprintf("%d", crf),
 		"-pix_fmt", "yuv444p",
-		"-g", fmt.Sprintf("%d", fps), // keyframe každou sekundu
-		"-x264-params", "repeat-headers=1", // SPS/PPS s každým keyframem (pro mid-stream join)
+		"-g", fmt.Sprintf("%d", fps), // keyframe every second
+		"-x264-params", "repeat-headers=1", // SPS/PPS with every keyframe (for mid-stream join)
 		"-f", "h264",
 		"pipe:1",
 	)
@@ -89,8 +89,8 @@ func NewEncoder(width, height, fps int, crf int, preset string) (*Encoder, error
 	return e, nil
 }
 
-// WriteFrame pošle jeden RGBA frame do encoderu.
-// Data musí mít přesně width*height*4 bytů.
+// WriteFrame sends a single RGBA frame to the encoder.
+// Data must be exactly width*height*4 bytes.
 func (e *Encoder) WriteFrame(rgba []byte) error {
 	expected := e.width * e.height * 4
 	if len(rgba) != expected {
@@ -100,16 +100,16 @@ func (e *Encoder) WriteFrame(rgba []byte) error {
 	return err
 }
 
-// Chunks vrací channel s H.264 chunky.
+// Chunks returns a channel with H.264 chunks.
 func (e *Encoder) Chunks() <-chan []byte {
 	return e.chunks
 }
 
-// Close ukončí ffmpeg process a uvolní zdroje.
+// Close terminates the ffmpeg process and releases resources.
 func (e *Encoder) Close() {
 	e.once.Do(func() {
 		e.stdin.Close()
-		// Počkat na konec readLoop s timeoutem
+		// Wait for readLoop to finish with timeout
 		select {
 		case <-e.done:
 		case <-time.After(3 * time.Second):
@@ -121,7 +121,7 @@ func (e *Encoder) Close() {
 	})
 }
 
-// readLoop čte H.264 data z ffmpeg stdout a posílá do chunks channelu.
+// readLoop reads H.264 data from ffmpeg stdout and sends to the chunks channel.
 func (e *Encoder) readLoop() {
 	defer close(e.done)
 	defer close(e.chunks)
@@ -144,13 +144,13 @@ func (e *Encoder) readLoop() {
 	}
 }
 
-// FFmpegAvailable zkontroluje jestli je ffmpeg dostupný v PATH.
+// FFmpegAvailable checks whether ffmpeg is available in PATH.
 func FFmpegAvailable() bool {
 	_, err := exec.LookPath("ffmpeg")
 	return err == nil
 }
 
-// logStderr čte stderr z ffmpeg procesu a loguje řádky.
+// logStderr reads stderr from an ffmpeg process and logs the lines.
 func logStderr(label string, r io.Reader) {
 	scanner := bufio.NewScanner(r)
 	for scanner.Scan() {

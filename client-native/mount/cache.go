@@ -6,8 +6,8 @@ import (
 	"strings"
 )
 
-// Cache spravuje lokální souborový cache pro stažené soubory ze sdílených adresářů.
-// Struktura: ~/.nora/cache/{serverAddr}/{shareID}/{relativePath}/{fileName}
+// Cache manages local file cache for downloaded files from shared directories.
+// Structure: ~/.nora/cache/{serverAddr}/{shareID}/{relativePath}/{fileName}
 type Cache struct {
 	baseDir string // ~/.nora/cache
 }
@@ -19,14 +19,14 @@ func NewCache() *Cache {
 	}
 }
 
-// Dir vrátí kořenový adresář cache.
+// Dir returns the root cache directory.
 func (c *Cache) Dir() string {
 	return c.baseDir
 }
 
-// FilePath vrátí cestu k souboru v cache.
+// FilePath returns the path to a file in cache.
 func (c *Cache) FilePath(serverAddr, shareID, relativePath, fileName string) string {
-	// Sanitizace serverAddr — nahradit : za _
+	// Sanitize serverAddr — replace : with _
 	safe := strings.ReplaceAll(serverAddr, ":", "_")
 	safe = strings.ReplaceAll(safe, "/", "_")
 
@@ -34,7 +34,7 @@ func (c *Cache) FilePath(serverAddr, shareID, relativePath, fileName string) str
 	return filepath.Join(c.baseDir, safe, shareID, rel, fileName)
 }
 
-// Has vrátí true pokud soubor existuje v cache a má očekávanou velikost.
+// Has returns true if the file exists in cache and has the expected size.
 func (c *Cache) Has(serverAddr, shareID, relativePath, fileName string, expectedSize int64) bool {
 	path := c.FilePath(serverAddr, shareID, relativePath, fileName)
 	fi, err := os.Stat(path)
@@ -44,7 +44,7 @@ func (c *Cache) Has(serverAddr, shareID, relativePath, fileName string, expected
 	return fi.Size() == expectedSize
 }
 
-// EnsureDir zajistí existenci adresáře pro soubor v cache.
+// EnsureDir ensures the directory for a file exists in cache.
 func (c *Cache) EnsureDir(serverAddr, shareID, relativePath string) error {
 	safe := strings.ReplaceAll(serverAddr, ":", "_")
 	safe = strings.ReplaceAll(safe, "/", "_")
@@ -53,26 +53,26 @@ func (c *Cache) EnsureDir(serverAddr, shareID, relativePath string) error {
 	return os.MkdirAll(dir, 0700)
 }
 
-// Open otevře soubor z cache pro čtení.
+// Open opens a file from cache for reading.
 func (c *Cache) Open(serverAddr, shareID, relativePath, fileName string) (*os.File, error) {
 	path := c.FilePath(serverAddr, shareID, relativePath, fileName)
 	return os.Open(path)
 }
 
-// ShareDir vrátí cestu ke kořenovému adresáři konkrétního share v cache.
+// ShareDir returns the path to the root directory of a specific share in cache.
 func (c *Cache) ShareDir(serverAddr, shareID string) string {
 	safe := strings.ReplaceAll(serverAddr, ":", "_")
 	safe = strings.ReplaceAll(safe, "/", "_")
 	return filepath.Join(c.baseDir, safe, shareID)
 }
 
-// Remove smaže soubor z cache.
+// Remove deletes a file from cache.
 func (c *Cache) Remove(serverAddr, shareID, relativePath, fileName string) error {
 	path := c.FilePath(serverAddr, shareID, relativePath, fileName)
 	return os.Remove(path)
 }
 
-// RemoveShare smaže celý cache pro daný share.
+// RemoveShare deletes the entire cache for a given share.
 func (c *Cache) RemoveShare(serverAddr, shareID string) error {
 	return os.RemoveAll(c.ShareDir(serverAddr, shareID))
 }

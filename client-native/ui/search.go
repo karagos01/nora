@@ -103,13 +103,13 @@ func (sv *SearchView) Layout(gtx layout.Context) layout.Dimensions {
 			// Handle clicks
 			for i, ct := range sv.results {
 				if sv.resultBtns[i].Clicked(gtx) {
-					// Otevřít UserPopup pro tento kontakt
+					// Open UserPopup for this contact
 					pubKey := ct.PublicKey
 					name := ct.CustomName
 					if name == "" {
 						name = ct.AutoName
 					}
-					// Najít user ID na aktivním serveru
+					// Find user ID on the active server
 					userID := ""
 					if conn := sv.app.Conn(); conn != nil {
 						sv.app.mu.RLock()
@@ -150,7 +150,7 @@ func (sv *SearchView) doSearch() {
 		return
 	}
 
-	// Parsovat name#discriminant
+	// Parse name#discriminant
 	if idx := strings.LastIndex(query, "#"); idx > 0 {
 		name := query[:idx]
 		disc := query[idx+1:]

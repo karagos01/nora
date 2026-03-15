@@ -44,7 +44,7 @@ func (v *MessageView) layoutSearchBar(gtx layout.Context) layout.Dimensions {
 	})
 }
 
-// layoutSearchResults vykreslí search výsledky místo normálních zpráv.
+// layoutSearchResults renders search results instead of normal messages.
 func (v *MessageView) layoutSearchResults(gtx layout.Context, userID string, myPerms int64, usernames map[string]bool, usernameToID map[string]string, myUsername string) layout.Dimensions {
 	results := v.searchResults
 	if len(results) == 0 && !v.searchLoading {
@@ -60,7 +60,7 @@ func (v *MessageView) layoutSearchResults(gtx layout.Context, userID string, myP
 
 	conn := v.app.Conn()
 
-	// Spočítat počet items (results + optional "Load more")
+	// Count number of items (results + optional "Load more")
 	hasMore := len(results) >= 50 && len(results) == v.searchOffset
 	itemCount := len(results)
 	if hasMore {
@@ -83,14 +83,14 @@ func (v *MessageView) layoutSearchResults(gtx layout.Context, userID string, myP
 		msg := results[i]
 		act := &v.searchActions[i]
 
-		// Klik na jméno/avatar → UserPopup
+		// Click on name/avatar → UserPopup
 		if act.nameBtn.Clicked(gtx) || act.avatarBtn.Clicked(gtx) {
 			if msg.Author != nil {
 				v.app.UserPopup.Show(msg.Author.ID, msg.Author.Username)
 			}
 		}
 
-		// Datum/čas a autor
+		// Date/time and author
 		authorName := "Unknown"
 		authorColor := ColorText
 		if msg.Author != nil {
@@ -103,7 +103,7 @@ func (v *MessageView) layoutSearchResults(gtx layout.Context, userID string, myP
 		}
 		timeStr := FormatDateTime(msg.CreatedAt)
 
-		// Kanál info
+		// Channel info
 		channelLabel := ""
 		if conn != nil {
 			for _, ch := range conn.Channels {
@@ -165,7 +165,7 @@ func (v *MessageView) layoutSearchResults(gtx layout.Context, userID string, myP
 	})
 }
 
-// doSearch provede vyhledávání na serveru.
+// doSearch performs a search on the server.
 func (v *MessageView) doSearch(query string, offset int, more bool) {
 	conn := v.app.Conn()
 	if conn == nil {

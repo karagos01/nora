@@ -7,12 +7,12 @@ import (
 	"strings"
 )
 
-// PresetEntry — metadata presetu pro API
+// PresetEntry — preset metadata for API
 type PresetEntry struct {
 	Name string `json:"name"`
 }
 
-// SeedPresets vytvoří výchozí presety pokud adresář neexistuje nebo je prázdný
+// SeedPresets creates default presets if the directory doesn't exist or is empty
 func SeedPresets(presetsDir string) error {
 	os.MkdirAll(presetsDir, 0755)
 
@@ -30,7 +30,7 @@ func SeedPresets(presetsDir string) error {
 	return nil
 }
 
-// ListPresets vrátí dostupné presety z adresáře
+// ListPresets returns available presets from the directory
 func ListPresets(presetsDir string) []PresetEntry {
 	entries, err := os.ReadDir(presetsDir)
 	if err != nil {
@@ -51,7 +51,7 @@ func ListPresets(presetsDir string) []PresetEntry {
 	return presets
 }
 
-// ReadPreset načte obsah preset souboru
+// ReadPreset reads the content of a preset file
 func ReadPreset(presetsDir, name string) (string, error) {
 	path := filepath.Join(presetsDir, name+".toml")
 	data, err := os.ReadFile(path)
@@ -61,7 +61,7 @@ func ReadPreset(presetsDir, name string) (string, error) {
 	return string(data), nil
 }
 
-// --- Výchozí preset obsahy ---
+// --- Default preset contents ---
 
 var defaultPresets = map[string]string{
 	"minecraft": presetMinecraft,

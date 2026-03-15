@@ -17,7 +17,7 @@ import (
 
 const lanHelperURL = "http://127.0.0.1:9023"
 
-// LANHelper poskytuje WG logiku pro LAN kanály (bez UI).
+// LANHelper provides WireGuard logic for LAN channels (no UI).
 type LANHelper struct {
 	app         *App
 	helperOK    bool
@@ -37,7 +37,7 @@ func (h *LANHelper) IsOK() bool {
 	return h.helperOK
 }
 
-// CheckHelper periodicky kontroluje dostupnost WG helperu (rate-limited 10s).
+// CheckHelper periodically checks WG helper availability (rate-limited 10s).
 func (h *LANHelper) CheckHelper() {
 	if time.Since(h.lastCheck) < 10*time.Second {
 		return
@@ -57,7 +57,7 @@ func (h *LANHelper) CheckHelper() {
 	}()
 }
 
-// IsMember zkontroluje zda je aktuální uživatel členem LAN party daného kanálu.
+// IsMember checks whether the current user is a member of the given channel's LAN party.
 func (h *LANHelper) IsMember(conn *ServerConnection, channelID string) bool {
 	if conn == nil {
 		return false
@@ -71,7 +71,7 @@ func (h *LANHelper) IsMember(conn *ServerConnection, channelID string) bool {
 	return false
 }
 
-// ToggleLAN přepne membership — join pokud nejsem člen, leave pokud jsem.
+// ToggleLAN toggles membership — join if not a member, leave if already a member.
 func (h *LANHelper) ToggleLAN(conn *ServerConnection, channelID string) {
 	if conn == nil {
 		return
@@ -87,7 +87,7 @@ func (h *LANHelper) ToggleLAN(conn *ServerConnection, channelID string) {
 	}
 }
 
-// JoinLAN provede plný join flow: check helper → WG keypair → API join → helper /up.
+// JoinLAN performs the full join flow: check helper -> WG keypair -> API join -> helper /up.
 func (h *LANHelper) JoinLAN(conn *ServerConnection, channelID string) {
 	resp, err := h.helperGet(lanHelperURL + "/status")
 	if err != nil {
@@ -132,13 +132,13 @@ func (h *LANHelper) JoinLAN(conn *ServerConnection, channelID string) {
 	h.app.Window.Invalidate()
 }
 
-// LeaveLAN provede leave flow: API leave → helper /down.
+// LeaveLAN performs the leave flow: API leave -> helper /down.
 func (h *LANHelper) LeaveLAN(conn *ServerConnection, channelID string) {
 	if err := conn.Client.LeaveLANParty(channelID); err != nil {
 		log.Printf("LeaveLANParty: %v", err)
 		return
 	}
-	// Zavolat helper /down pro odpojení WG tunelu
+	// Call helper /down to disconnect the WG tunnel
 	downResp, err := h.helperPost(lanHelperURL+"/down", "application/json", bytes.NewReader([]byte("{}")))
 	if err != nil {
 		log.Printf("Helper /down: %v", err)

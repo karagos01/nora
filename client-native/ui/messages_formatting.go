@@ -82,7 +82,7 @@ func (v *MessageView) layoutFmtBtn(gtx layout.Context, btn *widget.Clickable, la
 	})
 }
 
-// wrapEditorSelection — wrap vybraný text prefixem/suffixem, nebo vlož markers na kurzor
+// wrapEditorSelection wraps selected text with prefix/suffix, or inserts markers at cursor
 func (v *MessageView) wrapEditorSelection(prefix, suffix string) {
 	start, end := v.editor.Selection()
 	if start > end {
@@ -92,24 +92,24 @@ func (v *MessageView) wrapEditorSelection(prefix, suffix string) {
 	runes := []rune(txt)
 
 	if start == end {
-		// Žádný výběr — vložit markers a kurzor mezi ně
+		// No selection — insert markers and place cursor between them
 		insert := prefix + suffix
 		v.editor.SetText(string(runes[:start]) + insert + string(runes[start:]))
-		// Nastavit kurzor mezi prefix a suffix
+		// Set cursor between prefix and suffix
 		newPos := start + len([]rune(prefix))
 		v.editor.SetCaret(newPos, newPos)
 	} else {
-		// Wrap vybraný text
+		// Wrap selected text
 		selected := string(runes[start:end])
 		wrapped := prefix + selected + suffix
 		v.editor.SetText(string(runes[:start]) + wrapped + string(runes[end:]))
-		// Vybrat celý wrapped text
+		// Select entire wrapped text
 		newEnd := start + len([]rune(wrapped))
 		v.editor.SetCaret(newEnd, newEnd)
 	}
 }
 
-// layoutEditedLabel vykreslí klikatelný "(edited)" label.
+// layoutEditedLabel renders a clickable "(edited)" label.
 func (v *MessageView) layoutEditedLabel(gtx layout.Context, idx int) layout.Dimensions {
 	return v.actions[idx].editHistoryBtn.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
 		lbl := material.Caption(v.app.Theme.Material, " (edited)")
@@ -118,23 +118,23 @@ func (v *MessageView) layoutEditedLabel(gtx layout.Context, idx int) layout.Dime
 	})
 }
 
-// layoutEditHistoryOverlay vykreslí overlay s historií editací zprávy.
+// layoutEditHistoryOverlay renders an overlay with the message edit history.
 func (v *MessageView) layoutEditHistoryOverlay(gtx layout.Context) layout.Dimensions {
 	if !v.showEditHistory {
 		return layout.Dimensions{}
 	}
 
-	// Zavřít overlay klikem na tlačítko
+	// Close overlay by clicking the button
 	if v.editHistoryClose.Clicked(gtx) {
 		v.showEditHistory = false
 		v.editHistory = nil
 		v.editHistoryMsgID = ""
 	}
 
-	// Poloprůhledné pozadí
+	// Semi-transparent background
 	paint.FillShape(gtx.Ops, color.NRGBA{A: 180}, clip.Rect{Max: gtx.Constraints.Max}.Op())
 
-	// Panel uprostřed
+	// Centered panel
 	panelW := gtx.Constraints.Max.X * 2 / 3
 	if panelW < gtx.Dp(unit.Dp(400)) {
 		panelW = gtx.Constraints.Max.X - gtx.Dp(unit.Dp(40))
@@ -173,7 +173,7 @@ func (v *MessageView) layoutEditHistoryOverlay(gtx layout.Context) layout.Dimens
 				)
 			})
 		}),
-		// Seznam editací
+		// List of edits
 		layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
 			if len(v.editHistory) == 0 {
 				return layout.Inset{Left: unit.Dp(16), Top: unit.Dp(8)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {

@@ -12,8 +12,8 @@ import (
 	"gioui.org/widget/material"
 )
 
-// HandleDroppedFiles zpracuje soubory přetažené z OS file manageru do okna.
-// Routuje do příslušného upload flow dle aktivního ViewMode.
+// HandleDroppedFiles processes files dragged from the OS file manager into the window.
+// Routes to the appropriate upload flow based on the active ViewMode.
 func (a *App) HandleDroppedFiles(paths []string) {
 	if len(paths) == 0 {
 		return
@@ -49,24 +49,24 @@ func (a *App) HandleDroppedFiles(paths []string) {
 	a.Window.Invalidate()
 }
 
-// layoutDropOverlay zobrazí poloprůhledný overlay s ikonou a textem při drag-over.
+// layoutDropOverlay displays a semi-transparent overlay with an icon and text during drag-over.
 func (a *App) layoutDropOverlay(gtx layout.Context) layout.Dimensions {
-	// Poloprůhledné pozadí
+	// Semi-transparent background
 	paint.FillShape(gtx.Ops, color.NRGBA{R: 30, G: 30, B: 40, A: 200}, clip.Rect{Max: gtx.Constraints.Max}.Op())
 
-	// Ohraničení (border box s přerušovanou čárou — zjednodušeno jako plný rámeček)
+	// Border (dashed border box — simplified as a solid frame)
 	margin := gtx.Dp(24)
 	inner := image.Rect(margin, margin, gtx.Constraints.Max.X-margin, gtx.Constraints.Max.Y-margin)
 	border := gtx.Dp(2)
 
-	// Horní + dolní okraj
+	// Top + bottom edge
 	paint.FillShape(gtx.Ops, ColorAccent, clip.Rect{Min: inner.Min, Max: image.Pt(inner.Max.X, inner.Min.Y+border)}.Op())
 	paint.FillShape(gtx.Ops, ColorAccent, clip.Rect{Min: image.Pt(inner.Min.X, inner.Max.Y-border), Max: inner.Max}.Op())
-	// Levý + pravý okraj
+	// Left + right edge
 	paint.FillShape(gtx.Ops, ColorAccent, clip.Rect{Min: inner.Min, Max: image.Pt(inner.Min.X+border, inner.Max.Y)}.Op())
 	paint.FillShape(gtx.Ops, ColorAccent, clip.Rect{Min: image.Pt(inner.Max.X-border, inner.Min.Y), Max: inner.Max}.Op())
 
-	// Text uprostřed
+	// Centered text
 	return layout.Center.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
 		return layout.Flex{Axis: layout.Vertical, Alignment: layout.Middle}.Layout(gtx,
 			layout.Rigid(func(gtx layout.Context) layout.Dimensions {

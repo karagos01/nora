@@ -40,13 +40,13 @@ func TestVerifySignature(t *testing.T) {
 		t.Fatal("valid signature should pass")
 	}
 
-	// Špatný podpis
+	// Bad signature
 	sig[0] ^= 0xFF
 	if VerifySignature(pub, nonceBytes, sig) {
 		t.Fatal("corrupted signature should fail")
 	}
 
-	// Špatná délka klíče
+	// Bad key length
 	if VerifySignature([]byte("short"), nonceBytes, sig) {
 		t.Fatal("short key should fail")
 	}
@@ -131,7 +131,7 @@ func TestJWTInvalidToken(t *testing.T) {
 
 func TestJWTRejectsNonHMAC(t *testing.T) {
 	svc := NewJWTService("test-secret", 15*time.Minute)
-	// Token s "none" algoritmem by neměl projít
+	// Token with "none" algorithm should not pass
 	_, err := svc.Validate("eyJhbGciOiJub25lIiwidHlwIjoiSldUIn0.eyJ1aWQiOiJ0ZXN0IiwidXNyIjoiaGFjayJ9.")
 	if err == nil {
 		t.Fatal("none algorithm should be rejected")

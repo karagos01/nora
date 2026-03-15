@@ -33,9 +33,18 @@ func (q *InviteQueries) GetByCode(code string) (*models.Invite, error) {
 	return inv, nil
 }
 
-func (q *InviteQueries) IncrementUses(id string) error {
-	_, err := q.DB.Exec("UPDATE invites SET uses = uses + 1 WHERE id = ?", id)
-	return err
+// IncrementUses atomically increments uses only if max_uses is not reached.
+// Returns true if the increment was applied, false if the invite is fully used.
+func (q *InviteQueries) IncrementUses(id string) (bool, error) {
+	res, err := q.DB.Exec(
+		"UPDATE invites SET uses = uses + 1 WHERE id = ? AND (max_uses = 0 OR uses < max_uses)",
+		id,
+	)
+	if err != nil {
+		return false, err
+	}
+	n, _ := res.RowsAffected()
+	return n > 0, nil
 }
 
 func (q *InviteQueries) List() ([]models.Invite, error) {

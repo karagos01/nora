@@ -24,7 +24,7 @@ type chanCatChild struct {
 	name      string
 	hexColor  string
 	channels  []int
-	widgetIdx int // index do catHeaderBtns etc.
+	widgetIdx int // index into catHeaderBtns etc.
 }
 
 type chanCatGroup struct {
@@ -41,7 +41,7 @@ type ChannelView struct {
 	chanDelBtns  []widget.Clickable
 	chanEditBtns []widget.Clickable
 	chanDrags    []gesture.Drag
-	chanRightTags []bool // pointer event tags pro right-click na kanálu
+	chanRightTags []bool // pointer event tags for right-click on channel
 	streamBtns      map[string]*widget.Clickable // per-user stream watch button
 	voiceUserBtns   map[string]*widget.Clickable // per-user click → UserPopup
 	subChannelBtns  map[string]*widget.Clickable // per sub-channel click → voice join
@@ -78,7 +78,7 @@ type ChannelView struct {
 	// Lobby sub-channel mapping (rebuilt every frame)
 	lobbyChildren map[string][]int // lobbyID → indices of child channels
 
-	// Pozice uncategorized kanálů mezi kategoriemi (channelID → index v renderedCatIDs, -1 = před první)
+	// Position of uncategorized channels among categories (channelID → index in renderedCatIDs, -1 = before first)
 	uncatPositions map[string]int
 
 	// Category collapse state (in-memory only, resets on restart)
@@ -88,51 +88,45 @@ type ChannelView struct {
 	catHeaderBtns []widget.Clickable // collapse toggle
 	catEditBtns2  []widget.Clickable // enter edit mode (in header)
 	catDelBtns2   []widget.Clickable // delete category (in header)
-	catSaveBtns2  []widget.Clickable // save edit
-	catCancelBtns []widget.Clickable // cancel edit
 
-	editingCatID   string       // ID kategorie v edit módu ("" = žádná)
-	catNameEditor  widget.Editor // editor pro název
-	catColorEditor widget.Editor // editor pro barvu
-
-	// Voice user drag-and-drop (přesun uživatele mezi voice kanály)
+	// Voice user drag-and-drop (moving user between voice channels)
 	voiceDrags          map[string]*gesture.Drag
 	voiceDragging       bool
-	voiceDragUserID     string   // ID přesouvaného uživatele
-	voiceDragFromChanID string   // zdrojový voice kanál
+	voiceDragUserID     string   // ID of user being moved
+	voiceDragFromChanID string   // source voice channel
 	voiceDragStartY     float32
 	voiceDragOffsetY    float32
-	voiceDragTargetChan string   // ID cílového voice kanálu ("" = žádný)
-	voiceChanIDs        []string // voice kanály v pořadí zobrazení (rebuild každý frame)
+	voiceDragTargetChan string   // target voice channel ID ("" = none)
+	voiceChanIDs        []string // voice channels in display order (rebuilt every frame)
 
 	// Category drag-and-drop reorder + reparent
 	catDrags          []gesture.Drag
 	catDragging       bool
-	catDragFromIdx    int    // index v renderedCatIDs (top-level), nebo -1 pro child
+	catDragFromIdx    int    // index in renderedCatIDs (top-level), or -1 for child
 	catDragFromID     string // category ID
-	catDragFromParent string // parent ID (prázdný = top-level)
-	catDragStartY     float32 // ev.Position.Y při Press
-	catDragOffsetY    float32 // delta kurzoru od startu
-	catDragTargetIdx  int    // cílový index v renderedCatIDs (-1 = žádný)
-	catDragTargetID   string // cílová kategorie ID pro adopt ("" = reorder/unadopt)
-	catDragAction     string // "reorder" | "adopt" | "child_reorder" | "" (žádný)
-	catDragChildFrom  int    // zdrojový index mezi siblings
-	catDragChildTo    int    // cílový index mezi siblings
-	catDragSiblings   []string // sibling IDs v pořadí
-	renderedCatIDs    []string // uložené pro D&D
-	catHeights        []int    // výška každé kategorie v px
-	allCatInfos       []catDragInfo // flat list všech kategorií pro D&D
-	renderItemHeights []int // výška každého render itemu (kategorie + uncategorized bloky)
-	catRenderIdx      []int // renderedCatIDs[i] → index v renderItems
+	catDragFromParent string // parent ID (empty = top-level)
+	catDragStartY     float32 // ev.Position.Y on Press
+	catDragOffsetY    float32 // cursor delta from start
+	catDragTargetIdx  int    // target index in renderedCatIDs (-1 = none)
+	catDragTargetID   string // target category ID for adopt ("" = reorder/unadopt)
+	catDragAction     string // "reorder" | "adopt" | "child_reorder" | "" (none)
+	catDragChildFrom  int    // source index among siblings
+	catDragChildTo    int    // target index among siblings
+	catDragSiblings   []string // sibling IDs in order
+	renderedCatIDs    []string // saved for D&D
+	catHeights        []int    // height of each category in px
+	allCatInfos       []catDragInfo // flat list of all categories for D&D
+	renderItemHeights []int // height of each render item (categories + uncategorized blocks)
+	catRenderIdx      []int // renderedCatIDs[i] → index in renderItems
 
 }
 
-// catDragInfo — info o kategorii pro D&D targeting
+// catDragInfo — info about a category for D&D targeting
 type catDragInfo struct {
 	id         string
 	parentID   string // "" = top-level
 	hasChildren bool
-	dragIdx    int    // index v catDrags
+	dragIdx    int    // index in catDrags
 }
 
 func NewChannelView(a *App) *ChannelView {
@@ -142,8 +136,6 @@ func NewChannelView(a *App) *ChannelView {
 	v.dragFromIdx = -1
 	v.collapsedCats = make(map[string]bool)
 	v.uncatPositions = make(map[string]int)
-	v.catNameEditor.SingleLine = true
-	v.catColorEditor.SingleLine = true
 	v.catDragTargetIdx = -1
 	v.catDragFromIdx = -1
 	v.streamBtns = make(map[string]*widget.Clickable)
@@ -221,12 +213,6 @@ func (v *ChannelView) Layout(gtx layout.Context) layout.Dimensions {
 	if len(v.catDelBtns2) < catCount {
 		v.catDelBtns2 = make([]widget.Clickable, catCount+5)
 	}
-	if len(v.catSaveBtns2) < catCount {
-		v.catSaveBtns2 = make([]widget.Clickable, catCount+5)
-	}
-	if len(v.catCancelBtns) < catCount {
-		v.catCancelBtns = make([]widget.Clickable, catCount+5)
-	}
 	if len(v.catDrags) < catCount {
 		v.catDrags = make([]gesture.Drag, catCount+5)
 	}
@@ -290,7 +276,7 @@ func (v *ChannelView) Layout(gtx layout.Context) layout.Dimensions {
 		}
 	}
 
-	// Process category drag events (všechny — top-level i children)
+	// Process category drag events (all — top-level and children)
 	for i := 0; i < catCount && i < len(v.catDrags); i++ {
 		for {
 			ev, ok := v.catDrags[i].Update(gtx.Metric, gtx.Source, gesture.Vertical)
@@ -303,12 +289,12 @@ func (v *ChannelView) Layout(gtx layout.Context) layout.Dimensions {
 				v.catDragFromIdx = -1
 				v.catDragFromID = ""
 				v.catDragFromParent = ""
-				// Najít info o kategorii podle drag indexu
+				// Find category info by drag index
 				for _, ci := range v.allCatInfos {
 					if ci.dragIdx == i {
 						v.catDragFromID = ci.id
 						v.catDragFromParent = ci.parentID
-						// Najít index v renderedCatIDs (jen pro top-level)
+						// Find index in renderedCatIDs (only for top-level)
 						if ci.parentID == "" {
 							for ri, rid := range v.renderedCatIDs {
 								if rid == ci.id {
@@ -337,7 +323,7 @@ func (v *ChannelView) Layout(gtx layout.Context) layout.Dimensions {
 		}
 	}
 
-	// Process voice user drag events (přesun mezi voice kanály)
+	// Process voice user drag events (moving between voice channels)
 	for uid, drag := range v.voiceDrags {
 		for {
 			ev, ok := drag.Update(gtx.Metric, gtx.Source, gesture.Vertical)
@@ -351,7 +337,7 @@ func (v *ChannelView) Layout(gtx layout.Context) layout.Dimensions {
 				v.voiceDragStartY = ev.Position.Y
 				v.voiceDragOffsetY = 0
 				v.voiceDragTargetChan = ""
-				// Najít zdrojový voice kanál
+				// Find source voice channel
 				v.voiceDragFromChanID = ""
 				if c := v.app.Conn(); c != nil {
 					v.app.mu.RLock()
@@ -388,7 +374,7 @@ func (v *ChannelView) Layout(gtx layout.Context) layout.Dimensions {
 				c.Call.HangupCall()
 			}
 			c.Voice.JoinWithOptions(lobbyID, name, pw)
-			// Uložit do lobby cache
+			// Save to lobby cache
 			go store.UpdateLobbyPrefs(v.app.PublicKey, c.URL, lobbyID, store.LobbyPrefs{
 				LastName:     name,
 				LastPassword: pw,
@@ -422,8 +408,8 @@ func (v *ChannelView) Layout(gtx layout.Context) layout.Dimensions {
 	}
 
 	// Handle category header clicks (collapse, edit, delete, save, cancel)
-	// Clicked() volá Update() → aktualizuje hover stav. Proto nejdříve zpracovat kliky.
-	// Iterujeme přes ALL kategorie (top-level + children) s unikátními widget indexy
+	// Clicked() calls Update() → updates hover state. Therefore process clicks first.
+	// Iterate over ALL categories (top-level + children) with unique widget indices
 	type catInfo struct {
 		id    string
 		name  string
@@ -441,59 +427,26 @@ func (v *ChannelView) Layout(gtx layout.Context) layout.Dimensions {
 			break
 		}
 
-		// Zpracovat eventy (aktualizuje hover stav)
+		// Process events (updates hover state)
 		headerClicked := v.catHeaderBtns[i].Clicked(gtx)
 		editClicked := v.catEditBtns2[i].Clicked(gtx)
 		deleteClicked := v.catDelBtns2[i].Clicked(gtx)
-		saveClicked := v.catSaveBtns2[i].Clicked(gtx)
-		cancelClicked := v.catCancelBtns[i].Clicked(gtx)
 
-		// Hover stav (teď aktuální)
+		// Hover state (now current)
 		catHovered := v.catHeaderBtns[i].Hovered() ||
 			v.catEditBtns2[i].Hovered() || v.catDelBtns2[i].Hovered()
 
-		// Collapse toggle
-		if headerClicked && v.editingCatID != cat.id {
+		// Collapse toggle (skip if edit or delete was clicked)
+		if headerClicked && !editClicked && !deleteClicked {
 			v.collapsedCats[cat.id] = !v.collapsedCats[cat.id]
 		}
 
-		// Edit button (jen při hoveru)
+		// Edit button — open popup dialog
 		if editClicked && catHovered {
-			v.editingCatID = cat.id
-			v.catNameEditor.SetText(cat.name)
-			v.catColorEditor.SetText(cat.color)
+			v.app.CatEditDlg.Show(cat.id, cat.name, cat.color)
 		}
 
-		// Cancel button
-		if cancelClicked {
-			v.editingCatID = ""
-		}
-
-		// Save button
-		if saveClicked {
-			catID := cat.id
-			newName := v.catNameEditor.Text()
-			newColor := v.catColorEditor.Text()
-			if newName == "" {
-				newName = cat.name
-			}
-			if newColor == "" {
-				newColor = cat.color
-			}
-			v.editingCatID = ""
-			go func() {
-				if c := v.app.Conn(); c != nil {
-					if err := c.Client.UpdateCategory(catID, newName, newColor); err != nil {
-						log.Printf("UpdateCategory: %v", err)
-						return
-					}
-					// Full refresh přes WS event
-					v.app.Window.Invalidate()
-				}
-			}()
-		}
-
-		// Delete button (jen při hoveru a pokud nemá kanály)
+		// Delete button (only on hover and if category has no channels)
 		if deleteClicked && catHovered {
 			catID := cat.id
 			hasChannels := false
@@ -510,7 +463,7 @@ func (v *ChannelView) Layout(gtx layout.Context) layout.Dimensions {
 							log.Printf("DeleteCategory: %v", err)
 							return
 						}
-						// Full refresh přes WS event
+						// Full refresh via WS event
 						v.app.Window.Invalidate()
 					}
 				}()
@@ -519,7 +472,7 @@ func (v *ChannelView) Layout(gtx layout.Context) layout.Dimensions {
 	}
 
 	catMap := make(map[string]*chanCatGroup)
-	childCatMap := make(map[string]*chanCatChild) // child catID → chanCatChild (pro přiřazení kanálů)
+	childCatMap := make(map[string]*chanCatChild) // child catID → chanCatChild (for channel assignment)
 	var uncategorized []int
 	var orderedCats []string
 
@@ -531,26 +484,26 @@ func (v *ChannelView) Layout(gtx layout.Context) layout.Dimensions {
 		}
 		catMap[cat.ID] = g
 		orderedCats = append(orderedCats, cat.ID)
-		// Uložit child reference
+		// Save child reference
 		for ci := range g.children {
 			childCatMap[g.children[ci].id] = &g.children[ci]
 		}
 	}
 
-	// Seskupit sub-kanály (ParentID != nil) pod rodičovský lobby kanál
+	// Group sub-channels (ParentID != nil) under parent lobby channel
 	v.lobbyChildren = make(map[string][]int) // lobbyID → []channel indices
 	for i, ch := range channels {
 		if ch.ParentID != nil && *ch.ParentID != "" {
 			v.lobbyChildren[*ch.ParentID] = append(v.lobbyChildren[*ch.ParentID], i)
-			continue // sub-kanály nejsou v hlavním seznamu
+			continue // sub-channels are not in the main list
 		}
 		if ch.CategoryID != nil && *ch.CategoryID != "" {
-			// Zkusit top-level
+			// Try top-level
 			if g, ok := catMap[*ch.CategoryID]; ok {
 				g.channels = append(g.channels, i)
 				continue
 			}
-			// Zkusit child
+			// Try child
 			if child, ok := childCatMap[*ch.CategoryID]; ok {
 				child.channels = append(child.channels, i)
 				continue
@@ -559,7 +512,7 @@ func (v *ChannelView) Layout(gtx layout.Context) layout.Dimensions {
 		uncategorized = append(uncategorized, i)
 	}
 
-	// Mapování cat ID → widget index (unikátní pro top-level i children)
+	// Mapping cat ID → widget index (unique for both top-level and children)
 	catIdxMap := make(map[string]int, catCount)
 	{
 		idx := 0
@@ -571,7 +524,7 @@ func (v *ChannelView) Layout(gtx layout.Context) layout.Dimensions {
 				idx++
 			}
 		}
-		// Nastavit widgetIdx na chanCatChild v catMap
+		// Set widgetIdx on chanCatChild in catMap
 		for _, g := range catMap {
 			for ci := range g.children {
 				if wi, ok := catIdxMap[g.children[ci].id]; ok {
@@ -588,16 +541,16 @@ func (v *ChannelView) Layout(gtx layout.Context) layout.Dimensions {
 		}
 	}
 
-	// Rozdělit uncategorized kanály do slotů mezi kategoriemi
-	// uncatSlots[-1] = před první kategorií, uncatSlots[i] = za renderedCatIDs[i]
+	// Split uncategorized channels into slots between categories
+	// uncatSlots[-1] = before first category, uncatSlots[i] = after renderedCatIDs[i]
 	uncatSlots := make(map[int][]int)
 	for _, chIdx := range uncategorized {
 		chID := channels[chIdx].ID
 		if pos, ok := v.uncatPositions[chID]; ok && pos >= -1 && pos < len(renderedCatIDs) {
-			// Uživatel explicitně umístil kanál na tuto pozici (gap drop)
+			// User explicitly placed channel at this position (gap drop)
 			uncatSlots[pos] = append(uncatSlots[pos], chIdx)
 		} else {
-			// Default: za poslední kategorií
+			// Default: after last category
 			slot := len(renderedCatIDs) - 1
 			if len(renderedCatIDs) == 0 {
 				slot = -1
@@ -606,12 +559,12 @@ func (v *ChannelView) Layout(gtx layout.Context) layout.Dimensions {
 		}
 	}
 
-	// Sestavit renderItems: prokládání kategorií a uncategorized bloků
+	// Build renderItems: interleaving categories and uncategorized blocks
 	type chanRenderItem struct {
 		isCat  bool
 		catID  string
 		catIdx int   // index v renderedCatIDs
-		chans  []int // pro uncategorized bloky
+		chans  []int // for uncategorized blocks
 	}
 	var renderItems []chanRenderItem
 	v.catRenderIdx = v.catRenderIdx[:0]
@@ -641,13 +594,13 @@ func (v *ChannelView) Layout(gtx layout.Context) layout.Dimensions {
 	for k := range v.rootGapSentinels {
 		delete(v.rootGapSentinels, k)
 	}
-	// Gap sentinel před první kategorií (pro drop nahoru)
+	// Gap sentinel before first category (for drop above)
 	if len(renderedCatIDs) > 0 {
 		sentinel := -(len(v.emptyCatIDs) + 1)
 		v.emptyCatIDs = append(v.emptyCatIDs, "") // "" = gap
 		v.visualOrder = append(v.visualOrder, sentinel)
 	}
-	// Uncategorized před první kategorií
+	// Uncategorized before first category
 	if chans := uncatSlots[-1]; len(chans) > 0 {
 		v.visualOrder = append(v.visualOrder, chans...)
 	}
@@ -709,20 +662,20 @@ func (v *ChannelView) Layout(gtx layout.Context) layout.Dimensions {
 			v.emptyCatIDs = append(v.emptyCatIDs, catID)
 			v.visualOrder = append(v.visualOrder, sentinel)
 		}
-		// Gap sentinel za kategorií
+		// Gap sentinel after category
 		sentinel := -(len(v.emptyCatIDs) + 1)
 		v.emptyCatIDs = append(v.emptyCatIDs, "") // "" = gap
 		v.visualOrder = append(v.visualOrder, sentinel)
-		// Uncategorized kanály za touto kategorií
+		// Uncategorized channels after this category
 		if chans := uncatSlots[ci]; len(chans) > 0 {
 			v.visualOrder = append(v.visualOrder, chans...)
 		}
 	}
 
-	// Uložit renderedCatIDs pro category D&D
+	// Save renderedCatIDs for category D&D
 	v.renderedCatIDs = renderedCatIDs
 
-	// Sestavit flat list info o všech kategoriích (pro cat D&D targeting)
+	// Build flat list of info about all categories (for cat D&D targeting)
 	v.allCatInfos = v.allCatInfos[:0]
 	for _, cat := range categories {
 		di := catIdxMap[cat.ID]
@@ -743,7 +696,7 @@ func (v *ChannelView) Layout(gtx layout.Context) layout.Dimensions {
 		}
 	}
 
-	// Sestavit seznam voice kanálů v pořadí zobrazení (pro voice user drag)
+	// Build list of voice channels in display order (for voice user drag)
 	v.voiceChanIDs = v.voiceChanIDs[:0]
 	for _, vi := range v.visualOrder {
 		if vi >= 0 && vi < len(channels) && channels[vi].Type == "voice" {
@@ -781,7 +734,7 @@ func (v *ChannelView) Layout(gtx layout.Context) layout.Dimensions {
 						)
 					}),
 					layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-						// Zobrazit mark-read jen pokud jsou unread
+						// Show mark-read only if there are unreads
 						v.app.mu.RLock()
 						hasUnread := len(conn.UnreadCount) > 0 || len(conn.UnreadDMCount) > 0 || len(conn.UnreadGroups) > 0
 						v.app.mu.RUnlock()
@@ -813,6 +766,7 @@ func (v *ChannelView) Layout(gtx layout.Context) layout.Dimensions {
 				return v.libraryBtn.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
 					bg := ColorInput
 					if v.libraryBtn.Hovered() {
+						pointer.CursorPointer.Add(gtx.Ops)
 						bg = ColorHover
 					}
 					return layout.Background{}.Layout(gtx,
@@ -852,6 +806,7 @@ func (v *ChannelView) Layout(gtx layout.Context) layout.Dimensions {
 				return v.whiteboardBtn.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
 					bg := ColorInput
 					if v.whiteboardBtn.Hovered() {
+						pointer.CursorPointer.Add(gtx.Ops)
 						bg = ColorHover
 					}
 					return layout.Background{}.Layout(gtx,
@@ -885,7 +840,7 @@ func (v *ChannelView) Layout(gtx layout.Context) layout.Dimensions {
 			})
 		}),
 
-		// Servers button (jen pokud je game servers povoleno)
+		// Servers button (only if game servers enabled)
 		layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 			conn := v.app.Conn()
 			if conn == nil || !conn.GameServersEnabled {
@@ -895,6 +850,7 @@ func (v *ChannelView) Layout(gtx layout.Context) layout.Dimensions {
 				return v.gameServersBtn.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
 					bg := ColorInput
 					if v.gameServersBtn.Hovered() {
+						pointer.CursorPointer.Add(gtx.Ops)
 						bg = ColorHover
 					}
 					return layout.Background{}.Layout(gtx,
@@ -936,7 +892,7 @@ func (v *ChannelView) Layout(gtx layout.Context) layout.Dimensions {
 				}
 				item := renderItems[idx]
 				if !item.isCat {
-					// Uncategorized blok
+					// Uncategorized block
 					dims := v.layoutChannelList(gtx, item.chans, channels, activeID)
 					for len(v.renderItemHeights) <= idx {
 						v.renderItemHeights = append(v.renderItemHeights, 0)
@@ -947,11 +903,11 @@ func (v *ChannelView) Layout(gtx layout.Context) layout.Dimensions {
 
 				catID := item.catID
 				g := catMap[catID]
-				ci := item.catIdx // index v renderedCatIDs
+				ci := item.catIdx // index in renderedCatIDs
 
 				var items []layout.FlexChild
 
-				// Gap drop line před první kategorií
+				// Gap drop line before first category
 				if ci == 0 && v.isPreFirstGapDropTarget() {
 					items = append(items, layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 						return layout.Inset{Left: unit.Dp(8), Right: unit.Dp(8), Top: unit.Dp(2), Bottom: unit.Dp(2)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
@@ -961,9 +917,9 @@ func (v *ChannelView) Layout(gtx layout.Context) layout.Dimensions {
 				}
 
 
-				dragIdxLocal := ci // renderedCatIDs index pro D&D
+				dragIdxLocal := ci // renderedCatIDs index for D&D
 				if len(g.children) > 0 {
-					// Root kategorie s children
+					// Root category with children
 					catIdxLocal := catIdxMap[catID]
 					items = append(items, layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 						dims := v.layoutRootCategory(gtx, catID, g.name, g.hexColor, g.children, g.channels, channels, activeID, catIdxLocal, dragIdxLocal)
@@ -973,7 +929,7 @@ func (v *ChannelView) Layout(gtx layout.Context) layout.Dimensions {
 						return dims
 					}))
 				} else {
-					// Standalone kategorie (bez children)
+					// Standalone category (no children)
 					catIdxLocal := catIdxMap[catID]
 					items = append(items, layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 						dims := v.layoutCategory(gtx, catID, g.name, g.hexColor, g.channels, channels, activeID, catIdxLocal)
@@ -1008,7 +964,7 @@ func (v *ChannelView) Layout(gtx layout.Context) layout.Dimensions {
 }
 
 
-// layoutRootCategory — root kategorie s child kategoriemi
+// layoutRootCategory — root category with child categories
 func (v *ChannelView) layoutRootCategory(gtx layout.Context, catID, name, hexColor string, children []chanCatChild, rootChans []int, channels []api.Channel, activeID string, catIdx, dragIdx int) layout.Dimensions {
 	catColor := parseHexColor(hexColor)
 	borderColor := withAlpha(catColor, 170)
@@ -1020,7 +976,7 @@ func (v *ChannelView) layoutRootCategory(gtx layout.Context, catID, name, hexCol
 	if isCatDragSource {
 		borderColor = withAlpha(borderColor, 80)
 	}
-	// Adopt zvýraznění — zelený border když se nad ni přetahuje kategorie
+	// Adopt highlight — green border when a category is being dragged over it
 	if v.catDragging && v.catDragAction == "adopt" && v.catDragTargetID == catID {
 		borderColor = ColorAccent
 	}
@@ -1081,7 +1037,7 @@ func (v *ChannelView) layoutRootCategory(gtx layout.Context, catID, name, hexCol
 						func(gtx layout.Context) layout.Dimensions {
 							var items []layout.FlexChild
 
-							// Root category header — větší font, tlustší barevný pruh
+							// Root category header — larger font, thicker color bar
 							items = append(items, layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 								return v.layoutRootCatHeader(gtx, catIdx, catID, name, catColor, collapsed)
 							}))
@@ -1174,11 +1130,13 @@ func (v *ChannelView) layoutRootCategory(gtx layout.Context, catID, name, hexCol
 	})
 }
 
-// layoutRootCatHeader — header pro root kategorii (větší, Body1 font, D&D handle)
+// layoutRootCatHeader — header for root category (larger, Body1 font, D&D handle)
 func (v *ChannelView) layoutRootCatHeader(gtx layout.Context, catIdx int, catID, name string, catColor color.NRGBA, collapsed bool) layout.Dimensions {
 	return layout.Inset{Top: unit.Dp(8), Left: unit.Dp(8), Right: unit.Dp(8), Bottom: unit.Dp(4)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
 		return v.catHeaderBtns[catIdx].Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-			hovered := v.catHeaderBtns[catIdx].Hovered()
+			hovered := v.catHeaderBtns[catIdx].Hovered() ||
+				v.catEditBtns2[catIdx].Hovered() ||
+				v.catDelBtns2[catIdx].Hovered()
 
 			return layout.Flex{Alignment: layout.Middle}.Layout(gtx,
 				// Collapse indicator
@@ -1191,7 +1149,7 @@ func (v *ChannelView) layoutRootCatHeader(gtx layout.Context, catIdx int, catID,
 						return layoutIcon(gtx, icon, 18, ColorTextDim)
 					})
 				}),
-				// Color bar (tlustší pro root)
+				// Color bar (thicker for root)
 				layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 					return layout.Inset{Left: unit.Dp(6)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
 						size := image.Pt(gtx.Dp(4), gtx.Dp(18))
@@ -1199,7 +1157,7 @@ func (v *ChannelView) layoutRootCatHeader(gtx layout.Context, catIdx int, catID,
 						return layout.Dimensions{Size: size}
 					})
 				}),
-				// Name (Body1 — větší)
+				// Name (Body1 — larger)
 				layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
 					return layout.Inset{Left: unit.Dp(8)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
 						lbl := material.Body1(v.app.Theme.Material, name)
@@ -1208,58 +1166,82 @@ func (v *ChannelView) layoutRootCatHeader(gtx layout.Context, catIdx int, catID,
 						return lbl.Layout(gtx)
 					})
 				}),
-				// Drag handle (jen při hoveru)
+				// Action buttons (edit, delete, drag handle) — visible on hover
 				layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+					editColor := ColorAccent
+					delColor := ColorDanger
 					handleColor := ColorTextDim
 					if !hovered {
+						editColor = color.NRGBA{}
+						delColor = color.NRGBA{}
 						handleColor = color.NRGBA{}
 					}
 					if v.catDragging && v.catDragFromID == catID {
 						handleColor = ColorAccent
 					}
-					return layout.Inset{Right: unit.Dp(4)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-						size := image.Pt(gtx.Dp(16), gtx.Dp(20))
-						return layout.Stack{}.Layout(gtx,
-							layout.Expanded(func(gtx layout.Context) layout.Dimensions {
-								gtx.Constraints.Min = size
-								gtx.Constraints.Max = size
-								defer clip.Rect{Max: size}.Push(gtx.Ops).Pop()
-								isDragSource := v.catDragging && v.catDragFromID == catID
-								if hovered || isDragSource {
-									v.catDrags[catIdx].Add(gtx.Ops)
-									if v.catDrags[catIdx].Dragging() {
-										pointer.CursorGrabbing.Add(gtx.Ops)
-									} else {
-										pointer.CursorGrab.Add(gtx.Ops)
-									}
-								}
-								return layout.Dimensions{Size: size}
-							}),
-							layout.Stacked(func(gtx layout.Context) layout.Dimensions {
-								return layout.Center.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-									return layoutIcon(gtx, IconDragHandle, 14, handleColor)
+
+					return layout.Flex{Alignment: layout.Middle}.Layout(gtx,
+						// Drag handle
+						layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+							return layout.Inset{Right: unit.Dp(4)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+								size := image.Pt(gtx.Dp(16), gtx.Dp(20))
+								return layout.Stack{}.Layout(gtx,
+									layout.Expanded(func(gtx layout.Context) layout.Dimensions {
+										gtx.Constraints.Min = size
+										gtx.Constraints.Max = size
+										defer clip.Rect{Max: size}.Push(gtx.Ops).Pop()
+										isDragSource := v.catDragging && v.catDragFromID == catID
+										if hovered || isDragSource {
+											v.catDrags[catIdx].Add(gtx.Ops)
+											if v.catDrags[catIdx].Dragging() {
+												pointer.CursorGrabbing.Add(gtx.Ops)
+											} else {
+												pointer.CursorGrab.Add(gtx.Ops)
+											}
+										}
+										return layout.Dimensions{Size: size}
+									}),
+									layout.Stacked(func(gtx layout.Context) layout.Dimensions {
+										return layout.Center.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+											return layoutIcon(gtx, IconDragHandle, 14, handleColor)
+										})
+									}),
+								)
+							})
+						}),
+						// Edit button
+						layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+							return v.catEditBtns2[catIdx].Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+								return layoutIcon(gtx, IconEdit, 16, editColor)
+							})
+						}),
+						// Delete button
+						layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+							return layout.Inset{Left: unit.Dp(4), Right: unit.Dp(2)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+								return v.catDelBtns2[catIdx].Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+									return layoutIcon(gtx, IconDelete, 16, delColor)
 								})
-							}),
-						)
-					})
+							})
+						}),
+					)
 				}),
 			)
 		})
 	})
 }
 
-// isGapDropTarget — je gap za kategorií na pozici catIndex v renderedCatIDs cílem dropu?
-// Gap 0 = před první kategorií, gap catIndex+1 = za renderedCatIDs[catIndex]
+// isGapDropTarget — is the gap after category at catIndex in renderedCatIDs a drop target?
+// Gap 0 = before first category, gap catIndex+1 = after renderedCatIDs[catIndex]
 func (v *ChannelView) isGapDropTarget(catIndex int) bool {
 	return v.gapDropNum() == catIndex+1
 }
 
-// isPreFirstGapDropTarget — je gap před první kategorií cílem dropu?
+// isPreFirstGapDropTarget — is the gap before the first category a drop target?
 func (v *ChannelView) isPreFirstGapDropTarget() bool {
 	return v.gapDropNum() == 0
 }
 
-// gapDropNum — vrátí číslo gapu na který se dropuje (-1 = žádný gap)
+// gapDropNum — returns the gap number being dropped onto (-1 = no gap)
 func (v *ChannelView) gapDropNum() int {
 	if !v.dragging || v.dragTargetIdx >= 0 {
 		return -1
@@ -1269,7 +1251,7 @@ func (v *ChannelView) gapDropNum() int {
 		return -1
 	}
 	if v.emptyCatIDs[emptyCatPos] != "" {
-		return -1 // empty cat, ne gap
+		return -1 // empty cat, not gap
 	}
 	gapNum := 0
 	for i := 0; i <= emptyCatPos; i++ {
@@ -1326,7 +1308,7 @@ func (v *ChannelView) layoutCategory(gtx layout.Context, catID, name, hexColor s
 	if isCatDragSource {
 		borderColor = withAlpha(borderColor, 80)
 	}
-	// Adopt zvýraznění — zelený border když se nad ni přetahuje kategorie
+	// Adopt highlight — green border when a category is being dragged over it
 	if v.catDragging && v.catDragAction == "adopt" && v.catDragTargetID == catID {
 		borderColor = ColorAccent
 	}
@@ -1353,9 +1335,8 @@ func (v *ChannelView) layoutCategory(gtx layout.Context, catID, name, hexColor s
 	}
 
 	collapsed := v.collapsedCats[catID]
-	editing := v.editingCatID == catID
 
-	// Zjistit jestli kategorie má kanály (pro disable delete)
+	// Check if category has channels (for disable delete)
 	hasChannels := len(indices) > 0
 
 	return layout.Inset{Top: unit.Dp(10), Left: unit.Dp(8), Right: unit.Dp(8)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
@@ -1403,13 +1384,10 @@ func (v *ChannelView) layoutCategory(gtx layout.Context, catID, name, hexColor s
 
 							// Category header
 							items = append(items, layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-								if editing {
-									return v.layoutCatEditHeader(gtx, catIdx, catColor)
-								}
 								return v.layoutCatNormalHeader(gtx, catIdx, catID, name, catColor, hasChannels, collapsed)
 							}))
 
-							// Channel list or empty hint (skrýt pokud collapsed)
+							// Channel list or empty hint (hide if collapsed)
 							if !collapsed {
 								if len(indices) > 0 {
 									items = append(items, layout.Rigid(func(gtx layout.Context) layout.Dimensions {
@@ -1460,7 +1438,7 @@ func (v *ChannelView) layoutCategory(gtx layout.Context, catID, name, hexColor s
 	})
 }
 
-// layoutCatNormalHeader — normální hlavička s collapse, edit, delete, drag
+// layoutCatNormalHeader — normal header with collapse, edit, delete, drag
 func (v *ChannelView) layoutCatNormalHeader(gtx layout.Context, catIdx int, catID, name string, catColor color.NRGBA, hasChannels, collapsed bool) layout.Dimensions {
 	return layout.Inset{Top: unit.Dp(6), Left: unit.Dp(6), Right: unit.Dp(6), Bottom: unit.Dp(2)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
 		return v.catHeaderBtns[catIdx].Layout(gtx, func(gtx layout.Context) layout.Dimensions {
@@ -1496,7 +1474,7 @@ func (v *ChannelView) layoutCatNormalHeader(gtx layout.Context, catIdx int, catI
 						return lbl.Layout(gtx)
 					})
 				}),
-				// Action buttons — vždy renderovat, transparentní pokud ne-hovered
+				// Action buttons — always render, transparent if not hovered
 				layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 					editColor := ColorAccent
 					delColor := ColorDanger
@@ -1559,78 +1537,6 @@ func (v *ChannelView) layoutCatNormalHeader(gtx layout.Context, catIdx int, catI
 				}),
 			)
 		})
-	})
-}
-
-// layoutCatEditHeader — editační mód: jméno + barva + Save + Cancel
-func (v *ChannelView) layoutCatEditHeader(gtx layout.Context, catIdx int, catColor color.NRGBA) layout.Dimensions {
-	return layout.Inset{Top: unit.Dp(6), Left: unit.Dp(10), Right: unit.Dp(6), Bottom: unit.Dp(4)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-		return layout.Flex{Alignment: layout.Middle}.Layout(gtx,
-			// Name editor
-			layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
-				return layout.Background{}.Layout(gtx,
-					func(gtx layout.Context) layout.Dimensions {
-						bounds := image.Rect(0, 0, gtx.Constraints.Max.X, gtx.Constraints.Min.Y)
-						rr := gtx.Dp(4)
-						paint.FillShape(gtx.Ops, ColorInput, clip.RRect{
-							Rect: bounds,
-							NE:   rr, NW: rr, SE: rr, SW: rr,
-						}.Op(gtx.Ops))
-						return layout.Dimensions{Size: bounds.Max}
-					},
-					func(gtx layout.Context) layout.Dimensions {
-						return layout.Inset{Top: unit.Dp(4), Bottom: unit.Dp(4), Left: unit.Dp(6), Right: unit.Dp(6)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-							ed := material.Editor(v.app.Theme.Material, &v.catNameEditor, "Name")
-							ed.Color = ColorText
-							ed.HintColor = ColorTextDim
-							return ed.Layout(gtx)
-						})
-					},
-				)
-			}),
-			// Color editor
-			layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-				return layout.Inset{Left: unit.Dp(4)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-					gtx.Constraints.Max.X = gtx.Dp(70)
-					gtx.Constraints.Min.X = gtx.Dp(70)
-					return layout.Background{}.Layout(gtx,
-						func(gtx layout.Context) layout.Dimensions {
-							bounds := image.Rect(0, 0, gtx.Constraints.Max.X, gtx.Constraints.Min.Y)
-							rr := gtx.Dp(4)
-							paint.FillShape(gtx.Ops, ColorInput, clip.RRect{
-								Rect: bounds,
-								NE:   rr, NW: rr, SE: rr, SW: rr,
-							}.Op(gtx.Ops))
-							return layout.Dimensions{Size: bounds.Max}
-						},
-						func(gtx layout.Context) layout.Dimensions {
-							return layout.Inset{Top: unit.Dp(4), Bottom: unit.Dp(4), Left: unit.Dp(6), Right: unit.Dp(6)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-								ed := material.Editor(v.app.Theme.Material, &v.catColorEditor, "#color")
-								ed.Color = ColorText
-								ed.HintColor = ColorTextDim
-								return ed.Layout(gtx)
-							})
-						},
-					)
-				})
-			}),
-			// Save button
-			layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-				return layout.Inset{Left: unit.Dp(4)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-					return v.catSaveBtns2[catIdx].Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-						return layoutIcon(gtx, IconCheck, 14, ColorSuccess)
-					})
-				})
-			}),
-			// Cancel button
-			layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-				return layout.Inset{Left: unit.Dp(2)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-					return v.catCancelBtns[catIdx].Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-						return layoutIcon(gtx, IconClose, 14, ColorTextDim)
-					})
-				})
-			}),
-		)
 	})
 }
 
@@ -1788,7 +1694,7 @@ func (v *ChannelView) computeCatDragTarget() {
 	v.catDragTargetIdx = target
 }
 
-// executeCatDrop — provede přeřazení nebo reparent kategorií po drop
+// executeCatDrop — performs reorder or reparent of categories after drop
 func (v *ChannelView) executeCatDrop() {
 	conn := v.app.Conn()
 	action := v.catDragAction
@@ -1857,7 +1763,7 @@ func (v *ChannelView) executeCatDrop() {
 	}
 
 	if action == "adopt" && adoptTargetID != "" {
-		// Adopt — nastavit parent na cílovou kategorii
+		// Adopt — set parent to target category
 		go func() {
 			if err := conn.Client.SetCategoryParent(fromID, adoptTargetID); err != nil {
 				log.Printf("SetCategoryParent: %v", err)
@@ -1867,7 +1773,7 @@ func (v *ChannelView) executeCatDrop() {
 		return
 	}
 
-	// Reorder (top-level reorder, nebo child → unadopt + reorder)
+	// Reorder (top-level reorder, or child → unadopt + reorder)
 	if toIdx < 0 {
 		return
 	}
@@ -1876,8 +1782,8 @@ func (v *ChannelView) executeCatDrop() {
 	cats := conn.Categories
 
 	if fromParent != "" {
-		// Child kategorie → unadopt (stát se top-level) + vložit na toIdx
-		// Nejdřív odebrat z parent children (lokálně)
+		// Child category → unadopt (become top-level) + insert at toIdx
+		// First remove from parent children (locally)
 		for pi, p := range cats {
 			if p.ID == fromParent {
 				var newChildren []api.ChannelCategory
@@ -1896,7 +1802,7 @@ func (v *ChannelView) executeCatDrop() {
 					return
 				}
 				cats[pi].Children = newChildren
-				// Vložit jako top-level na pozici toIdx
+				// Insert as top-level at position toIdx
 				moved.ParentID = nil
 				newCats := make([]api.ChannelCategory, 0, len(cats)+1)
 				for i, c := range cats {
@@ -2012,8 +1918,8 @@ func (v *ChannelView) layoutChannelItem(gtx layout.Context, idx int, ch api.Chan
 		v.app.mu.RUnlock()
 	}
 
-	// Clicked() volá interně Update() → aktualizuje hover stav.
-	// Proto NEJDŘÍVE zpracovat kliky, pak číst Hovered().
+	// Clicked() internally calls Update() → updates hover state.
+	// Therefore process clicks FIRST, then read Hovered().
 	chanClicked := v.chanBtns[idx].Clicked(gtx)
 	editClicked := v.chanEditBtns[idx].Clicked(gtx)
 	deleteClicked := v.chanDelBtns[idx].Clicked(gtx)
@@ -2033,7 +1939,7 @@ func (v *ChannelView) layoutChannelItem(gtx layout.Context, idx int, ch api.Chan
 				c.Voice.Join(ch.ID)
 			}
 		} else if ch.Type == "lobby" {
-			// Otevřít lobby join dialog s předvyplněnými prefs z cache
+			// Open lobby join dialog with pre-filled prefs from cache
 			if c := v.app.Conn(); c != nil {
 				prefs := store.GetLobbyPrefs(v.app.PublicKey, c.URL, ch.ID)
 				v.app.LobbyJoinDlg.Show(ch.ID, ch.Name, prefs)
@@ -2091,7 +1997,7 @@ func (v *ChannelView) layoutChannelItem(gtx layout.Context, idx int, ch api.Chan
 		}))
 	}
 
-	// Voice drag highlight — cílový voice kanál
+	// Voice drag highlight — target voice channel
 	isVoiceDragTarget := v.voiceDragging && isVoice && ch.ID == v.voiceDragTargetChan && ch.ID != v.voiceDragFromChanID
 
 	// Channel button row
@@ -2165,7 +2071,7 @@ func (v *ChannelView) layoutChannelItem(gtx layout.Context, idx int, ch api.Chan
 										layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 											return layoutIcon(gtx, IconLink, 16, textColor)
 										}),
-										// Helper status tečka
+										// Helper status dot
 										layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 											sz := gtx.Dp(6)
 											dotColor := ColorDanger
@@ -2194,7 +2100,7 @@ func (v *ChannelView) layoutChannelItem(gtx layout.Context, idx int, ch api.Chan
 								return lbl.Layout(gtx)
 							}),
 							layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-								// Vždy renderovat tlačítka se stejným layoutem — transparentní pokud ne-hovered
+								// Always render buttons with same layout — transparent if not hovered
 								editColor := ColorAccent
 								delColor := ColorDanger
 								handleColor := ColorTextDim
@@ -2208,7 +2114,7 @@ func (v *ChannelView) layoutChannelItem(gtx layout.Context, idx int, ch api.Chan
 								}
 
 								return layout.Flex{}.Layout(gtx,
-									// Drag handle — vždy přítomen pro stabilní layout
+									// Drag handle — always present for stable layout
 									layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 										return layout.Inset{Right: unit.Dp(4)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
 											size := image.Pt(gtx.Dp(16), gtx.Dp(20))
@@ -2228,9 +2134,9 @@ func (v *ChannelView) layoutChannelItem(gtx layout.Context, idx int, ch api.Chan
 													return layout.Dimensions{Size: size}
 												}),
 												layout.Stacked(func(gtx layout.Context) layout.Dimensions {
-													lbl := material.Caption(v.app.Theme.Material, "=")
-													lbl.Color = handleColor
-													return layout.Center.Layout(gtx, lbl.Layout)
+													return layout.Center.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+														return layoutIcon(gtx, IconDragHandle, 12, handleColor)
+													})
 												}),
 											)
 										})
@@ -2238,18 +2144,14 @@ func (v *ChannelView) layoutChannelItem(gtx layout.Context, idx int, ch api.Chan
 									// Edit button
 									layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 										return v.chanEditBtns[idx].Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-											lbl := material.Caption(v.app.Theme.Material, "E")
-											lbl.Color = editColor
-											return lbl.Layout(gtx)
+											return layoutIcon(gtx, IconEdit, 14, editColor)
 										})
 									}),
 									// Delete button
 									layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 										return layout.Inset{Left: unit.Dp(4)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
 											return v.chanDelBtns[idx].Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-												lbl := material.Caption(v.app.Theme.Material, "X")
-												lbl.Color = delColor
-												return lbl.Layout(gtx)
+												return layoutIcon(gtx, IconDelete, 14, delColor)
 											})
 										})
 									}),
@@ -2278,13 +2180,13 @@ func (v *ChannelView) layoutChannelItem(gtx layout.Context, idx int, ch api.Chan
 			selfSpeaking, peerSpeaking = conn.Voice.GetSpeakingState()
 		}
 
-		// Zjistit oprávnění pro drag (PermKick)
+		// Check permissions for drag (PermKick)
 		canDragVoice := conn != nil && conn.MyPermissions&api.PermKick != 0
 
 		for _, uid := range voiceUsers {
 			userID := uid
 			items = append(items, layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-				// Ztlumit přesouvaného uživatele
+				// Dim the user being moved
 				isVoiceDragSource := v.voiceDragging && v.voiceDragUserID == userID
 
 				return layout.Inset{Left: unit.Dp(28), Top: unit.Dp(1), Bottom: unit.Dp(1)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
@@ -2309,7 +2211,7 @@ func (v *ChannelView) layoutChannelItem(gtx layout.Context, idx int, ch api.Chan
 						v.app.UserPopup.Show(userID, name)
 					}
 
-					// Stream icon click handler (mimo vuBtn aby neprobublal)
+					// Stream icon click handler (outside vuBtn so it doesn't bubble)
 					var streamClicked bool
 					if isSharing {
 						btn := v.getStreamBtn(userID)
@@ -2325,14 +2227,15 @@ func (v *ChannelView) layoutChannelItem(gtx layout.Context, idx int, ch api.Chan
 					}
 
 					dims := layout.Flex{Alignment: layout.Middle}.Layout(gtx,
-						// Uživatel (klikatelný → UserPopup)
+						// User (clickable → UserPopup)
 						layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
 							return vuBtn.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
 								bg := color.NRGBA{}
 								if vuBtn.Hovered() {
+									pointer.CursorPointer.Add(gtx.Ops)
 									bg = ColorHover
 								}
-								// Ztlumit přesouvaného uživatele
+								// Dim the user being moved
 								alpha := uint8(255)
 								if isVoiceDragSource {
 									alpha = 100
@@ -2385,7 +2288,7 @@ func (v *ChannelView) layoutChannelItem(gtx layout.Context, idx int, ch api.Chan
 								)
 							})
 						}),
-						// Screen share icon (mimo vuBtn — vlastní click handler)
+						// Screen share icon (outside vuBtn — separate click handler)
 						layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 							if !isSharing {
 								return layout.Dimensions{}
@@ -2404,7 +2307,7 @@ func (v *ChannelView) layoutChannelItem(gtx layout.Context, idx int, ch api.Chan
 						}),
 					)
 
-					// Drag gesture overlay pro voice user (jen s PermKick, ne sám sebe)
+					// Drag gesture overlay for voice user (only with PermKick, not self)
 					if canDragVoice && conn != nil && userID != conn.UserID {
 						drag := v.getVoiceDrag(userID)
 						areaStack := clip.Rect{Max: dims.Size}.Push(gtx.Ops)
@@ -2423,7 +2326,7 @@ func (v *ChannelView) layoutChannelItem(gtx layout.Context, idx int, ch api.Chan
 		}
 	}
 
-	// Lobby sub-channels — odsazené voice kanály pod lobby
+	// Lobby sub-channels — indented voice channels under lobby
 	if isLobby && conn != nil {
 		subIndices := v.lobbyChildren[ch.ID]
 		for _, si := range subIndices {
@@ -2437,7 +2340,7 @@ func (v *ChannelView) layoutChannelItem(gtx layout.Context, idx int, ch api.Chan
 		}
 	}
 
-	// LAN members pod LAN kanálem
+	// LAN members under LAN channel
 	if isLAN && len(lanMembers) > 0 {
 		for _, mem := range lanMembers {
 			m := mem
@@ -2454,6 +2357,7 @@ func (v *ChannelView) layoutChannelItem(gtx layout.Context, idx int, ch api.Chan
 					return vuBtn.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
 						bg := color.NRGBA{}
 						if vuBtn.Hovered() {
+							pointer.CursorPointer.Add(gtx.Ops)
 							bg = ColorHover
 						}
 						return layout.Background{}.Layout(gtx,
@@ -2471,7 +2375,7 @@ func (v *ChannelView) layoutChannelItem(gtx layout.Context, idx int, ch api.Chan
 							func(gtx layout.Context) layout.Dimensions {
 								return layout.Inset{Top: unit.Dp(2), Bottom: unit.Dp(2)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
 									return layout.Flex{Alignment: layout.Middle}.Layout(gtx,
-										// Zelená tečka (connected)
+										// Green dot (connected)
 										layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 											sz := gtx.Dp(6)
 											paint.FillShape(gtx.Ops, ColorSuccess, clip.Ellipse{Max: image.Pt(sz, sz)}.Op(gtx.Ops))
@@ -2485,7 +2389,7 @@ func (v *ChannelView) layoutChannelItem(gtx layout.Context, idx int, ch api.Chan
 												return lbl.Layout(gtx)
 											})
 										}),
-										// IP adresa vpravo
+										// IP address on the right
 										layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
 											return layout.Inset{Left: unit.Dp(8)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
 												lbl := material.Caption(v.app.Theme.Material, m.AssignedIP)
@@ -2506,12 +2410,12 @@ func (v *ChannelView) layoutChannelItem(gtx layout.Context, idx int, ch api.Chan
 
 	dims := layout.Flex{Axis: layout.Vertical}.Layout(gtx, items...)
 
-	// Zaznamenat výšku kanálu pro přesný drag targeting
+	// Record channel height for precise drag targeting
 	if v.chanItemH != nil {
 		v.chanItemH[idx] = dims.Size.Y
 	}
 
-	// Right-click area pro notification menu (jen textové kanály, PassOp propustí kliky dolů)
+	// Right-click area for notification menu (text channels only, PassOp passes clicks through)
 	if (ch.Type == "" || ch.Type == "text") && idx < len(v.chanRightTags) {
 		areaStack := clip.Rect{Max: dims.Size}.Push(gtx.Ops)
 		pr := pointer.PassOp{}.Push(gtx.Ops)
@@ -2559,14 +2463,14 @@ func (v *ChannelView) getVoiceDrag(userID string) *gesture.Drag {
 	return drag
 }
 
-// computeVoiceDragTarget spočítá cílový voice kanál z drag offsetu (step-based)
+// computeVoiceDragTarget computes target voice channel from drag offset (step-based)
 func (v *ChannelView) computeVoiceDragTarget() {
 	if len(v.voiceChanIDs) < 2 {
 		v.voiceDragTargetChan = ""
 		return
 	}
 
-	// Najít index zdrojového kanálu v seznamu voice kanálů
+	// Find index of source channel in the voice channel list
 	fromIdx := -1
 	for i, id := range v.voiceChanIDs {
 		if id == v.voiceDragFromChanID {
@@ -2596,13 +2500,13 @@ func (v *ChannelView) computeVoiceDragTarget() {
 	v.voiceDragTargetChan = v.voiceChanIDs[targetIdx]
 }
 
-// executeVoiceDrop provede přesun uživatele do cílového voice kanálu
+// executeVoiceDrop performs moving a user to the target voice channel
 func (v *ChannelView) executeVoiceDrop() {
 	targetChan := v.voiceDragTargetChan
 	userID := v.voiceDragUserID
 	fromChan := v.voiceDragFromChanID
 
-	// Reset stavu
+	// Reset state
 	v.voiceDragging = false
 	v.voiceDragUserID = ""
 	v.voiceDragFromChanID = ""
@@ -2622,7 +2526,7 @@ func (v *ChannelView) executeVoiceDrop() {
 	}()
 }
 
-// layoutLobbySubChannel — odsazený voice sub-kanál pod lobby
+// layoutLobbySubChannel — indented voice sub-channel under lobby
 func (v *ChannelView) layoutLobbySubChannel(gtx layout.Context, idx int, ch api.Channel) layout.Dimensions {
 	conn := v.app.Conn()
 	if conn == nil {
@@ -2641,7 +2545,7 @@ func (v *ChannelView) layoutLobbySubChannel(gtx layout.Context, idx int, ch api.
 
 	hovered := btn.Hovered()
 
-	// Voice users v tomto sub-kanálu
+	// Voice users in this sub-channel
 	v.app.mu.RLock()
 	voiceUsers := conn.VoiceState[ch.ID]
 	screenSharers := conn.ScreenSharers
@@ -2649,7 +2553,7 @@ func (v *ChannelView) layoutLobbySubChannel(gtx layout.Context, idx int, ch api.
 
 	var items []layout.FlexChild
 
-	// Sub-channel řádek (odsazený)
+	// Sub-channel row (indented)
 	items = append(items, layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 		return layout.Inset{Left: unit.Dp(16)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
 			return btn.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
@@ -2684,7 +2588,7 @@ func (v *ChannelView) layoutLobbySubChannel(gtx layout.Context, idx int, ch api.
 		})
 	}))
 
-	// Voice users pod sub-kanálem
+	// Voice users under sub-channel
 	if len(voiceUsers) > 0 {
 		var peerSpeaking map[string]bool
 		var selfSpeaking bool
@@ -2815,8 +2719,8 @@ func (v *ChannelView) computeDragTarget() {
 		stepPx = 30
 	}
 
-	// Kumulativní pixelové pozice — skutečné výšky kanálů + odhad hlaviček kategorií
-	// Sentinel (hlavička kategorie / gap) ~ 34dp ≈ stepPx (32dp)
+	// Cumulative pixel positions — actual channel heights + estimated category header heights
+	// Sentinel (category header / gap) ~ 34dp ≈ stepPx (32dp)
 	gapPx := stepPx
 	cumPx := make([]int, len(v.visualOrder))
 	total := 0
@@ -2833,10 +2737,10 @@ func (v *ChannelView) computeDragTarget() {
 		}
 	}
 
-	// Cílová pixelová pozice = pozice zdroje + offset kurzoru
+	// Target pixel position = source position + cursor offset
 	targetPx := cumPx[fromVisual] + int(v.dragOffsetY)
 
-	// Najít nejbližší položku
+	// Find nearest item
 	targetVisual := fromVisual
 	bestDist := 999999
 	for i, px := range cumPx {
@@ -2885,7 +2789,7 @@ func (v *ChannelView) executeDrop() {
 		sentinelTargetCatID = v.emptyCatIDs[emptyCatPos]
 		isGapDrop = sentinelTargetCatID == ""
 		if isGapDrop {
-			// Všechny gapy = uncategorize (kanál se vloží na pozici gapu)
+			// All gaps = uncategorize (channel will be inserted at the gap position)
 			sentinelTargetCatID = "_uncategorize_"
 		}
 	}
@@ -2905,15 +2809,15 @@ func (v *ChannelView) executeDrop() {
 	categoryChanged := false
 
 	if droppingOnSentinel {
-		// Změna kategorie
+		// Category change
 		if sentinelTargetCatID == "_uncategorize_" {
 			if ch.CategoryID != nil {
 				ch.CategoryID = nil
 				categoryChanged = true
 			}
 			delete(v.rootChanSlot, ch.ID)
-			// Uložit pozici gap dropu
-			// Gap 0 = před první kategorií (slot -1), gap N = za renderedCatIDs[N-1] (slot N-1)
+			// Save gap drop position
+			// Gap 0 = before first category (slot -1), gap N = after renderedCatIDs[N-1] (slot N-1)
 			emptyCatPos := -(toIdx + 1)
 			gapNum := 0
 			for i := 0; i < emptyCatPos && i < len(v.emptyCatIDs); i++ {
@@ -2926,7 +2830,7 @@ func (v *ChannelView) executeDrop() {
 			if !sameCategoryID(ch.CategoryID, &sentinelTargetCatID) {
 				ch.CategoryID = &sentinelTargetCatID
 				categoryChanged = true
-				// Kanál byl přesunut do kategorie → smazat z uncatPositions
+				// Channel was moved into a category → delete from uncatPositions
 				delete(v.uncatPositions, ch.ID)
 			}
 			// Set slot position within root category
@@ -2936,15 +2840,15 @@ func (v *ChannelView) executeDrop() {
 			}
 		}
 
-		// Reorder: vložit kanál na pozici sentinelu ve visual orderu
+		// Reorder: insert channel at sentinel position in visual order
 		newOrder := make([]api.Channel, 0, len(channels))
 		inserted := false
 		for i, vi := range savedVisualOrder {
 			if vi == fromIdx {
-				continue // přeskočit zdroj
+				continue // skip source
 			}
 			if vi < 0 {
-				// Na sentinel pozici vložit kanál (pokud je to cílový sentinel)
+				// Insert channel at sentinel position (if it is the target sentinel)
 				if i == toVisual && !inserted {
 					newOrder = append(newOrder, ch)
 					inserted = true
@@ -2956,7 +2860,7 @@ func (v *ChannelView) executeDrop() {
 		if !inserted {
 			newOrder = append(newOrder, ch)
 		}
-		// Přidat kanály mimo visual order (skryté ve složených kategoriích apod.)
+		// Add channels outside visual order (hidden in collapsed categories etc.)
 		visualSet := make(map[int]bool, len(savedVisualOrder))
 		for _, vi := range savedVisualOrder {
 			if vi >= 0 {
@@ -2999,7 +2903,7 @@ func (v *ChannelView) executeDrop() {
 		ch.CategoryID = copyCategoryID(targetCatID)
 		categoryChanged = true
 	}
-	// Kanál dostal kategorii → smazat z uncatPositions, adoptovat slot od cíle
+	// Channel got a category → delete from uncatPositions, adopt slot from target
 	delete(v.uncatPositions, ch.ID)
 	targetChID := channels[toIdx].ID
 	if s, ok := v.rootChanSlot[targetChID]; ok {
@@ -3154,6 +3058,7 @@ func (v *ChannelView) layoutSettingsGear(gtx layout.Context) layout.Dimensions {
 
 		bg := color.NRGBA{A: 0}
 		if v.settingsBtn.Hovered() {
+			pointer.CursorPointer.Add(gtx.Ops)
 			bg = ColorHover
 		}
 
@@ -3177,6 +3082,7 @@ func (v *ChannelView) layoutHeaderIconBtn(gtx layout.Context, btn *widget.Clicka
 
 		bg := color.NRGBA{A: 0}
 		if btn.Hovered() {
+			pointer.CursorPointer.Add(gtx.Ops)
 			bg = ColorHover
 		}
 

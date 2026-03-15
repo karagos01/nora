@@ -21,14 +21,14 @@ import (
 )
 
 var eventColors = [8]string{
-	"#3498db", // modrá
-	"#2ecc71", // zelená
-	"#e74c3c", // červená
-	"#f39c12", // oranžová
-	"#9b59b6", // fialová
-	"#1abc9c", // tyrkysová
-	"#e67e22", // tmavě oranžová
-	"#34495e", // šedá
+	"#3498db", // blue
+	"#2ecc71", // green
+	"#e74c3c", // red
+	"#f39c12", // orange
+	"#9b59b6", // purple
+	"#1abc9c", // teal
+	"#e67e22", // dark orange
+	"#34495e", // gray
 }
 
 var reminderLabels = [4]string{"None", "15 min", "1 hour", "1 day"}
@@ -47,11 +47,11 @@ type EventEditDialog struct {
 	descEd     widget.Editor
 	locationEd widget.Editor
 
-	// Datum — 7 day buttons (today + 6 dní)
+	// Date — 7 day buttons (today + 6 days)
 	dayBtns  [7]widget.Clickable
 	dayIndex int
 
-	// Čas
+	// Time
 	hourEd    widget.Editor
 	minEd     widget.Editor
 	endHourEd widget.Editor
@@ -96,7 +96,7 @@ func NewEventEditDialog(a *App) *EventEditDialog {
 	return d
 }
 
-// ShowCreate otevře dialog pro vytvoření nového eventu.
+// ShowCreate opens the dialog for creating a new event.
 func (d *EventEditDialog) ShowCreate() {
 	d.IsNew = true
 	d.Event = nil
@@ -106,7 +106,7 @@ func (d *EventEditDialog) ShowCreate() {
 	d.locationEd.SetText("")
 	d.dayIndex = 0
 	now := time.Now()
-	// Výchozí čas: příští celá hodina
+	// Default time: next full hour
 	nextHour := now.Add(time.Hour).Truncate(time.Hour)
 	d.hourEd.SetText(fmt.Sprintf("%d", nextHour.Hour()))
 	d.minEd.SetText("00")
@@ -118,7 +118,7 @@ func (d *EventEditDialog) ShowCreate() {
 	d.repeatIdx = 0   // None
 }
 
-// ShowEdit otevře dialog pro editaci existujícího eventu.
+// ShowEdit opens the dialog for editing an existing event.
 func (d *EventEditDialog) ShowEdit(event *api.Event) {
 	d.IsNew = false
 	d.Event = event
@@ -153,7 +153,7 @@ func (d *EventEditDialog) ShowEdit(event *api.Event) {
 		d.endMinEd.SetText("")
 	}
 
-	// Najít barvu
+	// Find color
 	d.colorIdx = 0
 	for i, c := range eventColors {
 		if c == event.Color {
@@ -162,9 +162,9 @@ func (d *EventEditDialog) ShowEdit(event *api.Event) {
 		}
 	}
 
-	d.reminderIdx = 0 // None (neznáme aktuální stav)
+	d.reminderIdx = 0 // None (current state unknown)
 
-	// Najít recurrence rule
+	// Find recurrence rule
 	d.repeatIdx = 0
 	for i, v := range recurrenceValues {
 		if v == event.RecurrenceRule {
@@ -182,7 +182,7 @@ func (d *EventEditDialog) Hide() {
 func (d *EventEditDialog) Layout(gtx layout.Context) layout.Dimensions {
 	th := d.app.Theme.Material
 
-	// Zpracovat kliknutí
+	// Handle clicks
 	if d.closeBtn.Clicked(gtx) {
 		d.Hide()
 		return layout.Dimensions{Size: gtx.Constraints.Max}
@@ -231,7 +231,7 @@ func (d *EventEditDialog) Layout(gtx layout.Context) layout.Dimensions {
 		}
 	}
 
-	// Overlay pozadí (scrim)
+	// Overlay background (scrim)
 	paint.FillShape(gtx.Ops, color.NRGBA{A: 180},
 		clip.Rect{Max: gtx.Constraints.Max}.Op())
 
@@ -425,7 +425,7 @@ func (d *EventEditDialog) Layout(gtx layout.Context) layout.Dimensions {
 						}),
 						layout.Rigid(layout.Spacer{Height: unit.Dp(16)}.Layout),
 
-						// Akční tlačítka
+						// Action buttons
 						layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 							return layout.Flex{}.Layout(gtx,
 								layout.Rigid(func(gtx layout.Context) layout.Dimensions {
@@ -564,7 +564,7 @@ func (d *EventEditDialog) layoutColorPicker(gtx layout.Context) layout.Dimension
 						Rect: image.Rect(0, 0, sz, sz),
 						NE:   rr, NW: rr, SE: rr, SW: rr,
 					}.Op(gtx.Ops))
-					// Vybraný — bílý rámeček
+					// Selected — white border
 					if d.colorIdx == i {
 						borderW := gtx.Dp(2)
 						paint.FillShape(gtx.Ops, color.NRGBA{R: 255, G: 255, B: 255, A: 200}, clip.Stroke{
@@ -701,7 +701,7 @@ func (d *EventEditDialog) doSave() {
 				log.Printf("calendar: create event: %v", err)
 				return
 			}
-			// Nastavit reminder
+			// Set reminder
 			if reminderMin > 0 {
 				conn.Client.SetEventReminder(evt.ID, reminderMin)
 			}

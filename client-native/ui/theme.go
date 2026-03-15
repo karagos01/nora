@@ -21,7 +21,7 @@ var notoEmojiTTF []byte
 //go:embed fonts/GoMono-Regular.ttf
 var goMonoTTF []byte
 
-// NORA dark theme barvy
+// NORA dark theme colors
 var (
 	ColorBg       = color.NRGBA{R: 26, G: 26, B: 46, A: 255}   // #1a1a2e
 	ColorSidebar  = color.NRGBA{R: 22, G: 22, B: 42, A: 255}   // #16162a
@@ -31,26 +31,26 @@ var (
 	ColorAccentHover = color.NRGBA{R: 148, G: 116, B: 215, A: 255} // lighter accent for hover
 	ColorText     = color.NRGBA{R: 224, G: 224, B: 224, A: 255} // #e0e0e0
 	ColorTextDim  = color.NRGBA{R: 140, G: 140, B: 160, A: 255} // #8c8ca0
-	ColorOnline     = color.NRGBA{R: 80, G: 200, B: 120, A: 255}   // zelená
-	ColorOffline    = color.NRGBA{R: 100, G: 100, B: 120, A: 255} // šedá
-	ColorStatusAway = color.NRGBA{R: 240, G: 180, B: 40, A: 255}  // žlutá
-	ColorStatusDND  = color.NRGBA{R: 230, G: 70, B: 70, A: 255}   // červená
-	ColorDanger   = color.NRGBA{R: 220, G: 60, B: 60, A: 255}   // červená
+	ColorOnline     = color.NRGBA{R: 80, G: 200, B: 120, A: 255}   // green
+	ColorOffline    = color.NRGBA{R: 100, G: 100, B: 120, A: 255} // gray
+	ColorStatusAway = color.NRGBA{R: 240, G: 180, B: 40, A: 255}  // yellow
+	ColorStatusDND  = color.NRGBA{R: 230, G: 70, B: 70, A: 255}   // red
+	ColorDanger   = color.NRGBA{R: 220, G: 60, B: 60, A: 255}   // red
 	ColorDivider  = color.NRGBA{R: 50, G: 50, B: 80, A: 255}    // #323250
-	ColorHover    = color.NRGBA{R: 40, G: 40, B: 68, A: 255}    // #282844
+	ColorHover    = color.NRGBA{R: 50, G: 50, B: 82, A: 255}    // #323252
 	ColorSelected = color.NRGBA{R: 50, G: 45, B: 80, A: 255}    // #322d50
-	ColorSuccess  = color.NRGBA{R: 80, G: 200, B: 120, A: 255}  // zelená (= ColorOnline)
-	ColorWarning  = color.NRGBA{R: 240, G: 180, B: 40, A: 255}  // žlutá
+	ColorSuccess  = color.NRGBA{R: 80, G: 200, B: 120, A: 255}  // green (= ColorOnline)
+	ColorWarning  = color.NRGBA{R: 240, G: 180, B: 40, A: 255}  // yellow
 	ColorAccentDim = color.NRGBA{R: 100, G: 72, B: 160, A: 255} // darker accent
 )
 
 type Theme struct {
 	Material    *material.Theme
 	FontScale   float32 // 0.7-1.6, default 1.0
-	CompactMode bool    // IRC-style compact zprávy (jméno:obsah na řádku)
+	CompactMode bool    // IRC-style compact messages (name:content on one line)
 }
 
-// Sp vrátí unit.Sp škálovanou font scale faktorem.
+// Sp returns a unit.Sp scaled by the font scale factor.
 func (t *Theme) Sp(base float32) unit.Sp {
 	s := t.FontScale
 	if s == 0 {
@@ -59,7 +59,7 @@ func (t *Theme) Sp(base float32) unit.Sp {
 	return unit.Sp(base * s)
 }
 
-// ApplyFontScale aplikuje font scale na material theme.
+// ApplyFontScale applies font scale to the material theme.
 func (t *Theme) ApplyFontScale(scale float32) {
 	if scale < 0.7 {
 		scale = 0.7
@@ -72,7 +72,7 @@ func (t *Theme) ApplyFontScale(scale float32) {
 }
 
 func NewNORATheme() *Theme {
-	// Emoji font (monochrome Noto Emoji — outline glyfy, Gio je umí renderovat)
+	// Emoji font (monochrome Noto Emoji — outline glyphs, Gio can render them)
 	var emojiFaces []text.FontFace
 	if faces, err := opentype.ParseCollection(notoEmojiTTF); err == nil {
 		emojiFaces = faces
@@ -85,10 +85,10 @@ func NewNORATheme() *Theme {
 	th.Palette.Fg = ColorText
 	th.Palette.ContrastBg = ColorAccent
 	th.Palette.ContrastFg = color.NRGBA{R: 255, G: 255, B: 255, A: 255}
-	// Monospace font (Go Mono — pro code blocky)
+	// Monospace font (Go Mono — for code blocks)
 	var monoFaces []text.FontFace
 	if faces, err := opentype.ParseCollection(goMonoTTF); err == nil {
-		// Nastavit font variant pro identifikaci
+		// Set font variant for identification
 		for i := range faces {
 			faces[i].Font.Typeface = "Go Mono"
 		}
@@ -103,7 +103,7 @@ func NewNORATheme() *Theme {
 	return &Theme{Material: th}
 }
 
-// UserColor — deterministická HSL barva z username (kompatibilní s JS klientem utils/color.ts)
+// UserColor — deterministic HSL color from username (compatible with JS client utils/color.ts)
 func UserColor(username string) color.NRGBA {
 	h := sha256.Sum256([]byte(username))
 	hue := float64(uint(h[0])<<8|uint(h[1])) / 65535.0 * 360.0
@@ -135,17 +135,17 @@ func hslToRGB(h, s, l float64) (uint8, uint8, uint8) {
 	return uint8((r + m) * 255), uint8((g + m) * 255), uint8((b + m) * 255)
 }
 
-// FormatTime formátuje čas do 24h formátu (HH:MM)
+// FormatTime formats time in 24h format (HH:MM)
 func FormatTime(t interface{ Format(string) string }) string {
 	return t.Format("15:04")
 }
 
-// FormatDate formátuje datum
+// FormatDate formats a date
 func FormatDate(t interface{ Format(string) string }) string {
 	return t.Format("02.01.2006")
 }
 
-// FormatDateTime formátuje datum a čas
+// FormatDateTime formats date and time
 func FormatDateTime(t interface{ Format(string) string }) string {
 	return fmt.Sprintf("%s %s", t.Format("02.01."), t.Format("15:04"))
 }

@@ -5,7 +5,7 @@ import (
 )
 
 func TestEncryptDecryptDM(t *testing.T) {
-	// Vygenerujeme dva keypáry
+	// Generate two keypairs
 	kp1, err := GenerateKeypair()
 	if err != nil {
 		t.Fatal(err)
@@ -15,22 +15,22 @@ func TestEncryptDecryptDM(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	plaintext := "Ahoj, toto je testovací zpráva!"
+	plaintext := "Hello, this is a test message!"
 
-	// Šifrování stranou 1
+	// Encryption by side 1
 	encrypted, err := EncryptDM(kp1.SecretKey, kp2.PublicKey, plaintext)
 	if err != nil {
-		t.Fatalf("šifrování selhalo: %v", err)
+		t.Fatalf("encryption failed: %v", err)
 	}
 
-	// Dešifrování stranou 2
+	// Decryption by side 2
 	decrypted, err := DecryptDM(kp2.SecretKey, kp1.PublicKey, encrypted)
 	if err != nil {
-		t.Fatalf("dešifrování selhalo: %v", err)
+		t.Fatalf("decryption failed: %v", err)
 	}
 
 	if decrypted != plaintext {
-		t.Fatalf("nesouhlasí: %q != %q", decrypted, plaintext)
+		t.Fatalf("mismatch: %q != %q", decrypted, plaintext)
 	}
 }
 
@@ -44,22 +44,22 @@ func TestEncryptDecryptKey(t *testing.T) {
 
 	encrypted, err := EncryptKey(kp.SecretKey, password)
 	if err != nil {
-		t.Fatalf("šifrování klíče selhalo: %v", err)
+		t.Fatalf("key encryption failed: %v", err)
 	}
 
 	decrypted, err := DecryptKey(encrypted, password)
 	if err != nil {
-		t.Fatalf("dešifrování klíče selhalo: %v", err)
+		t.Fatalf("key decryption failed: %v", err)
 	}
 
 	if decrypted != kp.SecretKey {
-		t.Fatalf("klíč nesouhlasí: %q != %q", decrypted, kp.SecretKey)
+		t.Fatalf("key mismatch: %q != %q", decrypted, kp.SecretKey)
 	}
 
-	// Špatné heslo
-	_, err = DecryptKey(encrypted, "spatne-heslo")
+	// Wrong password
+	_, err = DecryptKey(encrypted, "wrong-password")
 	if err == nil {
-		t.Fatal("mělo selhat se špatným heslem")
+		t.Fatal("should fail with wrong password")
 	}
 }
 
@@ -71,17 +71,17 @@ func TestEd25519X25519Conversion(t *testing.T) {
 
 	priv, err := Ed25519SeedToX25519Private(kp.SecretKey)
 	if err != nil {
-		t.Fatalf("konverze private selhala: %v", err)
+		t.Fatalf("private key conversion failed: %v", err)
 	}
 	if len(priv) != 32 {
-		t.Fatalf("x25519 private key má %d bajtů, očekáváno 32", len(priv))
+		t.Fatalf("x25519 private key has %d bytes, expected 32", len(priv))
 	}
 
 	pub, err := Ed25519PubToX25519Public(kp.PublicKey)
 	if err != nil {
-		t.Fatalf("konverze public selhala: %v", err)
+		t.Fatalf("public key conversion failed: %v", err)
 	}
 	if len(pub) != 32 {
-		t.Fatalf("x25519 public key má %d bajtů, očekáváno 32", len(pub))
+		t.Fatalf("x25519 public key has %d bytes, expected 32", len(pub))
 	}
 }

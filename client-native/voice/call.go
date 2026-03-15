@@ -11,23 +11,23 @@ import (
 	"github.com/pion/webrtc/v4/pkg/media"
 )
 
-// CallState představuje stav DM hovoru.
+// CallState represents the state of a DM call.
 type CallState int
 
 const (
 	CallIdle       CallState = iota
-	CallRingingOut           // Volám druhému
-	CallRingingIn            // Někdo mi volá
-	CallConnected            // Hovor probíhá
+	CallRingingOut           // Calling the other party
+	CallRingingIn            // Someone is calling me
+	CallConnected            // Call in progress
 )
 
 const callRingTimeout = 30 * time.Second
 
-// CallManager spravuje 1:1 DM hovory (WebRTC + audio).
+// CallManager manages 1:1 DM calls (WebRTC + audio).
 type CallManager struct {
 	mu             sync.Mutex
 	State          CallState
-	PeerID         string // User ID protějšku
+	PeerID         string // User ID of the other party
 	ConversationID string // DM conversation ID
 	StartTime      time.Time
 
@@ -50,14 +50,14 @@ type CallManager struct {
 
 	sendWS       SendWSFunc
 	invalidate   func()
-	onLeaveVoice func() // Callback: opustit voice kanál před hovorem
-	onRingStop   func() // Callback: zastavit ring zvuk
+	onLeaveVoice func() // Callback: leave voice channel before a call
+	onRingStop   func() // Callback: stop the ring sound
 
 	stopCapture chan struct{}
 	stopMixer   chan struct{}
 }
 
-// NewCallManager vytvoří nový CallManager s vlastním audio+mixer.
+// NewCallManager creates a new CallManager with its own audio+mixer.
 func NewCallManager(stunURL string, sendWS SendWSFunc, invalidate func(), onLeaveVoice func(), onRingStop func()) *CallManager {
 	return &CallManager{
 		State:             CallIdle,
@@ -74,21 +74,21 @@ func NewCallManager(stunURL string, sendWS SendWSFunc, invalidate func(), onLeav
 	}
 }
 
-// IsActive vrací true pokud probíhá hovor (jakýkoli stav kromě idle).
+// IsActive returns true if a call is in progress (any state except idle).
 func (c *CallManager) IsActive() bool {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	return c.State != CallIdle
 }
 
-// GetState vrací aktuální stav hovoru a peer ID.
+// GetState returns the current call state and peer ID.
 func (c *CallManager) GetCallState() (CallState, string, string, time.Time) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	return c.State, c.PeerID, c.ConversationID, c.StartTime
 }
 
-// StartCall zahájí odchozí hovor — opustí voice kanál, pošle call.ring.
+// StartCall initiates an outgoing call — leaves the voice channel, sends call.ring.
 func (c *CallManager) StartCall(conversationID, peerID string) {
 	c.mu.Lock()
 	if c.State != CallIdle {
@@ -102,7 +102,7 @@ func (c *CallManager) StartCall(conversationID, peerID string) {
 	c.Deafened = false
 	c.mu.Unlock()
 
-	// Opustit voice kanál (mutual exclusion)
+	// Leave voice channel (mutual exclusion)
 	if c.onLeaveVoice != nil {
 		c.onLeaveVoice()
 	}
@@ -134,11 +134,11 @@ func (c *CallManager) StartCall(conversationID, peerID string) {
 	}
 }
 
-// HandleRing zpracuje příchozí call.ring — někdo nám volá.
+// HandleRing processes an incoming call.ring — someone is calling us.
 func (c *CallManager) HandleRing(from, conversationID string) {
 	c.mu.Lock()
 	if c.State != CallIdle {
-		// Už voláme/voláno — odmítnout
+		// Already in a call — decline
 		c.mu.Unlock()
 		c.sendWS("call.decline", map[string]string{
 			"to": from,
@@ -167,7 +167,7 @@ func (c *CallManager) HandleRing(from, conversationID string) {
 	})
 	c.mu.Unlock()
 
-	// Opustit voice kanál
+	// Leave voice channel
 	if c.onLeaveVoice != nil {
 		c.onLeaveVoice()
 	}
@@ -177,7 +177,7 @@ func (c *CallManager) HandleRing(from, conversationID string) {
 	}
 }
 
-// AcceptCall přijme příchozí hovor — pošle call.accept, spustí audio, čeká na offer.
+// AcceptCall accepts an incoming call — sends call.accept, starts audio, waits for offer.
 func (c *CallManager) AcceptCall() {
 	c.mu.Lock()
 	if c.State != CallRingingIn {
@@ -201,7 +201,7 @@ func (c *CallManager) AcceptCall() {
 	}
 }
 
-// DeclineCall odmítne příchozí hovor.
+// DeclineCall declines an incoming call.
 func (c *CallManager) DeclineCall() {
 	c.mu.Lock()
 	if c.State != CallRingingIn {
@@ -222,7 +222,7 @@ func (c *CallManager) DeclineCall() {
 	}
 }
 
-// HangupCall ukončí hovor (odchozí ring nebo probíhající).
+// HangupCall ends the call (outgoing ring or in-progress).
 func (c *CallManager) HangupCall() {
 	c.mu.Lock()
 	if c.State == CallIdle {
@@ -248,7 +248,7 @@ func (c *CallManager) HangupCall() {
 	}
 }
 
-// HandleAccept zpracuje call.accept — peer přijal, spustí audio a SDP offer.
+// HandleAccept processes call.accept — peer accepted, starts audio and SDP offer.
 func (c *CallManager) HandleAccept(from string) {
 	c.mu.Lock()
 	if c.State != CallRingingOut || c.PeerID != from {
@@ -262,7 +262,7 @@ func (c *CallManager) HandleAccept(from string) {
 
 	c.startAudio()
 
-	// Caller posílá offer
+	// Caller sends the offer
 	go c.connectToPeer(from)
 
 	if c.invalidate != nil {
@@ -270,7 +270,7 @@ func (c *CallManager) HandleAccept(from string) {
 	}
 }
 
-// HandleDecline zpracuje call.decline.
+// HandleDecline processes call.decline.
 func (c *CallManager) HandleDecline(from string) {
 	c.mu.Lock()
 	if c.PeerID != from {
@@ -286,7 +286,7 @@ func (c *CallManager) HandleDecline(from string) {
 	}
 }
 
-// HandleHangup zpracuje call.hangup.
+// HandleHangup processes call.hangup.
 func (c *CallManager) HandleHangup(from string) {
 	c.mu.Lock()
 	if c.PeerID != from {
@@ -308,7 +308,7 @@ func (c *CallManager) HandleHangup(from string) {
 	}
 }
 
-// HandleOffer zpracuje příchozí SDP offer (callee strana).
+// HandleOffer processes an incoming SDP offer (callee side).
 func (c *CallManager) HandleOffer(from string, sdpStr string) {
 	c.mu.Lock()
 	if c.State != CallConnected || c.PeerID != from {
@@ -348,7 +348,7 @@ func (c *CallManager) HandleOffer(from string, sdpStr string) {
 	})
 }
 
-// HandleAnswer zpracuje příchozí SDP answer (caller strana).
+// HandleAnswer processes an incoming SDP answer (caller side).
 func (c *CallManager) HandleAnswer(from string, sdpStr string) {
 	c.mu.Lock()
 	peer := c.peer
@@ -367,7 +367,7 @@ func (c *CallManager) HandleAnswer(from string, sdpStr string) {
 	}
 }
 
-// HandleICE zpracuje příchozí ICE candidate.
+// HandleICE processes an incoming ICE candidate.
 func (c *CallManager) HandleICE(from string, candidateJSON json.RawMessage) {
 	c.mu.Lock()
 	peer := c.peer
@@ -387,21 +387,21 @@ func (c *CallManager) HandleICE(from string, candidateJSON json.RawMessage) {
 	}
 }
 
-// GetMuteState vrací muted a deafened stav.
+// GetMuteState returns the muted and deafened state.
 func (c *CallManager) GetMuteState() (muted, deafened bool) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	return c.Muted, c.Deafened
 }
 
-// GetSpeakingState vrací self a peer speaking stav.
+// GetSpeakingState returns the self and peer speaking state.
 func (c *CallManager) GetSpeakingState() (selfSpeaking, peerSpeaking bool) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	return c.SelfSpeaking, c.PeerSpeaking
 }
 
-// ToggleMute přepne mute mikrofonu.
+// ToggleMute toggles microphone mute.
 func (c *CallManager) ToggleMute() {
 	c.mu.Lock()
 	c.Muted = !c.Muted
@@ -411,7 +411,7 @@ func (c *CallManager) ToggleMute() {
 	}
 }
 
-// ToggleDeafen přepne deafen (také mute).
+// ToggleDeafen toggles deafen (also mutes).
 func (c *CallManager) ToggleDeafen() {
 	c.mu.Lock()
 	c.Deafened = !c.Deafened
@@ -424,7 +424,7 @@ func (c *CallManager) ToggleDeafen() {
 	}
 }
 
-// connectToPeer vytvoří WebRTC peer a pošle SDP offer.
+// connectToPeer creates a WebRTC peer and sends an SDP offer.
 func (c *CallManager) connectToPeer(userID string) {
 	peer, err := c.createPeer(userID)
 	if err != nil {
@@ -448,7 +448,7 @@ func (c *CallManager) connectToPeer(userID string) {
 	})
 }
 
-// createPeer vytvoří PeerConnection pro 1:1 hovor.
+// createPeer creates a PeerConnection for a 1:1 call.
 func (c *CallManager) createPeer(userID string) (*Peer, error) {
 	c.mu.Lock()
 	if c.peer != nil {
@@ -473,7 +473,7 @@ func (c *CallManager) createPeer(userID string) (*Peer, error) {
 		webrtc.RTPCodecCapability{
 			MimeType:  webrtc.MimeTypeOpus,
 			ClockRate: 48000,
-			Channels:  2, // Opus RTP vždy hlásí 2 kanály (RFC 7587), reálně mono
+			Channels:  2, // Opus RTP always reports 2 channels (RFC 7587), actually mono
 		},
 		"audio", "nora-call",
 	)
@@ -527,9 +527,9 @@ func (c *CallManager) createPeer(userID string) (*Peer, error) {
 	return peer, nil
 }
 
-// startAudio spustí audio I/O a capture/mixer loopu.
+// startAudio starts audio I/O and capture/mixer loops.
 func (c *CallManager) startAudio() {
-	// Vytvořit Opus codec
+	// Create Opus codec
 	codec, err := NewOpusCodec()
 	if err != nil {
 		log.Printf("call: opus codec init failed: %v", err)
@@ -551,8 +551,8 @@ func (c *CallManager) startAudio() {
 	go c.mixerLoop()
 }
 
-// stopAudio zastaví audio I/O a loopu. peerID musí být předán explicitně
-// (po reset() je c.PeerID prázdný).
+// stopAudio stops audio I/O and loops. peerID must be passed explicitly
+// (after reset() c.PeerID is empty).
 func (c *CallManager) stopAudio(peerID string) {
 	if c.stopCapture != nil {
 		select {
@@ -581,7 +581,7 @@ func (c *CallManager) stopAudio(peerID string) {
 	}
 	c.audio.Stop()
 
-	// Uvolnit Opus codec
+	// Release Opus codec
 	c.mu.Lock()
 	if c.codec != nil {
 		c.codec.Close()
@@ -590,7 +590,7 @@ func (c *CallManager) stopAudio(peerID string) {
 	c.mu.Unlock()
 }
 
-// captureLoop čte mic, kóduje Opus, píše do peer tracku.
+// captureLoop reads mic, encodes Opus, writes to peer track.
 func (c *CallManager) captureLoop() {
 	ticker := time.NewTicker(20 * time.Millisecond)
 	defer ticker.Stop()
@@ -633,7 +633,7 @@ func (c *CallManager) captureLoop() {
 				c.invalidate()
 			}
 
-			// Encode do Opus
+			// Encode to Opus
 			var encoded []byte
 			if muted {
 				var err error
@@ -658,7 +658,7 @@ func (c *CallManager) captureLoop() {
 	}
 }
 
-// mixerLoop mixuje remote track, píše do playbacku.
+// mixerLoop mixes remote tracks and writes to playback.
 func (c *CallManager) mixerLoop() {
 	ticker := time.NewTicker(20 * time.Millisecond)
 	defer ticker.Stop()
@@ -702,11 +702,11 @@ func (c *CallManager) mixerLoop() {
 	}
 }
 
-// playRemoteTrack čte audio z remote WebRTC tracku, dekóduje Opus a píše do mixeru.
+// playRemoteTrack reads audio from a remote WebRTC track, decodes Opus, and writes to mixer.
 func (c *CallManager) playRemoteTrack(userID string, remote *webrtc.TrackRemote) {
 	track := c.mixer.AddTrack(userID)
 
-	// Vytvořit per-track Opus decoder
+	// Create per-track Opus decoder
 	dec, err := NewOpusCodec()
 	if err != nil {
 		log.Printf("call: opus decoder for %s: %v", userID, err)
@@ -731,7 +731,7 @@ func (c *CallManager) playRemoteTrack(userID string, remote *webrtc.TrackRemote)
 	}
 }
 
-// stopRingTimer zastaví ring timer (musí se volat pod lockem).
+// stopRingTimer stops the ring timer (must be called under lock).
 func (c *CallManager) stopRingTimer() {
 	if c.ringTimer != nil {
 		c.ringTimer.Stop()
@@ -739,7 +739,7 @@ func (c *CallManager) stopRingTimer() {
 	}
 }
 
-// reset vrátí stav na idle (musí se volat pod lockem).
+// reset resets the state to idle (must be called under lock).
 func (c *CallManager) reset() {
 	c.State = CallIdle
 	c.PeerID = ""
@@ -749,7 +749,7 @@ func (c *CallManager) reset() {
 	c.PeerSpeaking = false
 }
 
-// FormatDuration formátuje dobu hovoru jako M:SS.
+// FormatCallDuration formats call duration as M:SS.
 func FormatCallDuration(d time.Duration) string {
 	m := int(d.Minutes())
 	s := int(math.Mod(d.Seconds(), 60))

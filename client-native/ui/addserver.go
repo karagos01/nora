@@ -5,6 +5,7 @@ import (
 	"image/color"
 	"strings"
 
+	"gioui.org/io/pointer"
 	"gioui.org/layout"
 	"gioui.org/op/clip"
 	"gioui.org/op/paint"
@@ -165,6 +166,7 @@ func (v *AddServerView) layoutCancelBtn(gtx layout.Context) layout.Dimensions {
 			rr := gtx.Dp(8)
 			c := ColorCard
 			if v.cancelBtn.Hovered() {
+				pointer.CursorPointer.Add(gtx.Ops)
 				c = ColorHover
 			}
 			paint.FillShape(gtx.Ops, c, clip.RRect{
@@ -198,6 +200,7 @@ func (v *AddServerView) layoutConnectBtn(gtx layout.Context) layout.Dimensions {
 			if v.loading {
 				c = ColorTextDim
 			} else if v.connectBtn.Hovered() {
+				pointer.CursorPointer.Add(gtx.Ops)
 				c = ColorAccentHover
 			}
 			paint.FillShape(gtx.Ops, c, clip.RRect{

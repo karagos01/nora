@@ -9,22 +9,22 @@ import (
 	"nora-client/api"
 )
 
-// MountInfo drží informace o jednom mountu.
+// MountInfo holds information about a single mount.
 type MountInfo struct {
 	ShareID     string
 	ShareName   string
-	Type        string // "fuse" nebo "webdav"
-	Path        string // mount path (FUSE) nebo WebDAV URL
-	DriveLetter string // Windows: mapované písmeno disku (např. "Z:")
-	Port        int    // WebDAV port (pro reuse při restartu)
-	CanWrite    bool   // Write oprávnění
+	Type        string // "fuse" or "webdav"
+	Path        string // mount path (FUSE) or WebDAV URL
+	DriveLetter string // Windows: mapped drive letter (e.g. "Z:")
+	Port        int    // WebDAV port (for reuse on restart)
+	CanWrite    bool   // Write permissions
 
 	fuse   *FuseMount
 	webdav *WebDAVServer
 	fs     VirtualFS
 }
 
-// MountManager spravuje všechny mounty pro jedno server connection.
+// MountManager manages all mounts for a single server connection.
 type MountManager struct {
 	mu         sync.Mutex
 	mounts     map[string]*MountInfo // shareID → MountInfo
@@ -48,7 +48,7 @@ func NewMountManager(serverAddr string, client *api.Client, downloadFn DownloadF
 	}
 }
 
-// CleanupStaleDrive odpojí starý síťový disk z předchozí session (Windows).
+// CleanupStaleDrive disconnects an old network drive from a previous session (Windows).
 func CleanupStaleDrive(driveLetter string) {
 	if driveLetter != "" {
 		log.Printf("MountManager: cleaning up stale drive %s", driveLetter)
@@ -56,16 +56,16 @@ func CleanupStaleDrive(driveLetter string) {
 	}
 }
 
-// MountFS připojí obecný VirtualFS. Na Linuxu FUSE, na Windows WebDAV.
+// MountFS mounts a generic VirtualFS. On Linux FUSE, on Windows WebDAV.
 func (m *MountManager) MountFS(id, name string, vfs VirtualFS) (*MountInfo, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
 	if info, ok := m.mounts[id]; ok {
-		return info, nil // už mountnutý
+		return info, nil // already mounted
 	}
 
-	// Refresh listing předem
+	// Refresh listing upfront
 	if err := vfs.RefreshListing("/"); err != nil {
 		log.Printf("MountManager: refresh listing for %s: %v", id, err)
 	}
@@ -114,14 +114,14 @@ func (m *MountManager) MountFS(id, name string, vfs VirtualFS) (*MountInfo, erro
 	return info, nil
 }
 
-// Mount připojí sdílený adresář. Na Linuxu FUSE, na Windows WebDAV.
+// Mount mounts a shared directory. On Linux FUSE, on Windows WebDAV.
 func (m *MountManager) Mount(shareID, shareName string, canWrite bool) (*MountInfo, error) {
 	shareFS := NewShareFS(shareID, shareName, m.serverAddr, m.client, m.cache, m.downloadFn, m.uploadFn, m.deleteFn)
 	shareFS.SetCanWrite(canWrite)
 	return m.MountFS(shareID, shareName, shareFS)
 }
 
-// MountPreferred připojí sdílený adresář s preferovaným drive letterem a portem (Windows remount).
+// MountPreferred mounts a shared directory with a preferred drive letter and port (Windows remount).
 func (m *MountManager) MountPreferred(shareID, shareName, preferredLetter string, preferredPort int, canWrite bool) (*MountInfo, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -184,7 +184,7 @@ func (m *MountManager) MountPreferred(shareID, shareName, preferredLetter string
 	return info, nil
 }
 
-// Unmount odpojí sdílený adresář.
+// Unmount unmounts a shared directory.
 func (m *MountManager) Unmount(shareID string) error {
 	m.mu.Lock()
 	info, ok := m.mounts[shareID]
@@ -206,7 +206,7 @@ func (m *MountManager) Unmount(shareID string) error {
 	return err
 }
 
-// UnmountAll odpojí všechny mounty (při disconnect).
+// UnmountAll unmounts all mounts (on disconnect).
 func (m *MountManager) UnmountAll() {
 	m.mu.Lock()
 	mounts := make(map[string]*MountInfo, len(m.mounts))
@@ -227,7 +227,7 @@ func (m *MountManager) UnmountAll() {
 	log.Printf("MountManager: unmounted all")
 }
 
-// IsMounted vrátí true pokud je share mountnutý.
+// IsMounted returns true if the share is mounted.
 func (m *MountManager) IsMounted(shareID string) bool {
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -235,14 +235,14 @@ func (m *MountManager) IsMounted(shareID string) bool {
 	return ok
 }
 
-// GetMountInfo vrátí info o mountu (nil pokud není mountnutý).
+// GetMountInfo returns mount info (nil if not mounted).
 func (m *MountManager) GetMountInfo(shareID string) *MountInfo {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	return m.mounts[shareID]
 }
 
-// UpdateCanWrite aktualizuje write oprávnění na existujícím mountu.
+// UpdateCanWrite updates write permissions on an existing mount.
 func (m *MountManager) UpdateCanWrite(shareID string, canWrite bool) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -254,7 +254,7 @@ func (m *MountManager) UpdateCanWrite(shareID string, canWrite bool) {
 	}
 }
 
-// GetAllMounts vrátí kopii všech aktivních mountů.
+// GetAllMounts returns a copy of all active mounts.
 func (m *MountManager) GetAllMounts() []MountInfo {
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -265,7 +265,7 @@ func (m *MountManager) GetAllMounts() []MountInfo {
 	return result
 }
 
-// Cache vrátí odkaz na file cache.
+// Cache returns a reference to the file cache.
 func (m *MountManager) Cache() *Cache {
 	return m.cache
 }

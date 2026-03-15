@@ -14,7 +14,7 @@ import (
 	"gioui.org/widget/material"
 )
 
-// notifItemKind rozlišuje typ notifikace.
+// notifItemKind distinguishes the notification type.
 type notifItemKind int
 
 const (
@@ -24,7 +24,7 @@ const (
 	notifUnreadGroup
 )
 
-// notifItem je jedna položka v notification centeru.
+// notifItem is a single item in the notification center.
 type notifItem struct {
 	Kind        notifItemKind
 	ServerIdx   int
@@ -36,11 +36,11 @@ type notifItem struct {
 	GroupID     string
 	GroupName   string
 	Count       int
-	UserID      string // pro friend request
-	Username    string // pro friend request
+	UserID      string // for friend request
+	Username    string // for friend request
 }
 
-// NotificationCenter — agregovaný přehled nepřečtených zpráv a notifikací.
+// NotificationCenter — aggregated overview of unread messages and notifications.
 type NotificationCenter struct {
 	app      *App
 	list     widget.List
@@ -54,7 +54,7 @@ func NewNotificationCenter(a *App) *NotificationCenter {
 	return nc
 }
 
-// totalUnread vrací celkový počet nepřečtených notifikací ze všech serverů.
+// totalUnread returns the total count of unread notifications from all servers.
 func (nc *NotificationCenter) totalUnread() int {
 	a := nc.app
 	total := 0
@@ -81,7 +81,7 @@ func (nc *NotificationCenter) totalUnread() int {
 	return total
 }
 
-// refresh znovu sestaví seznam notifikačních položek ze všech serverů.
+// refresh rebuilds the list of notification items from all servers.
 func (nc *NotificationCenter) refresh() {
 	nc.items = nc.items[:0]
 	a := nc.app
@@ -181,22 +181,22 @@ func (nc *NotificationCenter) refresh() {
 		}
 	}
 
-	// Seřadit: friend requesty nahoře, pak kanály, DM, groups
+	// Sort: friend requests on top, then channels, DM, groups
 	sort.SliceStable(nc.items, func(i, j int) bool {
 		return nc.items[i].Kind < nc.items[j].Kind
 	})
 
-	// Zajistit dostatek tlačítek
+	// Ensure enough buttons
 	if len(nc.itemBtns) < len(nc.items) {
 		nc.itemBtns = make([]widget.Clickable, len(nc.items)+10)
 	}
 }
 
-// LayoutSidebar renderuje seznam notifikací v sidebaru (300px panel).
+// LayoutSidebar renders the notification list in the sidebar (300px panel).
 func (nc *NotificationCenter) LayoutSidebar(gtx layout.Context) layout.Dimensions {
 	nc.refresh()
 
-	// Zpracovat kliknutí na položky
+	// Handle item clicks
 	for i := range nc.items {
 		if i < len(nc.itemBtns) && nc.itemBtns[i].Clicked(gtx) {
 			nc.handleClick(i)
@@ -208,7 +208,7 @@ func (nc *NotificationCenter) LayoutSidebar(gtx layout.Context) layout.Dimension
 		layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 			return nc.layoutHeader(gtx)
 		}),
-		// Seznam položek
+		// Item list
 		layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
 			paint.FillShape(gtx.Ops, ColorCard, clip.Rect{Max: gtx.Constraints.Max}.Op())
 			if len(nc.items) == 0 {
@@ -225,12 +225,12 @@ func (nc *NotificationCenter) LayoutSidebar(gtx layout.Context) layout.Dimension
 	)
 }
 
-// LayoutMain renderuje hlavní oblast (placeholder text).
+// LayoutMain renders the main area (placeholder text).
 func (nc *NotificationCenter) LayoutMain(gtx layout.Context) layout.Dimensions {
 	return layoutCentered(gtx, nc.app.Theme, "Select a notification from the sidebar", ColorTextDim)
 }
 
-// layoutHeader renderuje záhlaví notification centeru.
+// layoutHeader renders the notification center header.
 func (nc *NotificationCenter) layoutHeader(gtx layout.Context) layout.Dimensions {
 	return layout.Background{}.Layout(gtx,
 		func(gtx layout.Context) layout.Dimensions {
@@ -267,7 +267,7 @@ func (nc *NotificationCenter) layoutHeader(gtx layout.Context) layout.Dimensions
 	)
 }
 
-// layoutItem renderuje jednu notifikační položku.
+// layoutItem renders a single notification item.
 func (nc *NotificationCenter) layoutItem(gtx layout.Context, idx int) layout.Dimensions {
 	item := nc.items[idx]
 
@@ -316,7 +316,7 @@ func (nc *NotificationCenter) layoutItem(gtx layout.Context, idx int) layout.Dim
 	})
 }
 
-// itemIconColor vrátí ikonu a barvu pro daný typ notifikace.
+// itemIconColor returns the icon and color for the given notification type.
 func (nc *NotificationCenter) itemIconColor(item notifItem) (*NIcon, color.NRGBA) {
 	switch item.Kind {
 	case notifFriendRequest:
@@ -332,7 +332,7 @@ func (nc *NotificationCenter) itemIconColor(item notifItem) (*NIcon, color.NRGBA
 	}
 }
 
-// itemTitle vrátí hlavní text položky.
+// itemTitle returns the main text of the item.
 func (nc *NotificationCenter) itemTitle(item notifItem) string {
 	switch item.Kind {
 	case notifFriendRequest:
@@ -360,7 +360,7 @@ func (nc *NotificationCenter) itemTitle(item notifItem) string {
 	}
 }
 
-// itemSubtitle vrátí sekundární text (server name + kontext).
+// itemSubtitle returns the secondary text (server name + context).
 func (nc *NotificationCenter) itemSubtitle(item notifItem) string {
 	switch item.Kind {
 	case notifFriendRequest:
@@ -376,7 +376,7 @@ func (nc *NotificationCenter) itemSubtitle(item notifItem) string {
 	}
 }
 
-// layoutBadge renderuje červený badge s počtem.
+// layoutBadge renders a red badge with a count.
 func (nc *NotificationCenter) layoutBadge(gtx layout.Context, count int) layout.Dimensions {
 	text := fmt.Sprintf("%d", count)
 	if count > 99 {
@@ -407,7 +407,7 @@ func (nc *NotificationCenter) layoutBadge(gtx layout.Context, count int) layout.
 	})
 }
 
-// handleClick zpracuje kliknutí na notifikační položku a přepne na odpovídající view.
+// handleClick handles a click on a notification item and switches to the corresponding view.
 func (nc *NotificationCenter) handleClick(idx int) {
 	if idx < 0 || idx >= len(nc.items) {
 		return
@@ -417,7 +417,7 @@ func (nc *NotificationCenter) handleClick(idx int) {
 
 	switch item.Kind {
 	case notifFriendRequest:
-		// Přepnout na Home (DM view s friend requests)
+		// Switch to Home (DM view with friend requests)
 		a.mu.Lock()
 		if item.ServerIdx >= 0 && item.ServerIdx < len(a.Servers) {
 			a.ActiveServer = item.ServerIdx
@@ -426,7 +426,7 @@ func (nc *NotificationCenter) handleClick(idx int) {
 		a.mu.Unlock()
 
 	case notifUnreadChannel:
-		// Přepnout na server + kanál
+		// Switch to server + channel
 		a.mu.Lock()
 		if item.ServerIdx >= 0 && item.ServerIdx < len(a.Servers) {
 			a.ActiveServer = item.ServerIdx
@@ -436,7 +436,7 @@ func (nc *NotificationCenter) handleClick(idx int) {
 		a.SelectChannel(item.ChannelID, item.ChannelName)
 
 	case notifUnreadDM:
-		// Přepnout na DM konverzaci
+		// Switch to DM conversation
 		a.mu.Lock()
 		if item.ServerIdx >= 0 && item.ServerIdx < len(a.Servers) {
 			a.ActiveServer = item.ServerIdx
@@ -445,7 +445,7 @@ func (nc *NotificationCenter) handleClick(idx int) {
 		a.SelectDM(item.ConvID)
 
 	case notifUnreadGroup:
-		// Přepnout na group
+		// Switch to group
 		a.mu.Lock()
 		if item.ServerIdx >= 0 && item.ServerIdx < len(a.Servers) {
 			a.ActiveServer = item.ServerIdx

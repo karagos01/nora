@@ -2,7 +2,7 @@
 
 package ui
 
-// sendDesktopNotification je no-op na nepodporovaných platformach.
+// sendDesktopNotification is a no-op on unsupported platforms.
 func sendDesktopNotification(title, body, icon string) error {
 	return nil
 }

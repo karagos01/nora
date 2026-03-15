@@ -94,7 +94,7 @@ type GameServersView struct {
 	consoleBtns []widget.Clickable
 	filesBtns   []widget.Clickable
 
-	// Error selectables (pro kopírování error messages)
+	// Error selectables (for copying error messages)
 	errorSels []widget.Selectable
 
 	// Create dialog
@@ -155,7 +155,7 @@ func NewGameServersView(a *App) *GameServersView {
 	return v
 }
 
-// isGSMember zkontroluje zda uživatel je členem game server roomu
+// isGSMember checks whether the user is a member of the game server room
 func (v *GameServersView) isGSMember(gsID, userID string) bool {
 	for _, m := range v.gsMembers[gsID] {
 		if m.UserID == userID {
@@ -165,7 +165,7 @@ func (v *GameServersView) isGSMember(gsID, userID string) bool {
 	return false
 }
 
-// LoadMembers načte členy pro všechny game servery
+// LoadMembers loads members for all game servers
 func (v *GameServersView) LoadMembers(conn *ServerConnection) {
 	v.app.mu.RLock()
 	servers := make([]api.GameServerInstance, len(conn.GameServers))
@@ -413,7 +413,7 @@ func (v *GameServersView) LayoutMain(gtx layout.Context) layout.Dimensions {
 		v.showCreate = true
 		v.createNameEd.SetText("")
 		v.selectedPreset = 0
-		// Načti presety ze serveru
+		// Load presets from server
 		if !v.presetsLoaded {
 			go func() {
 				if presets, err := conn.Client.GetGameServerPresets(); err == nil && len(presets) > 0 {
@@ -431,7 +431,7 @@ func (v *GameServersView) LayoutMain(gtx layout.Context) layout.Dimensions {
 		if v.cancelBtn.Clicked(gtx) {
 			v.showCreate = false
 		}
-		// Preset clicks — při výběru presetu auto-fill jméno pokud je prázdné
+		// Preset clicks — auto-fill name when selecting a preset if empty
 		for i := range v.presetBtns {
 			if v.presetBtns[i].Clicked(gtx) {
 				v.selectedPreset = i
@@ -440,7 +440,7 @@ func (v *GameServersView) LayoutMain(gtx layout.Context) layout.Dimensions {
 				}
 			}
 		}
-		// Potvrzení přes tlačítko Create nebo Enter v name poli
+		// Confirm via Create button or Enter in the name field
 		submitCreate := v.createBtn.Clicked(gtx)
 		for {
 			ev, ok := v.createNameEd.Update(gtx)
@@ -469,7 +469,7 @@ func (v *GameServersView) LayoutMain(gtx layout.Context) layout.Dimensions {
 						v.app.Toasts.Error("Failed to create game server")
 						return
 					}
-					// Refresh seznam serverů
+					// Refresh server list
 					if servers, err := conn.Client.GetGameServers(); err == nil {
 						v.app.mu.Lock()
 						conn.GameServers = servers
@@ -570,7 +570,7 @@ func (v *GameServersView) layoutServerCard(gtx layout.Context, gs api.GameServer
 		statusColor = ColorTextDim
 	}
 
-	// Zjistit zda uživatel je admin
+	// Check if user is admin
 	isAdmin := conn != nil && v.app.isAdmin(conn)
 
 	return layout.Background{}.Layout(gtx,
@@ -681,7 +681,7 @@ func (v *GameServersView) layoutServerCard(gtx layout.Context, gs api.GameServer
 									return layout.Inset{Left: unit.Dp(12)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
 										return layout.Flex{Alignment: layout.Middle}.Layout(gtx,
 											layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-												// Online tečka
+												// Online dot
 												dotColor := ColorTextDim
 												if conn != nil && conn.OnlineUsers[uid] {
 													dotColor = ColorOnline
@@ -714,7 +714,7 @@ func (v *GameServersView) layoutServerCard(gtx layout.Context, gs api.GameServer
 						return layout.Inset{Top: unit.Dp(8)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
 							var btns []layout.FlexChild
 
-							// Files button — vždy viditelný
+							// Files button — always visible
 							btns = append(btns,
 								layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 									return v.filesBtns[idx].Layout(gtx, func(gtx layout.Context) layout.Dimensions {
@@ -723,7 +723,7 @@ func (v *GameServersView) layoutServerCard(gtx layout.Context, gs api.GameServer
 								}),
 							)
 
-							// Join/Leave — vždy viditelný
+							// Join/Leave — always visible
 							isMember := conn != nil && v.isGSMember(gs.ID, conn.UserID)
 							btns = append(btns,
 								layout.Rigid(func(gtx layout.Context) layout.Dimensions {
@@ -741,7 +741,7 @@ func (v *GameServersView) layoutServerCard(gtx layout.Context, gs api.GameServer
 								}),
 							)
 
-							// Lock/Unlock — jen admin
+							// Lock/Unlock — admin only
 							if isAdmin {
 								btns = append(btns,
 									layout.Rigid(func(gtx layout.Context) layout.Dimensions {
@@ -817,7 +817,7 @@ func (v *GameServersView) layoutServerCard(gtx layout.Context, gs api.GameServer
 							return layout.Flex{Alignment: layout.Middle}.Layout(gtx, btns...)
 						})
 					}),
-					// RCON sekce (jen pro running servery)
+					// RCON section (only for running servers)
 					layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 						if gs.Status != "running" || !isAdmin {
 							return layout.Dimensions{}
@@ -881,7 +881,7 @@ func (v *GameServersView) layoutServerCard(gtx layout.Context, gs api.GameServer
 											},
 											func(gtx layout.Context) layout.Dimensions {
 												return layout.Inset{Top: unit.Dp(4), Bottom: unit.Dp(4), Left: unit.Dp(8), Right: unit.Dp(8)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-													// Maximální výška pro response
+													// Maximum height for response
 													gtx.Constraints.Max.Y = gtx.Dp(120)
 													lbl := material.Body2(v.app.Theme.Material, resp)
 													lbl.Color = ColorText
@@ -902,7 +902,7 @@ func (v *GameServersView) layoutServerCard(gtx layout.Context, gs api.GameServer
 	)
 }
 
-// submitRCON odešle RCON příkaz na game server
+// submitRCON sends an RCON command to the game server
 func (v *GameServersView) submitRCON(gsID string, idx int, conn *ServerConnection) {
 	if idx >= len(v.rconEditors) {
 		return
@@ -1015,7 +1015,7 @@ func (v *GameServersView) layoutCreateDialog(gtx layout.Context) layout.Dimensio
 }
 
 func (v *GameServersView) layoutPresetGrid(gtx layout.Context) layout.Dimensions {
-	// Preset tlačítka ve wrapping flow layout (3 na řádek)
+	// Preset buttons in wrapping flow layout (3 per row)
 	const perRow = 3
 	var rows []layout.FlexChild
 	for rowStart := 0; rowStart < len(v.presets); rowStart += perRow {
@@ -1038,7 +1038,7 @@ func (v *GameServersView) layoutPresetGrid(gtx layout.Context) layout.Dimensions
 					})
 				}))
 			}
-			// Padding pro neúplný řádek
+			// Padding for incomplete row
 			for i := end - start; i < perRow; i++ {
 				cols = append(cols, layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
 					return layout.Dimensions{}
@@ -1135,7 +1135,7 @@ func (v *GameServersView) layoutFileExplorer(gtx layout.Context, conn *ServerCon
 		go v.loadFileExplorerEntries(conn)
 	}
 
-	// Handle link directory — načte rekurzivně soubory a odešle jako attachmenty
+	// Handle link directory — recursively load files and send as attachments
 	if fe.linkDirBtn.Clicked(gtx) {
 		serverID := fe.ServerID
 		currentPath := fe.CurrentPath
@@ -1158,7 +1158,7 @@ func (v *GameServersView) layoutFileExplorer(gtx layout.Context, conn *ServerCon
 					Size:     e.Size,
 				})
 			}
-			// Odeslat přímo do aktivního kanálu bez upload dialogu
+			// Send directly to active channel without upload dialog
 			v.app.mu.Lock()
 			v.app.Mode = ViewChannels
 			v.app.mu.Unlock()
@@ -1500,7 +1500,7 @@ func (v *GameServersView) layoutFileEntry(gtx layout.Context, entry api.GameServ
 	hovered := fe.entryBtns[idx].Hovered()
 
 	return fe.entryBtns[idx].Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-		// Změříme obsah přes op.Record, pak nakreslíme pozadí + obsah
+		// Measure content via op.Record, then draw background + content
 		macro := op.Record(gtx.Ops)
 		dims := layout.Inset{Top: unit.Dp(4), Bottom: unit.Dp(4), Left: unit.Dp(8), Right: unit.Dp(8)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
 			return layout.Flex{Alignment: layout.Middle, Spacing: layout.SpaceBetween}.Layout(gtx,
@@ -1551,7 +1551,7 @@ func (v *GameServersView) layoutFileEntry(gtx layout.Context, entry api.GameServ
 		})
 		call := macro.Stop()
 
-		// Nakreslíme pozadí (hover)
+		// Draw background (hover)
 		if hovered {
 			rr := gtx.Dp(4)
 			paint.FillShape(gtx.Ops, ColorHover, clip.RRect{
@@ -1597,7 +1597,7 @@ func (v *GameServersView) openTextEditor(serverID, path string, conn *ServerConn
 func (v *GameServersView) layoutTextEditor(gtx layout.Context, conn *ServerConnection) layout.Dimensions {
 	te := v.textEditor
 
-	// Detect modification (jen v edit mode)
+	// Detect modification (only in edit mode)
 	if te.editMode {
 		for {
 			_, ok := te.editor.Update(gtx)
@@ -1612,7 +1612,7 @@ func (v *GameServersView) layoutTextEditor(gtx layout.Context, conn *ServerConne
 	if te.editBtn.Clicked(gtx) {
 		te.editMode = !te.editMode
 		if !te.editMode {
-			// Přepnout na view mode — rebuild highlight z aktuálního textu
+			// Switch to view mode — rebuild highlight from current text
 			te.buildHighlight()
 		}
 	}
@@ -1699,7 +1699,7 @@ func (v *GameServersView) layoutTextEditor(gtx layout.Context, conn *ServerConne
 											return layoutSmallButton(gtx, v.app.Theme, label, ColorAccent, te.editBtn.Hovered())
 										})
 									}),
-									// Save (jen v edit mode a pokud modified)
+									// Save (only in edit mode and if modified)
 									layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 										return layout.Inset{Left: unit.Dp(4)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
 											return te.saveBtn.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
@@ -1752,7 +1752,7 @@ func (v *GameServersView) layoutTextEditor(gtx layout.Context, conn *ServerConne
 							return e.Layout(gtx)
 						})
 					}
-					// View mode — syntax highlighted s čísly řádků
+					// View mode — syntax highlighted with line numbers
 					return v.layoutTextEditorView(gtx)
 				}),
 			)
@@ -1815,7 +1815,7 @@ func isTextFile(name string) bool {
 	return textExts[strings.ToLower(filepath.Ext(name))]
 }
 
-// extToLang mapuje příponu souboru na chroma language name.
+// extToLang maps a file extension to a chroma language name.
 func extToLang(name string) string {
 	m := map[string]string{
 		".go": "go", ".py": "python", ".js": "javascript", ".ts": "typescript",
@@ -1829,14 +1829,14 @@ func extToLang(name string) string {
 	return m[strings.ToLower(filepath.Ext(name))]
 }
 
-// buildHighlight tokenizuje obsah editoru a cachuje per-line tokeny.
+// buildHighlight tokenizes editor content and caches per-line tokens.
 func (te *TextEditorState) buildHighlight() {
 	text := te.editor.Text()
 	if text == "" {
 		te.highlightedLines = nil
 		return
 	}
-	// Tokenizovat pomocí chroma
+	// Tokenize using chroma
 	if te.lang != "" {
 		tokens := tokenizeCode(text, te.lang)
 		if tokens != nil {
@@ -1854,7 +1854,7 @@ func (te *TextEditorState) buildHighlight() {
 	}
 }
 
-// splitTokensIntoLines rozdělí flat token slice na per-line slices.
+// splitTokensIntoLines splits a flat token slice into per-line slices.
 func splitTokensIntoLines(tokens []coloredToken) [][]coloredToken {
 	var lines [][]coloredToken
 	var current []coloredToken
@@ -1874,7 +1874,7 @@ func splitTokensIntoLines(tokens []coloredToken) [][]coloredToken {
 	return lines
 }
 
-// layoutTextEditorView renderuje syntax highlighted view s čísly řádků.
+// layoutTextEditorView renders a syntax highlighted view with line numbers.
 func (v *GameServersView) layoutTextEditorView(gtx layout.Context) layout.Dimensions {
 	te := v.textEditor
 	lines := te.highlightedLines
@@ -1888,7 +1888,7 @@ func (v *GameServersView) layoutTextEditorView(gtx layout.Context) layout.Dimens
 		return material.List(v.app.Theme.Material, &te.viewList).Layout(gtx, len(lines), func(gtx layout.Context, i int) layout.Dimensions {
 			return layout.Inset{Left: unit.Dp(8), Right: unit.Dp(8)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
 				return layout.Flex{Alignment: layout.Baseline}.Layout(gtx,
-					// Číslo řádku
+					// Line number
 					layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 						num := fmt.Sprintf("%*d", numDigits, i+1)
 						lbl := material.Body2(v.app.Theme.Material, num)
@@ -1897,7 +1897,7 @@ func (v *GameServersView) layoutTextEditorView(gtx layout.Context) layout.Dimens
 						lbl.TextSize = unit.Sp(13)
 						return layout.Inset{Right: unit.Dp(12)}.Layout(gtx, lbl.Layout)
 					}),
-					// Tokeny řádku
+					// Line tokens
 					layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
 						toks := lines[i]
 						if len(toks) == 0 {
@@ -1925,7 +1925,7 @@ func (v *GameServersView) layoutTextEditorView(gtx layout.Context) layout.Dimens
 	})
 }
 
-// layoutButton a layoutSmallButton — sdílené tlačítko helpery
+// layoutButton and layoutSmallButton — shared button helpers
 
 func layoutButton(gtx layout.Context, th *Theme, text string, clr color.NRGBA, hovered bool) layout.Dimensions {
 	bg := clr
@@ -1933,7 +1933,7 @@ func layoutButton(gtx layout.Context, th *Theme, text string, clr color.NRGBA, h
 		bg.A = 220
 	}
 
-	// Nejdřív změř obsah
+	// First measure content
 	macro := op.Record(gtx.Ops)
 	dims := layout.Inset{Top: unit.Dp(6), Bottom: unit.Dp(6), Left: unit.Dp(16), Right: unit.Dp(16)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
 		lbl := material.Body2(th.Material, text)
@@ -1943,7 +1943,7 @@ func layoutButton(gtx layout.Context, th *Theme, text string, clr color.NRGBA, h
 	})
 	call := macro.Stop()
 
-	// Pozadí na velikost obsahu
+	// Background sized to content
 	rr := gtx.Dp(6)
 	paint.FillShape(gtx.Ops, bg, clip.RRect{
 		Rect: image.Rect(0, 0, dims.Size.X, dims.Size.Y),

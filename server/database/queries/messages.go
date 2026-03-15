@@ -8,14 +8,14 @@ import (
 	"time"
 )
 
-// SearchFilters obsahuje rozšířené filtry pro vyhledávání zpráv.
+// SearchFilters contains extended filters for message search.
 type SearchFilters struct {
-	FromUsername string // from:username — filtr podle autora
-	HasImage    bool   // has:image — zprávy s obrázkovými přílohami
-	HasLink     bool   // has:link — zprávy obsahující URL
-	HasFile     bool   // has:file — zprávy s jakoukoliv přílohou
-	Before      string // before:YYYY-MM-DD — zprávy před datem
-	After       string // after:YYYY-MM-DD — zprávy po datu
+	FromUsername string // from:username — filter by author
+	HasImage    bool   // has:image — messages with image attachments
+	HasLink     bool   // has:link — messages containing URL
+	HasFile     bool   // has:file — messages with any attachment
+	Before      string // before:YYYY-MM-DD — messages before date
+	After       string // after:YYYY-MM-DD — messages after date
 }
 
 type MessageQueries struct {
@@ -63,10 +63,10 @@ func (q *MessageQueries) GetByID(id string) (*models.Message, error) {
 	return msg, nil
 }
 
-// ListByChannel vrací zprávy s cursor-based paginací.
-// before = ID zprávy, od které čteme dozadu (starší)
-// limit = max počet zpráv
-// callerPosition = position (rank) volajícího; skryté zprávy se vrátí vždy, ale obsah se vyčistí pokud callerPosition >= hidden_by_position
+// ListByChannel returns messages with cursor-based pagination.
+// before = message ID from which we read backwards (older)
+// limit = max number of messages
+// callerPosition = position (rank) of the caller; hidden messages are always returned, but content is cleared if callerPosition >= hidden_by_position
 func (q *MessageQueries) ListByChannel(channelID, before string, limit, callerPosition int) ([]models.Message, error) {
 	if limit <= 0 || limit > 100 {
 		limit = 50
@@ -220,7 +220,7 @@ func (q *MessageQueries) ListPinned(channelID string) ([]models.Message, error) 
 	return messages, rows.Err()
 }
 
-// Search hledá zprávy v kanálu pomocí LIKE s offset paginací a rozšířenými filtry.
+// Search searches messages in a channel using LIKE with offset pagination and extended filters.
 func (q *MessageQueries) Search(channelID, query string, limit, offset, callerPosition int, filters *SearchFilters) ([]models.Message, error) {
 	if limit <= 0 || limit > 100 {
 		limit = 50
@@ -229,7 +229,7 @@ func (q *MessageQueries) Search(channelID, query string, limit, offset, callerPo
 		offset = 0
 	}
 
-	// Sestavení dynamického SQL dotazu s filtry
+	// Build dynamic SQL query with filters
 	var conditions []string
 	var args []interface{}
 
@@ -239,52 +239,52 @@ func (q *MessageQueries) Search(channelID, query string, limit, offset, callerPo
 	conditions = append(conditions, "(m.is_hidden = 0 OR ? < m.hidden_by_position)")
 	args = append(args, callerPosition)
 
-	// Textové vyhledávání (pokud zůstal text po parsování filtrů)
+	// Text search (if text remains after parsing filters)
 	if query != "" {
 		conditions = append(conditions, "m.content LIKE '%' || ? || '%'")
 		args = append(args, query)
 	}
 
-	// Rozšířené filtry
+	// Extended filters
 	needAttachmentJoin := false
 	if filters != nil {
-		// from:username — filtr podle autora
+		// from:username — filter by author
 		if filters.FromUsername != "" {
 			conditions = append(conditions, "LOWER(u.username) = LOWER(?)")
 			args = append(args, filters.FromUsername)
 		}
 
-		// has:image — zprávy s obrázkovými přílohami
+		// has:image — messages with image attachments
 		if filters.HasImage {
 			needAttachmentJoin = true
 			conditions = append(conditions, "(a.mime_type LIKE 'image/%')")
 		}
 
-		// has:file — zprávy s jakoukoliv přílohou
+		// has:file — messages with any attachment
 		if filters.HasFile {
 			needAttachmentJoin = true
 			conditions = append(conditions, "a.id IS NOT NULL")
 		}
 
-		// has:link — zprávy obsahující URL
+		// has:link — messages containing URL
 		if filters.HasLink {
 			conditions = append(conditions, "(m.content LIKE '%http://%' OR m.content LIKE '%https://%')")
 		}
 
-		// before:YYYY-MM-DD — zprávy před datem
+		// before:YYYY-MM-DD — messages before date
 		if filters.Before != "" {
 			conditions = append(conditions, "m.created_at < ?")
 			args = append(args, filters.Before+"T00:00:00Z")
 		}
 
-		// after:YYYY-MM-DD — zprávy po datu
+		// after:YYYY-MM-DD — messages after date
 		if filters.After != "" {
 			conditions = append(conditions, "m.created_at >= ?")
 			args = append(args, filters.After+"T00:00:00Z")
 		}
 	}
 
-	// Sestavení JOIN klauzulí
+	// Build JOIN clauses
 	joins := `JOIN users u ON u.id = m.user_id
 		 LEFT JOIN messages rm ON rm.id = m.reply_to_id
 		 LEFT JOIN users ru ON ru.id = rm.user_id`
@@ -292,7 +292,7 @@ func (q *MessageQueries) Search(channelID, query string, limit, offset, callerPo
 		joins += "\n\t\t LEFT JOIN attachments a ON a.message_id = m.id"
 	}
 
-	// DISTINCT aby se zpráva neopakovala při více přílohách
+	// DISTINCT to avoid duplicate messages when there are multiple attachments
 	distinct := ""
 	if needAttachmentJoin {
 		distinct = "DISTINCT "
@@ -371,7 +371,7 @@ func (q *MessageQueries) GetLastMessageTime(channelID, userID string) (time.Time
 	return t, err
 }
 
-// ListReplies vrátí odpovědi na zprávu (thread).
+// ListReplies returns replies to a message (thread).
 func (q *MessageQueries) ListReplies(parentID string, callerPosition int) ([]models.Message, error) {
 	rows, err := q.DB.Query(
 		`SELECT m.id, m.channel_id, m.user_id, m.content, m.created_at, m.updated_at, m.reply_to_id,
@@ -423,7 +423,7 @@ func (q *MessageQueries) ListReplies(parentID string, callerPosition int) ([]mod
 	return messages, nil
 }
 
-// BatchCountReplies spočítá odpovědi pro dané zprávy.
+// BatchCountReplies counts replies for the given messages.
 func (q *MessageQueries) BatchCountReplies(ids []string) (map[string]int, error) {
 	if len(ids) == 0 {
 		return nil, nil
@@ -453,7 +453,7 @@ func (q *MessageQueries) BatchCountReplies(ids []string) (map[string]int, error)
 	return result, rows.Err()
 }
 
-// SaveEditHistory uloží starý obsah zprávy do historie editací.
+// SaveEditHistory saves the old message content to edit history.
 func (q *MessageQueries) SaveEditHistory(messageID, oldContent, editorID string) error {
 	_, err := q.DB.Exec(
 		`INSERT INTO message_edits (message_id, old_content, edited_by) VALUES (?, ?, ?)`,
@@ -462,7 +462,7 @@ func (q *MessageQueries) SaveEditHistory(messageID, oldContent, editorID string)
 	return err
 }
 
-// GetEditHistory vrátí historii editací zprávy (nejnovější první).
+// GetEditHistory returns the edit history of a message (newest first).
 func (q *MessageQueries) GetEditHistory(messageID string) ([]models.MessageEdit, error) {
 	rows, err := q.DB.Query(
 		`SELECT id, message_id, old_content, edited_at, edited_by FROM message_edits WHERE message_id = ? ORDER BY edited_at DESC`,
@@ -488,6 +488,12 @@ func (q *MessageQueries) GetOwnerID(id string) (string, error) {
 	var userID string
 	err := q.DB.QueryRow("SELECT user_id FROM messages WHERE id = ?", id).Scan(&userID)
 	return userID, err
+}
+
+func (q *MessageQueries) GetChannelID(id string) (string, error) {
+	var channelID string
+	err := q.DB.QueryRow("SELECT channel_id FROM messages WHERE id = ?", id).Scan(&channelID)
+	return channelID, err
 }
 
 func (q *MessageQueries) SetHidden(id string, hidden bool, hiddenBy string, hiddenByPosition int) error {
@@ -517,8 +523,8 @@ func (q *MessageQueries) DeleteByUserID(userID string) error {
 	return err
 }
 
-// stripHiddenContent vyčistí obsah skrytých zpráv pro uživatele bez oprávnění.
-// Zpráva zůstane ve výpisu (uživatel vidí placeholder), ale obsah a přílohy se odstraní.
+// stripHiddenContent clears the content of hidden messages for users without permission.
+// The message remains in the listing (user sees a placeholder), but content and attachments are removed.
 func stripHiddenContent(messages []models.Message, callerPosition int) {
 	for i := range messages {
 		if messages[i].IsHidden && callerPosition >= messages[i].HiddenByPosition {

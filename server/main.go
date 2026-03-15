@@ -30,7 +30,7 @@ import (
 )
 
 func main() {
-	// Strukturovaný JSON logger na stderr
+	// Structured JSON logger on stderr
 	slog.SetDefault(slog.New(slog.NewJSONHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelInfo})))
 
 	cfgPath := "nora.toml"
@@ -60,7 +60,7 @@ func main() {
 		log.Fatalf("Failed to seed defaults: %v", err)
 	}
 
-	// Načíst runtime settings z DB (přepíšou config z toml)
+	// Load runtime settings from DB (override config from toml)
 	settingsQ := &queries.SettingsQueries{DB: db.DB}
 	if v := settingsQ.Get("server_name", ""); v != "" {
 		cfg.Server.Name = v
@@ -92,16 +92,16 @@ func main() {
 	hub := ws.NewHub()
 	go hub.Run()
 
-	// LAN kick callback se nastaví po vytvoření deps (níže)
+	// LAN kick callback is set after deps creation (below)
 
-	// Cleanup starých pending DM zpráv (>30 dní) každou hodinu
+	// Cleanup old pending DM messages (>30 days) every hour
 	dmQueries := &queries.DMQueries{DB: db.DB}
 	go func() {
 		ticker := time.NewTicker(1 * time.Hour)
 		defer ticker.Stop()
 		for range ticker.C {
 			if n, err := dmQueries.CleanupOldPending(30); err == nil && n > 0 {
-				slog.Info("vyčištěny staré pending DM zprávy", "count", n)
+				slog.Info("cleaned up old pending DM messages", "count", n)
 			}
 		}
 	}()
@@ -111,7 +111,7 @@ func main() {
 	storageQ := &queries.StorageQueries{DB: db.DB}
 
 	uploadSessions := handlers.NewUploadSessionStore()
-	uploadLimiter := handlers.NewUploadRateLimiter(30) // max 30 uploadů/minutu/uživatel
+	uploadLimiter := handlers.NewUploadRateLimiter(30) // max 30 uploads/minute/user
 
 	// WireGuard LAN Party manager
 	var wgManager *wg.Manager
@@ -119,27 +119,27 @@ func main() {
 		var err error
 		wgManager, err = wg.NewManager(cfg.LAN)
 		if err != nil {
-			slog.Warn("inicializace WireGuard manageru selhala", "error", err)
+			slog.Warn("WireGuard manager initialization failed", "error", err)
 		} else {
-			// Server-level keypair — načíst nebo vygenerovat
+			// Server-level keypair — load or generate
 			privKey := settingsQ.Get("wg_private_key", "")
 			pubKey := settingsQ.Get("wg_public_key", "")
 			if privKey == "" || pubKey == "" {
 				privKey, pubKey, err = wg.GenerateKeypair()
 				if err != nil {
-					slog.Warn("generování WG keypair selhalo", "error", err)
+					slog.Warn("WG keypair generation failed", "error", err)
 				} else {
 					settingsQ.Set("wg_private_key", privKey)
 					settingsQ.Set("wg_public_key", pubKey)
-					slog.Info("vygenerován nový WireGuard server keypair")
+					slog.Info("generated new WireGuard server keypair")
 				}
 			}
 			wgManager.SetKeys(privKey, pubKey)
-			slog.Info("WireGuard LAN manager inicializován", "interface", cfg.LAN.Interface, "port", cfg.LAN.Port)
+			slog.Info("WireGuard LAN manager initialized", "interface", cfg.LAN.Interface, "port", cfg.LAN.Port)
 		}
 	}
 
-	// Game server manager — vždy inicializovat (file operace nepotřebují Docker)
+	// Game server manager — always initialize (file operations don't need Docker)
 	gsEnabled := cfg.GameServers.Enabled
 	if v := settingsQ.Get("game_servers_enabled", ""); v != "" {
 		gsEnabled = v == "true"
@@ -153,9 +153,9 @@ func main() {
 	gsPresetsDir := filepath.Join(filepath.Dir(cfg.GameServers.DataDir), "gameserver-presets")
 	gsManager := gameserver.NewManager(cfg.GameServers.DataDir, gsPresetsDir)
 	if !gsManager.DockerAvailable() {
-		slog.Warn("Docker není dostupný, start/stop game serverů nebude fungovat")
+		slog.Warn("Docker is not available, game server start/stop will not work")
 	}
-	slog.Info("game server manager připraven", "data_dir", cfg.GameServers.DataDir, "enabled", gsEnabled)
+	slog.Info("game server manager ready", "data_dir", cfg.GameServers.DataDir, "enabled", gsEnabled)
 
 	// Auto-moderation
 	autoMod := moderation.New()
@@ -183,7 +183,7 @@ func main() {
 			autoMod.SpamTimeoutSeconds = n
 		}
 	}
-	// Najít owner ID pro auto-timeout issued_by
+	// Find owner ID for auto-timeout issued_by
 	usersQ := &queries.UserQueries{DB: db.DB}
 	allUsers, _ := usersQ.List()
 	for _, u := range allUsers {
@@ -264,7 +264,7 @@ func main() {
 		RegMode:             config.ResolveRegMode(cfg.Registration),
 	}
 
-	// User status callback pro presence init batch
+	// User status callback for presence init batch
 	hub.SetUserStatusFn(func(userID string) (string, string) {
 		u, err := deps.Users.GetByID(userID)
 		if err != nil {
@@ -273,14 +273,14 @@ func main() {
 		return u.Status, u.StatusText
 	})
 
-	// LAN auto-kick: po 5min offline odebrat uživatele ze všech LAN parties
+	// LAN auto-kick: after 5min offline remove user from all LAN parties
 	hub.SetLANKickCallback(func(userID string) {
 		deps.KickUserFromAllParties(userID)
 	})
 
 	// Lobby voice channels callbacks
 	hub.SetLobbyCallbacks(
-		// createFn: vytvoří sub-kanál v DB
+		// createFn: creates sub-channel in DB
 		func(lobbyID, name string) (string, error) {
 			lobby, err := deps.Channels.GetByID(lobbyID)
 			if err != nil {
@@ -303,18 +303,18 @@ func main() {
 			hub.Broadcast(msg)
 			return ch.ID, nil
 		},
-		// deleteFn: smaže sub-kanál z DB + broadcast
+		// deleteFn: deletes sub-channel from DB + broadcast
 		func(channelID string) {
 			deps.Channels.Delete(channelID)
 			msg, _ := ws.NewEvent(ws.EventChannelDelete, map[string]string{"id": channelID})
 			hub.Broadcast(msg)
 		},
-		// isLobbyFn: zjistí zda kanál je typ "lobby"
+		// isLobbyFn: checks if channel is type "lobby"
 		func(channelID string) bool {
 			ch, err := deps.Channels.GetByID(channelID)
 			return err == nil && ch.Type == "lobby"
 		},
-		// renameFn: přejmenuje sub-kanál v DB
+		// renameFn: renames sub-channel in DB
 		func(channelID, name string) error {
 			ch, err := deps.Channels.GetByID(channelID)
 			if err != nil {
@@ -325,7 +325,7 @@ func main() {
 		},
 	)
 
-	// WireGuard startup — vytvořit interface a přidat všechny peery ze všech aktivních parties
+	// WireGuard startup — create interface and add all peers from all active parties
 	if wgManager != nil && wgManager.PublicKey() != "" {
 		allPeers, err := deps.LAN.GetAllActivePeers()
 		if err == nil {
@@ -335,32 +335,32 @@ func main() {
 			}
 			privKey := settingsQ.Get("wg_private_key", "")
 			if err := wgManager.RecoverInterface(privKey, peers); err != nil {
-				slog.Warn("WireGuard startup selhal", "error", err)
+				slog.Warn("WireGuard startup failed", "error", err)
 			}
 		}
 	}
 
-	// LAN startup: spustit kick timery pro všechny členy LAN parties
-	// Kdo se připojí do 5 minut, timer se zruší. Kdo ne, bude kicknut.
+	// LAN startup: start kick timers for all LAN party members
+	// Those who connect within 5 minutes will have their timer cancelled. Those who don't will be kicked.
 	if lanUserIDs, err := deps.LAN.GetAllActiveMemberUserIDs(); err == nil && len(lanUserIDs) > 0 {
 		for _, uid := range lanUserIDs {
 			hub.StartLANKickTimer(uid)
 		}
-		slog.Info("LAN: spuštěny kick timery pro členy parties", "count", len(lanUserIDs))
+		slog.Info("LAN: started kick timers for party members", "count", len(lanUserIDs))
 	}
 
-	// Game server firewall: obnovit iptables pravidla pro běžící room servery
+	// Game server firewall: restore iptables rules for running room servers
 	if gsEnabled {
 		if roomServers, err := deps.GameServerQ.GetRunningRoomServers(); err == nil && len(roomServers) > 0 {
 			for _, gs := range roomServers {
 				gs := gs
 				deps.RefreshGameServerFirewall(&gs)
 			}
-			slog.Info("game servers: obnoven firewall pro room servery", "count", len(roomServers))
+			slog.Info("game servers: restored firewall for room servers", "count", len(roomServers))
 		}
 	}
 
-	// OnConnect callback — IP refresh pro firewall
+	// OnConnect callback — IP refresh for firewall
 	hub.SetOnConnect(func(userID string, r *http.Request) {
 		ip := util.GetClientIP(r)
 		u, err := deps.Users.GetByID(userID)
@@ -380,7 +380,7 @@ func main() {
 		}
 	})
 
-	// Storage auto-cleanup goroutine (každou hodinu)
+	// Storage auto-cleanup goroutine (every hour)
 	go func() {
 		ticker := time.NewTicker(1 * time.Hour)
 		defer ticker.Stop()
@@ -394,21 +394,21 @@ func main() {
 		}
 	}()
 
-	// Ban expiry cleanup (každou hodinu)
+	// Ban expiry cleanup (every hour)
 	go func() {
 		ticker := time.NewTicker(1 * time.Hour)
 		defer ticker.Stop()
 		for range ticker.C {
 			if n, _ := deps.Bans.DeleteExpired(); n > 0 {
-				slog.Info("vyčištěny expirované bany", "count", n)
+				slog.Info("cleaned up expired bans", "count", n)
 			}
 			if n, _ := deps.DeviceBans.DeleteExpired(); n > 0 {
-				slog.Info("vyčištěny expirované device bany", "count", n)
+				slog.Info("cleaned up expired device bans", "count", n)
 			}
 		}
 	}()
 
-	// Scheduled messages dispatcher (každých 30s)
+	// Scheduled messages dispatcher (every 30s)
 	go func() {
 		ticker := time.NewTicker(30 * time.Second)
 		defer ticker.Stop()
@@ -417,7 +417,7 @@ func main() {
 		}
 	}()
 
-	// Event reminder dispatcher (každých 60s)
+	// Event reminder dispatcher (every 60s)
 	go func() {
 		ticker := time.NewTicker(60 * time.Second)
 		defer ticker.Stop()
@@ -444,7 +444,7 @@ func main() {
 		sigCh := make(chan os.Signal, 1)
 		signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM)
 		<-sigCh
-		slog.Info("server se vypíná...")
+		slog.Info("server shutting down...")
 		if wgManager != nil {
 			wgManager.Close()
 		}
@@ -453,19 +453,19 @@ func main() {
 		srv.Shutdown(ctx)
 	}()
 
-	slog.Info("NORA server se spouští", "addr", addr, "server_name", cfg.Server.Name)
+	slog.Info("NORA server starting", "addr", addr, "server_name", cfg.Server.Name)
 
 	if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 		log.Fatalf("Server failed: %v", err)
 	}
 
-	slog.Info("server zastaven")
+	slog.Info("server stopped")
 }
 
 func storageCleanupBySize(deps *handlers.Deps) {
 	maxBytes := int64(deps.StorageMaxMB) * 1024 * 1024
 
-	// Spočítat aktuální velikost uploads
+	// Calculate current uploads size
 	var totalBytes int64
 	entries, err := os.ReadDir(deps.UploadsDir)
 	if err != nil {
@@ -484,7 +484,7 @@ func storageCleanupBySize(deps *handlers.Deps) {
 		return
 	}
 
-	// Mazat nejstarší přílohy dokud se nevejdeme do limitu
+	// Delete oldest attachments until we fit within the limit
 	paths, err := deps.Storage.OldestAttachmentPaths(100)
 	if err != nil || len(paths) == 0 {
 		return
@@ -492,12 +492,12 @@ func storageCleanupBySize(deps *handlers.Deps) {
 
 	deleted, err := deps.Storage.DeleteMessagesWithAttachments(paths)
 	if err != nil {
-		slog.Error("storage cleanup: smazání zpráv selhalo", "error", err)
+		slog.Error("storage cleanup: message deletion failed", "error", err)
 		return
 	}
 
 	handlers.DeleteAttachmentFiles(deps.UploadsDir, paths, deps.Attachments)
 	if deleted > 0 {
-		slog.Info("storage cleanup: smazány zprávy s přílohami", "deleted", deleted)
+		slog.Info("storage cleanup: deleted messages with attachments", "deleted", deleted)
 	}
 }

@@ -34,14 +34,14 @@ type StreamViewer struct {
 	streamWidth  int
 	streamHeight int
 	useH264      bool
-	decoderError string // chybová hláška pokud decoder selže (ffmpeg chybí)
+	decoderError string // error message if decoder fails (ffmpeg missing)
 }
 
 func NewStreamViewer(a *App) *StreamViewer {
 	return &StreamViewer{app: a}
 }
 
-// HandleMessage zpracovává příchozí DataChannel zprávu (H.264 nebo legacy JPEG).
+// HandleMessage processes an incoming DataChannel message (H.264 or legacy JPEG).
 func (sv *StreamViewer) HandleMessage(data []byte) {
 	msgType, payload := screen.ParseMessage(data)
 
@@ -68,12 +68,12 @@ func (sv *StreamViewer) HandleMessage(data []byte) {
 				log.Printf("stream viewer: decoder write: %v", err)
 			}
 		} else if errStr != "" {
-			// Decoder selhal (ffmpeg chybí) — ignorovat H.264 data
+			// Decoder failed (ffmpeg missing) — ignore H.264 data
 		}
 	}
 }
 
-// decodeJPEG dekóduje legacy JPEG frame.
+// decodeJPEG decodes a legacy JPEG frame.
 func (sv *StreamViewer) decodeJPEG(data []byte) {
 	img, _, err := image.Decode(bytes.NewReader(data))
 	if err != nil {
@@ -86,12 +86,12 @@ func (sv *StreamViewer) decodeJPEG(data []byte) {
 	sv.app.Window.Invalidate()
 }
 
-// startDecoder spustí nový H.264 decoder (zavře předchozí pokud existuje).
+// startDecoder starts a new H.264 decoder (closes the previous one if it exists).
 func (sv *StreamViewer) startDecoder(w, h int) {
 	sv.decoderMu.Lock()
 	defer sv.decoderMu.Unlock()
 
-	// Zavřít předchozí decoder
+	// Close the previous decoder
 	if sv.decoder != nil {
 		sv.decoder.Close()
 		sv.decoder = nil
@@ -116,7 +116,7 @@ func (sv *StreamViewer) startDecoder(w, h int) {
 	go sv.decoderReadLoop(dec)
 }
 
-// decoderReadLoop čte dekódované framy a ukládá je pro zobrazení.
+// decoderReadLoop reads decoded frames and stores them for display.
 func (sv *StreamViewer) decoderReadLoop(dec *screen.Decoder) {
 	for frame := range dec.Frames() {
 		sv.currentFrame.Store(frame)
@@ -238,7 +238,7 @@ func (sv *StreamViewer) Layout(gtx layout.Context) layout.Dimensions {
 				}),
 				// Stream image
 				layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
-					// Chyba decoderu (ffmpeg chybí)
+					// Decoder error (ffmpeg missing)
 					sv.decoderMu.Lock()
 					errStr := sv.decoderError
 					sv.decoderMu.Unlock()

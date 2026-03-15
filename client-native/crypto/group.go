@@ -8,7 +8,7 @@ import (
 	"errors"
 )
 
-// GenerateGroupKey generuje náhodný 32B AES-256-GCM klíč pro skupinu.
+// GenerateGroupKey generates a random 32B AES-256-GCM key for a group.
 func GenerateGroupKey() (string, error) {
 	key := make([]byte, 32)
 	if _, err := rand.Read(key); err != nil {
@@ -17,8 +17,8 @@ func GenerateGroupKey() (string, error) {
 	return hex.EncodeToString(key), nil
 }
 
-// EncryptGroupMessage zašifruje zprávu sdíleným group klíčem (AES-256-GCM).
-// Výstup: hex(nonce[12] + ciphertext+tag).
+// EncryptGroupMessage encrypts a message with a shared group key (AES-256-GCM).
+// Output: hex(nonce[12] + ciphertext+tag).
 func EncryptGroupMessage(groupKeyHex, plaintext string) (string, error) {
 	key, err := hex.DecodeString(groupKeyHex)
 	if err != nil {
@@ -52,8 +52,8 @@ func EncryptGroupMessage(groupKeyHex, plaintext string) (string, error) {
 	return hex.EncodeToString(result), nil
 }
 
-// DecryptGroupMessage dešifruje zprávu sdíleným group klíčem (AES-256-GCM).
-// Vstup: hex(nonce[12] + ciphertext+tag).
+// DecryptGroupMessage decrypts a message with a shared group key (AES-256-GCM).
+// Input: hex(nonce[12] + ciphertext+tag).
 func DecryptGroupMessage(groupKeyHex, encryptedHex string) (string, error) {
 	key, err := hex.DecodeString(groupKeyHex)
 	if err != nil {
@@ -92,13 +92,13 @@ func DecryptGroupMessage(groupKeyHex, encryptedHex string) (string, error) {
 	return string(plaintext), nil
 }
 
-// EncryptGroupKeyForMember šifruje group key pro konkrétního člena přes ECDH (DM šifrování).
-// Používá existující DM šifrování — ECDH + HKDF + AES-256-GCM.
+// EncryptGroupKeyForMember encrypts the group key for a specific member via ECDH (DM encryption).
+// Uses existing DM encryption — ECDH + HKDF + AES-256-GCM.
 func EncryptGroupKeyForMember(mySecretHex, memberPubHex, groupKeyHex string) (string, error) {
 	return EncryptDM(mySecretHex, memberPubHex, groupKeyHex)
 }
 
-// DecryptGroupKeyFromMember dešifruje group key od člena přes ECDH.
+// DecryptGroupKeyFromMember decrypts the group key from a member via ECDH.
 func DecryptGroupKeyFromMember(mySecretHex, senderPubHex, encryptedKeyHex string) (string, error) {
 	return DecryptDM(mySecretHex, senderPubHex, encryptedKeyHex)
 }

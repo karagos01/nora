@@ -148,13 +148,15 @@ func Download(url, expectedSHA256 string, progress func(downloaded, total int64)
 
 	tmpFile.Close()
 
-	// Verifikace SHA-256 checksumu
-	if expectedSHA256 != "" {
-		actualHash := hex.EncodeToString(hasher.Sum(nil))
-		if actualHash != expectedSHA256 {
-			os.Remove(tmpPath)
-			return "", fmt.Errorf("checksum mismatch: expected %s, got %s", expectedSHA256, actualHash)
-		}
+	// SHA-256 checksum verification (mandatory — refuse update without valid hash)
+	if expectedSHA256 == "" {
+		os.Remove(tmpPath)
+		return "", fmt.Errorf("refusing update: no SHA-256 checksum provided")
+	}
+	actualHash := hex.EncodeToString(hasher.Sum(nil))
+	if actualHash != expectedSHA256 {
+		os.Remove(tmpPath)
+		return "", fmt.Errorf("checksum mismatch: expected %s, got %s", expectedSHA256, actualHash)
 	}
 
 	return tmpPath, nil

@@ -36,13 +36,13 @@ func (d *Deps) GetStorageInfo(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// DB velikost
+	// DB size
 	var dbBytes int64
 	if info, err := os.Stat(d.DBPath); err == nil {
 		dbBytes = info.Size()
 	}
 
-	// Projít uploads adresář a spočítat kategorie
+	// Walk uploads directory and count categories
 	var uploadsBytes, attachmentsBytes, emojisBytes, iconBytes, avatarsBytes int64
 	var totalFiles int
 
@@ -116,7 +116,7 @@ func (d *Deps) UpdateStorageSettings(w http.ResponseWriter, r *http.Request) {
 		d.Settings.Set("channel_history_limit", fmt.Sprintf("%d", limit))
 		d.ChannelHistoryLimit = limit
 
-		// Okamžitě provést trim pokud se nastavil nenulový limit
+		// Immediately perform trim if a non-zero limit was set
 		if limit > 0 {
 			go d.TrimAllChannels()
 		}
@@ -128,7 +128,7 @@ func (d *Deps) UpdateStorageSettings(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// TrimAllChannels provede trim historie na všech kanálech.
+// TrimAllChannels performs history trim on all channels.
 func (d *Deps) TrimAllChannels() {
 	if d.ChannelHistoryLimit <= 0 {
 		return
@@ -136,24 +136,24 @@ func (d *Deps) TrimAllChannels() {
 
 	channelIDs, err := d.Storage.AllChannelIDs()
 	if err != nil {
-		slog.Error("storage cleanup: výpis kanálů selhal", "error", err)
+		slog.Error("storage cleanup: listing channels failed", "error", err)
 		return
 	}
 
 	for _, chID := range channelIDs {
 		paths, err := d.Storage.TrimChannelHistory(chID, d.ChannelHistoryLimit)
 		if err != nil {
-			slog.Error("storage cleanup: trim kanálu selhal", "channel_id", chID, "error", err)
+			slog.Error("storage cleanup: channel trim failed", "channel_id", chID, "error", err)
 			continue
 		}
 		DeleteAttachmentFiles(d.UploadsDir, paths, d.Attachments)
 	}
 }
 
-// DeleteAttachmentFiles smaže soubory z disku (jen pokud na ně neukazuje jiný attachment).
+// DeleteAttachmentFiles deletes files from disk (only if no other attachment references them).
 func DeleteAttachmentFiles(uploadsDir string, filepaths []string, attQ *queries.AttachmentQueries) {
 	for _, fp := range filepaths {
-		// Ref counting: přeskočit pokud jiný attachment stále používá tento soubor
+		// Ref counting: skip if another attachment still uses this file
 		if attQ != nil {
 			if count, err := attQ.CountByFilepath(fp); err == nil && count > 0 {
 				continue
@@ -161,7 +161,7 @@ func DeleteAttachmentFiles(uploadsDir string, filepaths []string, attQ *queries.
 		}
 		p := filepath.Join(uploadsDir, fp)
 		if err := os.Remove(p); err != nil && !os.IsNotExist(err) {
-			slog.Error("smazání souboru selhalo", "path", p, "error", err)
+			slog.Error("failed to delete file", "path", p, "error", err)
 		}
 	}
 }

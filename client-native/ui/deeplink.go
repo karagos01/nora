@@ -13,8 +13,14 @@ type DeepLink struct {
 	Code   string // invite code (for invite)
 }
 
-// ParseDeepLink parsuje nora:// URL.
-// Formáty:
+// DeepLinkInvite holds a pending invite deep link awaiting user confirmation.
+type DeepLinkInvite struct {
+	Server string
+	Code   string
+}
+
+// ParseDeepLink parses a nora:// URL.
+// Formats:
 //   nora://contact/{publicKey}?name=...
 //   nora://invite/{host}/{code}
 //   nora://group/{groupID}

@@ -21,7 +21,7 @@ import (
 )
 
 // --- ZipUploadDialog ---
-// Zobrazí se po výběru souborů: nabídne upload/ZIP/P2P varianty.
+// Shown after file selection: offers upload/ZIP/P2P variants.
 
 type ZipUploadDialog struct {
 	app     *App
@@ -273,7 +273,7 @@ func (d *ZipUploadDialog) Layout(gtx layout.Context) layout.Dimensions {
 										)
 									})
 								}),
-								// Upload na server — dva tlačítka 50/50
+								// Upload to server — two buttons 50/50
 								layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 									gap := gtx.Dp(8)
 									half := (gtx.Constraints.Max.X - gap) / 2
@@ -297,7 +297,7 @@ func (d *ZipUploadDialog) Layout(gtx layout.Context) layout.Dimensions {
 										}),
 									)
 								}),
-								// P2P — dva tlačítka 50/50
+								// P2P — two buttons 50/50
 								layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 									if d.onP2P == nil {
 										return layout.Dimensions{}
@@ -372,7 +372,7 @@ func (d *ZipUploadDialog) layoutFileList(gtx layout.Context) layout.Dimensions {
 	)
 }
 
-// layoutEqualBtn — tlačítko s centrovaným textem, vyplní celou šířku constraintů.
+// layoutEqualBtn — button with centered text, fills the full width of constraints.
 func (d *ZipUploadDialog) layoutEqualBtn(gtx layout.Context, btn *widget.Clickable, text string, bg, fg color.NRGBA) layout.Dimensions {
 	return btn.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
 		hoverBg := bg
@@ -407,43 +407,10 @@ func (d *ZipUploadDialog) layoutEqualBtn(gtx layout.Context, btn *widget.Clickab
 	})
 }
 
-// layoutBtn — tlačítko se šířkou dle obsahu (pro jiné kontexty).
-func (d *ZipUploadDialog) layoutBtn(gtx layout.Context, btn *widget.Clickable, text string, bg, fg color.NRGBA) layout.Dimensions {
-	return btn.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-		hoverBg := bg
-		if btn.Hovered() {
-			hoverBg = color.NRGBA{
-				R: min8(bg.R + 20),
-				G: min8(bg.G + 20),
-				B: min8(bg.B + 20),
-				A: 255,
-			}
-		}
-		return layout.Background{}.Layout(gtx,
-			func(gtx layout.Context) layout.Dimensions {
-				bounds := image.Rect(0, 0, gtx.Constraints.Min.X, gtx.Constraints.Min.Y)
-				rr := gtx.Dp(6)
-				paint.FillShape(gtx.Ops, hoverBg, clip.RRect{
-					Rect: bounds,
-					NE:   rr, NW: rr, SE: rr, SW: rr,
-				}.Op(gtx.Ops))
-				return layout.Dimensions{Size: bounds.Max}
-			},
-			func(gtx layout.Context) layout.Dimensions {
-				return layout.Inset{Top: unit.Dp(8), Bottom: unit.Dp(8), Left: unit.Dp(16), Right: unit.Dp(16)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-					lbl := material.Body2(d.app.Theme.Material, text)
-					lbl.Color = fg
-					return lbl.Layout(gtx)
-				})
-			},
-		)
-	})
-}
-
 // --- ZipExtractDialog ---
-// Zobrazí se IHNED při zahájení stahování .zip souboru.
-// Uživatel si přednastaví volbu, po dokončení stahování se aplikuje.
-// Nelze zavřít kliknutím mimo — uživatel musí zvolit akci.
+// Shown IMMEDIATELY when a .zip file download starts.
+// User pre-selects a choice, which is applied after the download completes.
+// Cannot be dismissed by clicking outside — user must choose an action.
 
 const (
 	zipChoiceExtractDelete = 1
@@ -457,13 +424,13 @@ type ZipExtractDialog struct {
 
 	zipPath    string
 	filename   string
-	choiceCh   chan int // posílá se volba po kliknutí na tlačítko
-	downloaded bool    // true když stahování dokončeno
+	choiceCh   chan int // choice sent after button click
+	downloaded bool    // true when download completed
 
 	extractDeleteBtn widget.Clickable
 	extractBtn       widget.Clickable
 	keepBtn          widget.Clickable
-	overlayBtn       widget.Clickable // jen tmavé pozadí, nereaguje na click
+	overlayBtn       widget.Clickable // dark background only, doesn't handle click
 	cardBtn          widget.Clickable
 }
 
@@ -479,13 +446,13 @@ func (d *ZipExtractDialog) Show(zipPath string) {
 	d.choiceCh = make(chan int, 1)
 }
 
-// MarkDownloaded signalizuje, že stahování je hotové. Aktualizuje text v dialogu.
+// MarkDownloaded signals that the download is complete. Updates the dialog text.
 func (d *ZipExtractDialog) MarkDownloaded() {
 	d.downloaded = true
 	d.app.Window.Invalidate()
 }
 
-// WaitChoice blokuje dokud uživatel nezvolí akci. Vrátí zipChoiceExtractDelete/ExtractOnly/Keep.
+// WaitChoice blocks until the user selects an action. Returns zipChoiceExtractDelete/ExtractOnly/Keep.
 func (d *ZipExtractDialog) WaitChoice() int {
 	if d.choiceCh == nil {
 		return zipChoiceKeep
@@ -493,7 +460,7 @@ func (d *ZipExtractDialog) WaitChoice() int {
 	return <-d.choiceCh
 }
 
-// Cancel schová dialog bez čekání na volbu (pro chyby při stahování).
+// Cancel hides the dialog without waiting for a choice (for download errors).
 func (d *ZipExtractDialog) Cancel() {
 	d.Visible = false
 	d.choiceCh = nil
@@ -680,7 +647,7 @@ func formatConflictMessage(conflicts []string) string {
 	return fmt.Sprintf("%d files already exist:\n%s and %d more\n\nOverwrite?", len(conflicts), shown, len(conflicts)-5)
 }
 
-// --- Utility funkce ---
+// --- Utility functions ---
 
 func createZipFromPaths(paths []string, zipName string) (string, error) {
 	zipPath := filepath.Join(os.TempDir(), zipName)

@@ -20,11 +20,11 @@ type LinkFileDialog struct {
 	app     *App
 	Visible bool
 
-	onSelect func(results []api.UploadResult) // callback po výběru
+	onSelect func(results []api.UploadResult) // callback after selection
 
 	folders     []api.StorageFolder
 	files       []api.StorageFile
-	parentStack []*string // historie navigace (nil = root)
+	parentStack []*string // navigation history (nil = root)
 	selected    map[string]bool
 
 	list       widget.List
@@ -102,11 +102,11 @@ func (d *LinkFileDialog) Layout(gtx layout.Context) layout.Dimensions {
 		return layout.Dimensions{}
 	}
 
-	// Klik na overlay → zavřít
+	// Click on overlay -> close
 	if d.overlayBtn.Clicked(gtx) {
 		d.Hide()
 	}
-	// Klik na kartu → nic (zachytit aby nezavřel)
+	// Click on card -> no action (capture to prevent closing)
 	d.cardBtn.Clicked(gtx)
 
 	// Back
@@ -163,7 +163,7 @@ func (d *LinkFileDialog) Layout(gtx layout.Context) layout.Dimensions {
 		return layout.Dimensions{}
 	}
 
-	// Overlay tmavé pozadí
+	// Overlay dark background
 	return d.overlayBtn.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
 		paint.FillShape(gtx.Ops, color.NRGBA{A: 180}, clip.Rect{Max: gtx.Constraints.Max}.Op())
 
@@ -384,7 +384,7 @@ func pluralize(n int, singular, plural string) string {
 	return fmt.Sprintf("%d %s", n, plural)
 }
 
-// logLinkFileError loguje chybu v LinkFileDialog
+// logLinkFileError logs an error in LinkFileDialog
 func logLinkFileError(msg string, err error) {
 	if err != nil {
 		log.Printf("LinkFileDialog: %s: %v", msg, err)

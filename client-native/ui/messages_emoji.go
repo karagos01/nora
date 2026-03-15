@@ -71,14 +71,27 @@ func (v *MessageView) layoutReactions(gtx layout.Context, idx int, msg api.Messa
 						},
 						func(gtx layout.Context) layout.Dimensions {
 							return layout.Inset{Top: unit.Dp(2), Bottom: unit.Dp(2), Left: unit.Dp(6), Right: unit.Dp(6)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-								text := fmt.Sprintf("%s %d", reaction.Emoji, reaction.Count)
-								lbl := material.Caption(v.app.Theme.Material, text)
+								countColor := ColorText
 								if isMine {
-									lbl.Color = ColorAccent
-								} else {
-									lbl.Color = ColorText
+									countColor = ColorAccent
 								}
-								return lbl.Layout(gtx)
+								return layout.Flex{Alignment: layout.Middle}.Layout(gtx,
+									layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+										if dims, ok := layoutTwemoji(gtx, v.app, reaction.Emoji, 18); ok {
+											return dims
+										}
+										lbl := material.Body2(v.app.Theme.Material, reaction.Emoji)
+										lbl.Color = countColor
+										return lbl.Layout(gtx)
+									}),
+									layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+										return layout.Inset{Left: unit.Dp(3)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+											lbl := material.Body2(v.app.Theme.Material, fmt.Sprintf("%d", reaction.Count))
+											lbl.Color = countColor
+											return lbl.Layout(gtx)
+										})
+									}),
+								)
 							})
 						},
 					)
@@ -131,6 +144,9 @@ func (v *MessageView) layoutReactionPicker(gtx layout.Context, idx int) layout.D
 											},
 											func(gtx layout.Context) layout.Dimensions {
 												return layout.UniformInset(unit.Dp(4)).Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+													if dims, ok := layoutTwemoji(gtx, v.app, reactionEmojis[ej], 24); ok {
+														return dims
+													}
 													lbl := material.Body1(v.app.Theme.Material, reactionEmojis[ej])
 													lbl.Color = ColorText
 													return lbl.Layout(gtx)
@@ -377,6 +393,9 @@ func (v *MessageView) layoutUnicodeEmojiGrid(gtx layout.Context, catIdx int) lay
 						},
 						func(gtx layout.Context) layout.Dimensions {
 							return layout.Center.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+								if dims, ok := layoutTwemoji(gtx, v.app, emoji, 28); ok {
+									return dims
+								}
 								lbl := material.Body1(v.app.Theme.Material, emoji)
 								lbl.Color = ColorText
 								return lbl.Layout(gtx)

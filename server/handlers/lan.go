@@ -20,7 +20,7 @@ type joinLANPartyRequest struct {
 	PublicKey string `json:"public_key"`
 }
 
-// GetLANParties vrátí všechny aktivní LAN party + členy
+// GetLANParties returns all active LAN parties + members
 func (d *Deps) GetLANParties(w http.ResponseWriter, r *http.Request) {
 	parties, err := d.LAN.GetActiveParties()
 	if err != nil {
@@ -45,7 +45,7 @@ func (d *Deps) GetLANParties(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// CreateLANParty vytvoří novou LAN party
+// CreateLANParty creates a new LAN party
 func (d *Deps) CreateLANParty(w http.ResponseWriter, r *http.Request) {
 	user := auth.GetUser(r)
 
@@ -91,7 +91,7 @@ func (d *Deps) CreateLANParty(w http.ResponseWriter, r *http.Request) {
 	util.JSON(w, http.StatusCreated, party)
 }
 
-// DeleteLANParty ukončí party a odebere WG peery kteří nejsou v jiné party
+// DeleteLANParty ends the party and removes WG peers that are not in another party
 func (d *Deps) DeleteLANParty(w http.ResponseWriter, r *http.Request) {
 	user := auth.GetUser(r)
 	partyID := r.PathValue("id")
@@ -107,12 +107,12 @@ func (d *Deps) DeleteLANParty(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Získej členy před deaktivací
+	// Get members before deactivation
 	members, _ := d.LAN.GetMembers(party.ID)
 
 	d.LAN.DeactivateParty(party.ID)
 
-	// Odeber WG peery jen pro users co nejsou v jiné aktivní party
+	// Remove WG peers only for users not in another active party
 	if d.WG != nil && members != nil {
 		for _, m := range members {
 			inOther, _ := d.LAN.IsUserInOtherParty(party.ID, m.UserID)
@@ -128,7 +128,7 @@ func (d *Deps) DeleteLANParty(w http.ResponseWriter, r *http.Request) {
 	util.JSON(w, http.StatusOK, map[string]string{"status": "ok"})
 }
 
-// JoinLANParty přidá uživatele do LAN party
+// JoinLANParty adds a user to the LAN party
 func (d *Deps) JoinLANParty(w http.ResponseWriter, r *http.Request) {
 	user := auth.GetUser(r)
 	partyID := r.PathValue("id")
@@ -144,7 +144,7 @@ func (d *Deps) JoinLANParty(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Už je členem této party?
+	// Already a member of this party?
 	existing, err := d.LAN.GetMemberByUser(party.ID, user.ID)
 	if err == nil && existing != nil {
 		util.Error(w, http.StatusConflict, "already a member")
@@ -162,18 +162,18 @@ func (d *Deps) JoinLANParty(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Zkus najít existující WG peer uživatele (z jiné party)
+	// Try to find an existing WG peer for the user (from another party)
 	existingPeer, _ := d.LAN.GetUserPeer(user.ID)
 
 	var assignedIP string
 	var isNewPeer bool
 
 	if existingPeer != nil {
-		// User už má IP z jiné party — reuse
+		// User already has an IP from another party — reuse
 		assignedIP = existingPeer.AssignedIP
 		isNewPeer = false
 	} else {
-		// Nový peer — přiděl IP
+		// New peer — allocate IP
 		nextIP, err := d.LAN.GetNextIPSimple()
 		if err != nil {
 			util.Error(w, http.StatusInternalServerError, "failed to get next IP")
@@ -203,7 +203,7 @@ func (d *Deps) JoinLANParty(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Přidej WG peer jen pokud je nový
+	// Add WG peer only if it's new
 	if isNewPeer {
 		if err := d.WG.AddPeer(req.PublicKey, assignedIP); err != nil {
 			d.LAN.RemoveMember(party.ID, user.ID)
@@ -215,7 +215,7 @@ func (d *Deps) JoinLANParty(w http.ResponseWriter, r *http.Request) {
 	event, _ := ws.NewEvent(ws.EventLANJoin, member)
 	d.Hub.Broadcast(event)
 
-	// wg_config vrátit jen pro nového peera — existující peer už má tunel
+	// Return wg_config only for a new peer — existing peer already has a tunnel
 	resp := map[string]any{"member": member}
 	if isNewPeer {
 		resp["wg_config"] = map[string]string{
@@ -228,7 +228,7 @@ func (d *Deps) JoinLANParty(w http.ResponseWriter, r *http.Request) {
 	util.JSON(w, http.StatusOK, resp)
 }
 
-// KickUserFromAllParties odebere uživatele ze všech aktivních LAN parties + WG peer
+// KickUserFromAllParties removes a user from all active LAN parties + WG peer
 func (d *Deps) KickUserFromAllParties(userID string) {
 	parties, err := d.LAN.GetActiveParties()
 	if err != nil {
@@ -242,7 +242,7 @@ func (d *Deps) KickUserFromAllParties(userID string) {
 
 		d.LAN.RemoveMember(party.ID, userID)
 
-		// Odeber WG peer jen pokud user není v jiné aktivní party
+		// Remove WG peer only if user is not in another active party
 		if d.WG != nil {
 			inOther, _ := d.LAN.IsUserInOtherParty(party.ID, userID)
 			if !inOther {
@@ -258,7 +258,7 @@ func (d *Deps) KickUserFromAllParties(userID string) {
 	}
 }
 
-// LeaveLANParty odebere uživatele z LAN party
+// LeaveLANParty removes a user from the LAN party
 func (d *Deps) LeaveLANParty(w http.ResponseWriter, r *http.Request) {
 	user := auth.GetUser(r)
 	partyID := r.PathValue("id")
@@ -281,7 +281,7 @@ func (d *Deps) LeaveLANParty(w http.ResponseWriter, r *http.Request) {
 
 	d.LAN.RemoveMember(party.ID, user.ID)
 
-	// Odeber WG peer jen pokud user není v jiné aktivní party
+	// Remove WG peer only if user is not in another active party
 	if d.WG != nil {
 		inOther, _ := d.LAN.IsUserInOtherParty(party.ID, user.ID)
 		if !inOther {

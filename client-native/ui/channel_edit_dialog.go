@@ -16,13 +16,13 @@ import (
 	"nora-client/api"
 )
 
-// permOption popisuje jednu permission pro UI checkboxy
+// permOption describes a single permission for UI checkboxes
 type permOption struct {
 	Label string
 	Bit   int64
 }
 
-// Podporované permission bity pro channel overrides
+// Supported permission bits for channel overrides
 var channelPermOptions = []permOption{
 	{"Send Messages", api.PermSendMessages},
 	{"Read", api.PermRead},
@@ -125,7 +125,7 @@ func (d *ChannelEditDialog) Show(ch api.Channel) {
 		}
 	}
 
-	// Načíst permission overrides asynchronně
+	// Load permission overrides asynchronously
 	go d.loadOverrides(ch.ID)
 }
 
@@ -308,11 +308,11 @@ func (d *ChannelEditDialog) Layout(gtx layout.Context) layout.Dimensions {
 									layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 										return layout.Flex{Spacing: layout.SpaceStart}.Layout(gtx,
 											layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-												return d.layoutBtn(gtx, &d.cancelBtn, "Cancel", ColorInput, ColorText)
+												return layoutDialogBtn(gtx, d.app.Theme, &d.cancelBtn, "Cancel", ColorInput, ColorText)
 											}),
 											layout.Rigid(layout.Spacer{Width: unit.Dp(8)}.Layout),
 											layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-												return d.layoutBtn(gtx, &d.confirmBtn, "Save", ColorAccent, color.NRGBA{R: 255, G: 255, B: 255, A: 255})
+												return layoutDialogBtn(gtx, d.app.Theme, &d.confirmBtn, "Save", ColorAccent, color.NRGBA{R: 255, G: 255, B: 255, A: 255})
 											}),
 										)
 									}),
@@ -326,10 +326,10 @@ func (d *ChannelEditDialog) Layout(gtx layout.Context) layout.Dimensions {
 	})
 }
 
-// layoutPermissionOverrides vykreslí sekci permission overrides
+// layoutPermissionOverrides renders the permission overrides section
 func (d *ChannelEditDialog) layoutPermissionOverrides(gtx layout.Context, conn *ServerConnection) layout.Dimensions {
 	return layout.Flex{Axis: layout.Vertical}.Layout(gtx,
-		// Hlavička
+		// Header
 		layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 			return layout.Flex{Alignment: layout.Middle}.Layout(gtx,
 				layout.Rigid(func(gtx layout.Context) layout.Dimensions {
@@ -341,12 +341,12 @@ func (d *ChannelEditDialog) layoutPermissionOverrides(gtx layout.Context, conn *
 					return layout.Dimensions{Size: image.Pt(gtx.Constraints.Max.X, 0)}
 				}),
 				layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-					return d.layoutBtn(gtx, &d.addOverrideBtn, "+ Add", ColorInput, ColorText)
+					return layoutDialogBtn(gtx, d.app.Theme, &d.addOverrideBtn, "+ Add", ColorInput, ColorText)
 				}),
 			)
 		}),
 		layout.Rigid(layout.Spacer{Height: unit.Dp(4)}.Layout),
-		// Seznam overrides
+		// Override list
 		layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 			if !d.permLoaded {
 				lbl := material.Caption(d.app.Theme.Material, "Loading...")
@@ -368,7 +368,7 @@ func (d *ChannelEditDialog) layoutPermissionOverrides(gtx layout.Context, conn *
 			}
 			return layout.Flex{Axis: layout.Vertical}.Layout(gtx, items...)
 		}),
-		// Formulář pro přidání
+		// Add override form
 		layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 			if !d.showAddOverride {
 				return layout.Dimensions{}
@@ -378,7 +378,7 @@ func (d *ChannelEditDialog) layoutPermissionOverrides(gtx layout.Context, conn *
 	)
 }
 
-// layoutOverrideRow vykreslí jeden řádek override
+// layoutOverrideRow renders a single override row
 func (d *ChannelEditDialog) layoutOverrideRow(gtx layout.Context, idx int, ov api.ChannelPermOverride, conn *ServerConnection) layout.Dimensions {
 	// Resolve target name
 	targetName := ov.TargetID
@@ -431,13 +431,13 @@ func (d *ChannelEditDialog) layoutOverrideRow(gtx layout.Context, idx int, ov ap
 				if idx >= len(d.permDeleteBtns) {
 					return layout.Dimensions{}
 				}
-				return d.layoutBtn(gtx, &d.permDeleteBtns[idx], "X", color.NRGBA{R: 200, G: 60, B: 60, A: 255}, color.NRGBA{R: 255, G: 255, B: 255, A: 255})
+				return layoutDialogBtn(gtx, d.app.Theme, &d.permDeleteBtns[idx], "X", color.NRGBA{R: 200, G: 60, B: 60, A: 255}, color.NRGBA{R: 255, G: 255, B: 255, A: 255})
 			}),
 		)
 	})
 }
 
-// layoutAddOverrideForm vykreslí formulář pro přidání nového override
+// layoutAddOverrideForm renders the form for adding a new override
 func (d *ChannelEditDialog) layoutAddOverrideForm(gtx layout.Context) layout.Dimensions {
 	return layout.Inset{Top: unit.Dp(8)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
 		return layout.Background{}.Layout(gtx,
@@ -519,11 +519,11 @@ func (d *ChannelEditDialog) layoutAddOverrideForm(gtx layout.Context) layout.Dim
 						layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 							return layout.Flex{Spacing: layout.SpaceStart}.Layout(gtx,
 								layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-									return d.layoutBtn(gtx, &d.addCancelBtn, "Cancel", ColorInput, ColorText)
+									return layoutDialogBtn(gtx, d.app.Theme, &d.addCancelBtn, "Cancel", ColorInput, ColorText)
 								}),
 								layout.Rigid(layout.Spacer{Width: unit.Dp(8)}.Layout),
 								layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-									return d.layoutBtn(gtx, &d.addSaveBtn, "Add", ColorAccent, color.NRGBA{R: 255, G: 255, B: 255, A: 255})
+									return layoutDialogBtn(gtx, d.app.Theme, &d.addSaveBtn, "Add", ColorAccent, color.NRGBA{R: 255, G: 255, B: 255, A: 255})
 								}),
 							)
 						}),
@@ -534,7 +534,7 @@ func (d *ChannelEditDialog) layoutAddOverrideForm(gtx layout.Context) layout.Dim
 	})
 }
 
-// layoutPermCheckboxes vykreslí řádek checkboxů pro permissions
+// layoutPermCheckboxes renders a row of permission checkboxes
 func (d *ChannelEditDialog) layoutPermCheckboxes(gtx layout.Context, checks []widget.Bool) layout.Dimensions {
 	var items []layout.FlexChild
 	for i, opt := range channelPermOptions {
@@ -723,27 +723,8 @@ func (d *ChannelEditDialog) layoutEditor(gtx layout.Context, ed *widget.Editor, 
 	)
 }
 
-func (d *ChannelEditDialog) layoutBtn(gtx layout.Context, btn *widget.Clickable, text string, bg, fg color.NRGBA) layout.Dimensions {
-	return btn.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-		return layout.Background{}.Layout(gtx,
-			func(gtx layout.Context) layout.Dimensions {
-				sz := image.Rect(0, 0, gtx.Constraints.Min.X, gtx.Constraints.Min.Y)
-				rr := gtx.Dp(8)
-				paint.FillShape(gtx.Ops, bg, clip.RRect{Rect: sz, NE: rr, NW: rr, SE: rr, SW: rr}.Op(gtx.Ops))
-				return layout.Dimensions{Size: sz.Max}
-			},
-			func(gtx layout.Context) layout.Dimensions {
-				return layout.Inset{Top: unit.Dp(8), Bottom: unit.Dp(8), Left: unit.Dp(20), Right: unit.Dp(20)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-					lbl := material.Body2(d.app.Theme.Material, text)
-					lbl.Color = fg
-					return lbl.Layout(gtx)
-				})
-			},
-		)
-	})
-}
 
-// permBitsToString převede bitmask na čitelný řetězec
+// permBitsToString converts a bitmask to a human-readable string
 func permBitsToString(bits int64) string {
 	if bits == 0 {
 		return ""

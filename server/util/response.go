@@ -27,15 +27,15 @@ func DecodeJSON(r *http.Request, dst any) error {
 	return dec.Decode(dst)
 }
 
-// GetClientIP vrátí IP adresu klienta.
-// X-Forwarded-For a X-Real-IP se důvěřují jen od trusted proxy (loopback/private).
+// GetClientIP returns the client's IP address.
+// X-Forwarded-For and X-Real-IP are trusted only from trusted proxies (loopback/private).
 func GetClientIP(r *http.Request) string {
 	remoteHost, _, err := net.SplitHostPort(r.RemoteAddr)
 	if err != nil {
 		remoteHost = r.RemoteAddr
 	}
 
-	// Proxy headery důvěřujeme jen od loopback/private IP (typicky Caddy na stejném stroji)
+	// We trust proxy headers only from loopback/private IPs (typically Caddy on the same machine)
 	if isTrustedProxy(remoteHost) {
 		if xff := r.Header.Get("X-Forwarded-For"); xff != "" {
 			ip := strings.TrimSpace(strings.SplitN(xff, ",", 2)[0])

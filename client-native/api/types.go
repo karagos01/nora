@@ -391,7 +391,7 @@ type ShareDetailResponse struct {
 	Permissions []SharePermission `json:"permissions"`
 }
 
-// Gallery — aggregované přílohy ze zpráv
+// Gallery — aggregated attachments from messages
 type GalleryItem struct {
 	ID          string    `json:"id"`
 	MessageID   string    `json:"message_id"`
@@ -406,7 +406,7 @@ type GalleryItem struct {
 	CreatedAt   time.Time `json:"created_at"`
 }
 
-// File storage — složky a soubory na serveru
+// File storage — folders and files on the server
 type StorageFolder struct {
 	ID        string    `json:"id"`
 	Name      string    `json:"name"`
@@ -489,7 +489,7 @@ type GameServerPreset struct {
 	Name string `json:"name"`
 }
 
-// VPN Tunnel — personální WireGuard tunel
+// VPN Tunnel — personal WireGuard tunnel
 type Tunnel struct {
 	ID              string    `json:"id"`
 	CreatorID       string    `json:"creator_id"`
@@ -564,7 +564,7 @@ type KanbanCard struct {
 	UpdatedAt    *time.Time `json:"updated_at,omitempty"`
 }
 
-// Ban systém — device bany, invite chain, karanténa, approvals
+// Ban system — device bans, invite chain, quarantine, approvals
 
 type DeviceBan struct {
 	ID              string     `json:"id"`
@@ -622,7 +622,7 @@ type ChannelPermOverride struct {
 	Deny       int64  `json:"deny"`
 }
 
-// Historie editací zpráv
+// Message edit history
 
 type MessageEdit struct {
 	ID         int       `json:"id"`

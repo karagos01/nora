@@ -68,12 +68,12 @@ const (
 	EventEmojiCreate EventType = "emoji.create"
 	EventEmojiDelete EventType = "emoji.delete"
 
-	// Kategorie kanálů
+	// Channel categories
 	EventCategoryCreate EventType = "category.create"
 	EventCategoryUpdate EventType = "category.update"
 	EventCategoryDelete EventType = "category.delete"
 
-	// Member update (avatar, display_name atd.)
+	// Member update (avatar, display_name, etc.)
 	EventMemberUpdate EventType = "member.update"
 
 	// LAN Party
@@ -91,7 +91,7 @@ const (
 	EventScreenShare EventType = "screen.share"
 	EventScreenWatch EventType = "screen.watch"
 
-	// Webhooky
+	// Webhooks
 	EventWebhookCreate EventType = "webhook.create"
 	EventWebhookDelete EventType = "webhook.delete"
 

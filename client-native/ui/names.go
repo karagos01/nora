@@ -5,8 +5,8 @@ import (
 	"nora-client/store"
 )
 
-// ResolveUserName vrátí zobrazované jméno pro api.User.
-// Priorita: custom_name > auto_name (bez kolize) > auto_name#discriminant > klíč.
+// ResolveUserName returns the display name for an api.User.
+// Priority: custom_name > auto_name (no collision) > auto_name#discriminant > key.
 func (a *App) ResolveUserName(u *api.User) string {
 	if u == nil {
 		return "?"
@@ -22,12 +22,12 @@ func (a *App) ResolveUserName(u *api.User) string {
 		return DisplayNameOf(u)
 	}
 
-	// 1. Custom name (přezdívka)
+	// 1. Custom name (nickname)
 	if ct.CustomName != "" {
 		return ct.CustomName
 	}
 
-	// 2. Auto name — zkontrolovat kolizi
+	// 2. Auto name — check for collision
 	name := ct.AutoName
 	if name == "" {
 		name = DisplayNameOf(u)
@@ -40,7 +40,7 @@ func (a *App) ResolveUserName(u *api.User) string {
 	return name
 }
 
-// ResolveNameByKey vrátí zobrazované jméno pro public key (bez api.User).
+// ResolveNameByKey returns the display name for a public key (without api.User).
 func (a *App) ResolveNameByKey(publicKey string) string {
 	if publicKey == "" || a.Contacts == nil {
 		return "?"
@@ -67,8 +67,8 @@ func (a *App) ResolveNameByKey(publicKey string) string {
 	return name
 }
 
-// ResolveNameByID hledá uživatele v conn.Users a pak řeší jméno přes kontakty.
-// Volající MUSÍ držet a.mu (alespoň RLock).
+// ResolveNameByID looks up a user in conn.Users and then resolves the name via contacts.
+// The caller MUST hold a.mu (at least RLock).
 func (a *App) ResolveNameByID(conn *ServerConnection, userID string) string {
 	if conn == nil {
 		return "?"
@@ -81,7 +81,7 @@ func (a *App) ResolveNameByID(conn *ServerConnection, userID string) string {
 	return "Unknown"
 }
 
-// ShortenKey zkrátí klíč na prvních 8 + posledních 4 znaků.
+// ShortenKey shortens a key to the first 8 + last 4 characters.
 func ShortenKey(key string) string {
 	if len(key) <= 12 {
 		return key
@@ -89,7 +89,7 @@ func ShortenKey(key string) string {
 	return key[:8] + "..." + key[len(key)-4:]
 }
 
-// FormatDiscriminant vrátí jméno#disc pro zobrazení.
+// FormatDiscriminant returns name#disc for display.
 func FormatDiscriminant(name, publicKey string) string {
 	return name + "#" + store.Discriminant(publicKey)
 }

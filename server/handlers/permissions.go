@@ -26,7 +26,7 @@ func (d *Deps) requirePermission(user *auth.ContextUser, perm int64) error {
 	return nil
 }
 
-// canActOn kontroluje hierarchii rolí — actor musí mít vyšší rank (nižší position) než target.
+// canActOn checks role hierarchy — actor must have higher rank (lower position) than target.
 func (d *Deps) canActOn(actor *auth.ContextUser, targetUserID string) error {
 	if actor.IsOwner {
 		return nil
@@ -56,7 +56,7 @@ func (d *Deps) canActOn(actor *auth.ContextUser, targetUserID string) error {
 	return nil
 }
 
-// requireChannelPermission kontroluje per-channel permissions (base role perms + channel overrides).
+// requireChannelPermission checks per-channel permissions (base role perms + channel overrides).
 func (d *Deps) requireChannelPermission(user *auth.ContextUser, channelID string, perm int64) error {
 	if user.IsOwner {
 		return nil
@@ -74,22 +74,22 @@ func (d *Deps) requireChannelPermission(user *auth.ContextUser, channelID string
 	return nil
 }
 
-// GetChannelPermissions vrátí efektivní permissions pro uživatele v daném kanálu.
-// Postup: base = globální role perms, pak aplikuj channel overrides: result = (base | allow) & ^deny
+// GetChannelPermissions returns effective permissions for a user in a given channel.
+// Procedure: base = global role perms, then apply channel overrides: result = (base | allow) & ^deny
 func (d *Deps) GetChannelPermissions(userID, channelID string, isOwner bool) int64 {
 	if isOwner {
-		// Owner má vše
+		// Owner has everything
 		return int64(^uint64(0) >> 1)
 	}
 
 	base, _ := d.Roles.GetUserPermissions(userID)
 
-	// Admin bypass — channel overrides se neaplikují na adminy
+	// Admin bypass — channel overrides do not apply to admins
 	if base&models.PermAdmin != 0 {
 		return base
 	}
 
-	// Získat role IDs uživatele (včetně everyone)
+	// Get role IDs of the user (including everyone)
 	userRoles, err := d.Roles.GetUserRoles(userID)
 	if err != nil {
 		return base
@@ -119,7 +119,26 @@ func (d *Deps) GetChannelPermissions(userID, channelID string, isOwner bool) int
 	return (base | allow) & ^deny
 }
 
-// canActOnRole kontroluje zda actor může manipulovat s danou rolí (musí mít vyšší rank).
+// broadcastToChannelReaders sends a WS event only to users who have READ permission on the channel.
+// For channels without permission overrides (common case), this is equivalent to Broadcast.
+func (d *Deps) broadcastToChannelReaders(channelID string, msg []byte) {
+	onlineIDs := d.Hub.OnlineUserIDs()
+	if len(onlineIDs) == 0 {
+		return
+	}
+
+	excluded := make(map[string]bool)
+	for _, uid := range onlineIDs {
+		perms := d.GetChannelPermissions(uid, channelID, false)
+		if perms&models.PermAdmin == 0 && perms&models.PermRead == 0 {
+			excluded[uid] = true
+		}
+	}
+
+	d.Hub.BroadcastExcluding(msg, excluded)
+}
+
+// canActOnRole checks whether the actor can manipulate the given role (must have higher rank).
 func (d *Deps) canActOnRole(actor *auth.ContextUser, rolePosition int) error {
 	if actor.IsOwner {
 		return nil

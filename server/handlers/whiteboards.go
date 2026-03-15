@@ -77,7 +77,7 @@ func (d *Deps) DeleteWhiteboard(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Jen creator nebo admin/owner
+	// Only creator or admin/owner
 	if wb.CreatorID != user.ID {
 		if err := d.requirePermission(user, models.PermAdmin); err != nil {
 			util.Error(w, http.StatusForbidden, "only creator or admin can delete whiteboard")
@@ -214,7 +214,7 @@ func (d *Deps) ClearWhiteboard(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Jen creator nebo admin/owner
+	// Only creator or admin/owner
 	if wb.CreatorID != user.ID {
 		if err := d.requirePermission(user, models.PermAdmin); err != nil {
 			util.Error(w, http.StatusForbidden, "only creator or admin can clear whiteboard")

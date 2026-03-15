@@ -22,24 +22,24 @@ import (
 type ScheduleBuilder struct {
 	app *App
 
-	// Preset tlačítka
+	// Preset buttons
 	presetBtns [4]widget.Clickable
 
-	// Custom čas
+	// Custom time
 	dayIndex   int // 0=today, 1=tomorrow, 2=day after
 	dayBtns    [3]widget.Clickable
 	hourEditor widget.Editor
 	minEditor  widget.Editor
 
-	// Výsledný čas
+	// Resulting time
 	selectedTime time.Time
 	hasSelection bool
 
-	// Akční tlačítka
+	// Action buttons
 	scheduleBtn widget.Clickable
 	cancelBtn   widget.Clickable
 
-	// Seznam naplánovaných zpráv
+	// List of scheduled messages
 	scheduled    []api.ScheduledMessage
 	loaded       bool
 	loading      bool
@@ -125,7 +125,7 @@ func (sb *ScheduleBuilder) getSelectedTime() time.Time {
 func (sb *ScheduleBuilder) Layout(gtx layout.Context) layout.Dimensions {
 	th := sb.app.Theme.Material
 
-	// Zpracovat preset kliknutí
+	// Handle preset clicks
 	now := time.Now()
 	for i := range sb.presetBtns {
 		if sb.presetBtns[i].Clicked(gtx) {
@@ -143,7 +143,7 @@ func (sb *ScheduleBuilder) Layout(gtx layout.Context) layout.Dimensions {
 			sb.hasSelection = true
 			sb.hourEditor.SetText(fmt.Sprintf("%d", sb.selectedTime.Hour()))
 			sb.minEditor.SetText(fmt.Sprintf("%02d", sb.selectedTime.Minute()))
-			// Nastavit dayIndex
+			// Set dayIndex
 			selDay := time.Date(sb.selectedTime.Year(), sb.selectedTime.Month(), sb.selectedTime.Day(), 0, 0, 0, 0, now.Location())
 			todayDay := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, now.Location())
 			sb.dayIndex = int(selDay.Sub(todayDay).Hours() / 24)
@@ -156,7 +156,7 @@ func (sb *ScheduleBuilder) Layout(gtx layout.Context) layout.Dimensions {
 		}
 	}
 
-	// Zpracovat day kliknutí
+	// Handle day clicks
 	for i := range sb.dayBtns {
 		if sb.dayBtns[i].Clicked(gtx) {
 			sb.dayIndex = i
@@ -165,13 +165,13 @@ func (sb *ScheduleBuilder) Layout(gtx layout.Context) layout.Dimensions {
 		}
 	}
 
-	// Update selected time z editorů
+	// Update selected time from editors
 	if sb.hourEditor.Text() != "" || sb.minEditor.Text() != "" {
 		sb.selectedTime = sb.getSelectedTime()
 		sb.hasSelection = true
 	}
 
-	// Zpracovat cancel scheduled message kliknutí
+	// Handle cancel scheduled message clicks
 	for i := range sb.scheduled {
 		if i < len(sb.cancelBtns) && sb.cancelBtns[i].Clicked(gtx) {
 			msgID := sb.scheduled[i].ID
@@ -217,7 +217,7 @@ func (sb *ScheduleBuilder) Layout(gtx layout.Context) layout.Dimensions {
 					}),
 					layout.Rigid(layout.Spacer{Height: unit.Dp(8)}.Layout),
 
-					// Preset tlačítka
+					// Preset buttons
 					layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 						return layout.Flex{}.Layout(gtx,
 							layout.Rigid(func(gtx layout.Context) layout.Dimensions {
@@ -239,7 +239,7 @@ func (sb *ScheduleBuilder) Layout(gtx layout.Context) layout.Dimensions {
 					}),
 					layout.Rigid(layout.Spacer{Height: unit.Dp(8)}.Layout),
 
-					// Custom čas: day selector + HH:MM
+					// Custom time: day selector + HH:MM
 					layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 						dayLabels := sb.getDayLabels()
 						return layout.Flex{Alignment: layout.Middle}.Layout(gtx,
@@ -276,7 +276,7 @@ func (sb *ScheduleBuilder) Layout(gtx layout.Context) layout.Dimensions {
 					}),
 					layout.Rigid(layout.Spacer{Height: unit.Dp(8)}.Layout),
 
-					// Preview textu
+					// Text preview
 					layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 						if !sb.hasSelection {
 							return layout.Dimensions{}

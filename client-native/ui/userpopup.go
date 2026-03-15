@@ -78,13 +78,13 @@ func (p *UserPopup) Show(userID, username string) {
 	p.serverNames = nil
 	p.contactNote = ""
 
-	// Najít public key
+	// Find public key
 	p.PublicKey = ""
 	if u := p.app.FindUser(userID); u != nil {
 		p.PublicKey = u.PublicKey
 	}
 
-	// Načíst kontaktní info
+	// Load contact info
 	if p.PublicKey != "" && p.app.Contacts != nil {
 		ct := p.app.Contacts.GetContact(p.PublicKey)
 		if ct != nil {
@@ -110,7 +110,7 @@ func (p *UserPopup) Show(userID, username string) {
 		}
 		p.rolesLoaded = true
 
-		// Load share access pro moje shares
+		// Load share access for my shares
 		p.app.mu.RLock()
 		myShares := make([]api.SharedDirectory, len(conn.MyShares))
 		copy(myShares, conn.MyShares)
@@ -240,7 +240,7 @@ func (p *UserPopup) Layout(gtx layout.Context) layout.Dimensions {
 			p.app.mu.RUnlock()
 		}
 	}
-	// Neukázat pokud klikám sám na sebe nebo nemám shares
+	// Don't show if clicking on myself or if I have no shares
 	if conn := p.app.Conn(); conn != nil && userID == conn.UserID {
 		myShares = nil
 	}
@@ -260,7 +260,7 @@ func (p *UserPopup) Layout(gtx layout.Context) layout.Dimensions {
 				}
 				uid := userID
 				if hasAccess {
-					// Najít a smazat permission
+					// Find and delete the permission
 					perms, err := conn.Client.GetSharePermissions(shareID)
 					if err == nil {
 						for _, perm := range perms {
@@ -913,7 +913,7 @@ func (p *UserPopup) layoutSharesSection(gtx layout.Context, shares []api.SharedD
 					func(gtx layout.Context) layout.Dimensions {
 						return layout.Inset{Top: unit.Dp(6), Bottom: unit.Dp(6), Left: unit.Dp(12), Right: unit.Dp(12)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
 							return layout.Flex{Alignment: layout.Middle}.Layout(gtx,
-								// Checkbox indikátor
+								// Checkbox indicator
 								layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 									sz := gtx.Dp(14)
 									clr := ColorTextDim
@@ -925,7 +925,7 @@ func (p *UserPopup) layoutSharesSection(gtx layout.Context, shares []api.SharedD
 										NE: sz / 4, NW: sz / 4, SE: sz / 4, SW: sz / 4,
 									}.Op(gtx.Ops))
 									if hasAccess {
-										// Vnitřní check
+										// Inner check mark
 										inner := gtx.Dp(6)
 										off := (sz - inner) / 2
 										paint.FillShape(gtx.Ops, ColorText, clip.Rect{
@@ -935,7 +935,7 @@ func (p *UserPopup) layoutSharesSection(gtx layout.Context, shares []api.SharedD
 									}
 									return layout.Dimensions{Size: image.Pt(sz, sz)}
 								}),
-								// Název share
+								// Share name
 								layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
 									return layout.Inset{Left: unit.Dp(8)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
 										lbl := material.Body2(p.app.Theme.Material, s.DisplayName)

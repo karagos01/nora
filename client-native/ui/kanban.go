@@ -41,7 +41,7 @@ type KanbanView struct {
 	showAddCol bool
 
 	// Card creation (inline per column)
-	addCardCol string // column ID kde se právě přidává karta
+	addCardCol string // column ID where a card is being added
 	addCardEd  widget.Editor
 	addCardBtns map[string]*widget.Clickable
 
@@ -51,7 +51,7 @@ type KanbanView struct {
 	// Column delete buttons
 	colDelBtns map[string]*widget.Clickable
 
-	// Horizontal scroll pro sloupce
+	// Horizontal scroll for columns
 	colList widget.List
 
 	// Per-column vertical card lists
@@ -83,7 +83,7 @@ func NewKanbanView(a *App) *KanbanView {
 	return v
 }
 
-// LoadBoards načte seznam boardů ze serveru.
+// LoadBoards loads the list of boards from the server.
 func (v *KanbanView) LoadBoards() {
 	conn := v.app.Conn()
 	if conn == nil {
@@ -104,7 +104,7 @@ func (v *KanbanView) LoadBoards() {
 	}()
 }
 
-// LoadBoard načte detail boardu (columns + cards).
+// LoadBoard loads board detail (columns + cards).
 func (v *KanbanView) LoadBoard(id string) {
 	conn := v.app.Conn()
 	if conn == nil {
@@ -162,7 +162,7 @@ func (v *KanbanView) getCardList(colID string) *widget.List {
 	return l
 }
 
-// LayoutSidebar renderuje levý panel (board picker).
+// LayoutSidebar renders the left panel (board picker).
 func (v *KanbanView) LayoutSidebar(gtx layout.Context) layout.Dimensions {
 	if v.backBtn.Clicked(gtx) {
 		v.app.mu.Lock()
@@ -170,7 +170,7 @@ func (v *KanbanView) LayoutSidebar(gtx layout.Context) layout.Dimensions {
 		v.app.mu.Unlock()
 	}
 
-	// Submit handler pro nový board
+	// Submit handler for new board
 	for {
 		e, ok := v.newBoardEd.Update(gtx)
 		if !ok {
@@ -331,9 +331,9 @@ func (v *KanbanView) layoutNewBoardArea(gtx layout.Context) layout.Dimensions {
 	})
 }
 
-// LayoutMain renderuje hlavní oblast (board se sloupci a kartami).
+// LayoutMain renders the main area (board with columns and cards).
 func (v *KanbanView) LayoutMain(gtx layout.Context) layout.Dimensions {
-	// Submit handler pro inline přidání karty
+	// Submit handler for inline card addition
 	for {
 		e, ok := v.addCardEd.Update(gtx)
 		if !ok {
@@ -349,7 +349,7 @@ func (v *KanbanView) LayoutMain(gtx layout.Context) layout.Dimensions {
 		}
 	}
 
-	// Submit handler pro nový sloupec
+	// Submit handler for new column
 	for {
 		e, ok := v.addColEd.Update(gtx)
 		if !ok {
@@ -466,7 +466,7 @@ func (v *KanbanView) layoutColumn(gtx layout.Context, col api.KanbanColumn) layo
 		})
 	}
 
-	// Zpracovat add card button pro tento sloupec
+	// Handle add card button for this column
 	addBtn := v.getAddCardBtn(col.ID)
 	if addBtn.Clicked(gtx) {
 		if v.addCardCol == col.ID {
@@ -494,7 +494,7 @@ func (v *KanbanView) layoutColumn(gtx layout.Context, col api.KanbanColumn) layo
 				layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 					return layout.Inset{Top: unit.Dp(8), Bottom: unit.Dp(4), Left: unit.Dp(10), Right: unit.Dp(6)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
 						return layout.Flex{Alignment: layout.Middle}.Layout(gtx,
-							// Barevný proužek
+							// Color strip
 							layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 								sz := image.Pt(gtx.Dp(4), gtx.Dp(16))
 								paint.FillShape(gtx.Ops, colColor, clip.RRect{
@@ -519,7 +519,7 @@ func (v *KanbanView) layoutColumn(gtx layout.Context, col api.KanbanColumn) layo
 								if count >= 10 {
 									lbl = material.Caption(v.app.Theme.Material, strings.TrimSpace(strings.Replace(material.Caption(v.app.Theme.Material, "").Text, "", "", -1)))
 								}
-								// Jednodušší: jen zobrazíme počet
+								// Simpler: just display the count
 								lbl = material.Caption(v.app.Theme.Material, formatCount(len(col.Cards)))
 								lbl.Color = ColorTextDim
 								return lbl.Layout(gtx)
@@ -589,7 +589,7 @@ func (v *KanbanView) layoutCard(gtx layout.Context, card api.KanbanCard) layout.
 			}),
 			layout.Stacked(func(gtx layout.Context) layout.Dimensions {
 				return layout.Flex{}.Layout(gtx,
-					// Barevný proužek vlevo (pokud card má barvu)
+					// Color strip on the left (if card has a color)
 					layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 						if !hasColor {
 							return layout.Dimensions{}
@@ -614,7 +614,7 @@ func (v *KanbanView) layoutCard(gtx layout.Context, card api.KanbanCard) layout.
 									lbl.Color = ColorText
 									return lbl.Layout(gtx)
 								}),
-								// Assigned user (pokud je)
+								// Assigned user (if any)
 								layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 									if card.AssignedUser == nil {
 										return layout.Dimensions{}
@@ -638,7 +638,7 @@ func (v *KanbanView) layoutCard(gtx layout.Context, card api.KanbanCard) layout.
 										)
 									})
 								}),
-								// Due date (pokud je) — barevné kódování: overdue=červená, today=oranžová, budoucí=šedá
+								// Due date (if set) — color coded: overdue=red, today=orange, future=gray
 								layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 									if card.DueDate == nil {
 										return layout.Dimensions{}
@@ -798,7 +798,7 @@ func (v *KanbanView) createCard(colID, title string) {
 	}()
 }
 
-// HandleWSEvent zpracovává kanban WS eventy a aktualizuje lokální stav.
+// HandleWSEvent processes kanban WS events and updates local state.
 func (v *KanbanView) HandleWSEvent(evType string, payload json.RawMessage) {
 	switch evType {
 	case "kanban.board_create":
@@ -833,7 +833,7 @@ func (v *KanbanView) HandleWSEvent(evType string, payload json.RawMessage) {
 
 	case "kanban.column_create", "kanban.column_update", "kanban.column_delete",
 		"kanban.card_create", "kanban.card_update", "kanban.card_move", "kanban.card_delete":
-		// Pro column/card eventy — reload aktivní board
+		// For column/card events — reload active board
 		var data struct {
 			BoardID string `json:"board_id"`
 		}

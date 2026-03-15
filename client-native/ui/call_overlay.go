@@ -16,7 +16,7 @@ import (
 	"nora-client/voice"
 )
 
-// CallOverlay zobrazuje stav DM hovoru přes message area.
+// CallOverlay displays the DM call state over the message area.
 type CallOverlay struct {
 	app *App
 
@@ -80,7 +80,7 @@ func (o *CallOverlay) Layout(gtx layout.Context, call *voice.CallManager) layout
 		o.app.mu.RUnlock()
 	}
 
-	// Poloprůhledné tmavé pozadí
+	// Semi-transparent dark background
 	return layout.Stack{Alignment: layout.Center}.Layout(gtx,
 		layout.Expanded(func(gtx layout.Context) layout.Dimensions {
 			paint.FillShape(gtx.Ops, color.NRGBA{R: 15, G: 15, B: 30, A: 220}, clip.Rect{Max: gtx.Constraints.Max}.Op())
@@ -92,13 +92,13 @@ func (o *CallOverlay) Layout(gtx layout.Context, call *voice.CallManager) layout
 					return layout.Spacer{Height: unit.Dp(60)}.Layout(gtx)
 				}),
 
-				// Avatar kruh
+				// Avatar circle
 				layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 					return layoutCentered2(gtx, func(gtx layout.Context) layout.Dimensions {
 						size := gtx.Dp(80)
 						clr := UserColor(peerName)
 
-						// Speaking indikátor (zelený ring kolem avataru)
+						// Speaking indicator (green ring around avatar)
 						_, peerSpeaking := call.GetSpeakingState()
 						if state == voice.CallConnected && peerSpeaking {
 							gtx.Execute(op.InvalidateCmd{At: time.Now().Add(100 * time.Millisecond)})
@@ -113,7 +113,7 @@ func (o *CallOverlay) Layout(gtx layout.Context, call *voice.CallManager) layout
 							st.Pop()
 						}
 
-						// Pulsující efekt při zvonění
+						// Pulsating effect while ringing
 						if state == voice.CallRingingOut || state == voice.CallRingingIn {
 							gtx.Execute(op.InvalidateCmd{At: time.Now().Add(50 * time.Millisecond)})
 							pulse := float32(time.Now().UnixMilli()%1000) / 1000.0
@@ -138,7 +138,7 @@ func (o *CallOverlay) Layout(gtx layout.Context, call *voice.CallManager) layout
 							NE:   rr, NW: rr, SE: rr, SW: rr,
 						}.Op(gtx.Ops))
 
-						// Iniciála
+						// Initial
 						return layout.Stack{Alignment: layout.Center}.Layout(gtx,
 							layout.Stacked(func(gtx layout.Context) layout.Dimensions {
 								return layout.Dimensions{Size: image.Pt(size, size)}
@@ -160,7 +160,7 @@ func (o *CallOverlay) Layout(gtx layout.Context, call *voice.CallManager) layout
 					return layout.Spacer{Height: unit.Dp(16)}.Layout(gtx)
 				}),
 
-				// Jméno
+				// Name
 				layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 					return layoutCentered2(gtx, func(gtx layout.Context) layout.Dimensions {
 						lbl := material.H6(o.app.Theme.Material, peerName)
@@ -197,7 +197,7 @@ func (o *CallOverlay) Layout(gtx layout.Context, call *voice.CallManager) layout
 					return layout.Spacer{Height: unit.Dp(32)}.Layout(gtx)
 				}),
 
-				// Tlačítka
+				// Buttons
 				layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 					return layoutCentered2(gtx, func(gtx layout.Context) layout.Dimensions {
 						switch state {
@@ -263,7 +263,7 @@ func (o *CallOverlay) Layout(gtx layout.Context, call *voice.CallManager) layout
 	)
 }
 
-// layoutRoundBtn renderuje kulaté tlačítko s textem.
+// layoutRoundBtn renders a rounded button with text.
 func (o *CallOverlay) layoutRoundBtn(gtx layout.Context, btn *widget.Clickable, text string, bg color.NRGBA) layout.Dimensions {
 	hoverBg := bg
 	if btn.Hovered() {
@@ -297,7 +297,7 @@ func (o *CallOverlay) layoutRoundBtn(gtx layout.Context, btn *widget.Clickable, 
 	})
 }
 
-// layoutCentered2 vycentruje widget horizontálně.
+// layoutCentered2 centers a widget horizontally.
 func layoutCentered2(gtx layout.Context, w layout.Widget) layout.Dimensions {
 	return layout.Flex{Alignment: layout.Middle}.Layout(gtx,
 		layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {

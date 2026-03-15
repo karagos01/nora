@@ -13,7 +13,7 @@ import (
 )
 
 // ListEvents — GET /api/events?from=&to=
-// Pro recurring eventy generuje virtuální instance v daném rozsahu.
+// For recurring events, generates virtual instances within the given range.
 func (d *Deps) ListEvents(w http.ResponseWriter, r *http.Request) {
 	fromStr := r.URL.Query().Get("from")
 	toStr := r.URL.Query().Get("to")
@@ -47,17 +47,17 @@ func (d *Deps) ListEvents(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Expandovat recurring eventy do virtuálních instancí
+	// Expand recurring events into virtual instances
 	var result []models.Event
 	for _, e := range events {
 		if e.RecurrenceRule == "" {
-			// Nerecurring event — přidat jen pokud je v rozsahu
+			// Non-recurring event — add only if within range
 			if !e.StartsAt.Before(from) && !e.StartsAt.After(to) {
 				result = append(result, e)
 			}
 			continue
 		}
-		// Generovat virtuální instance pro recurring event
+		// Generate virtual instances for recurring event
 		instances := expandRecurringEvent(e, from, to)
 		result = append(result, instances...)
 	}
@@ -68,19 +68,19 @@ func (d *Deps) ListEvents(w http.ResponseWriter, r *http.Request) {
 	util.JSON(w, http.StatusOK, result)
 }
 
-// expandRecurringEvent generuje instance recurring eventu v daném rozsahu.
-// Vrací virtuální kopie se stejným ID ale posunutým starts_at/ends_at.
+// expandRecurringEvent generates instances of a recurring event within the given range.
+// Returns virtual copies with the same ID but shifted starts_at/ends_at.
 func expandRecurringEvent(e models.Event, from, to time.Time) []models.Event {
 	var instances []models.Event
 
-	// Délka eventu (pro posun ends_at)
+	// Event duration (for shifting ends_at)
 	var duration time.Duration
 	if e.EndsAt != nil {
 		duration = e.EndsAt.Sub(e.StartsAt)
 	}
 
-	// Generovat instance od starts_at dopředu
-	// Limit: max 365 instancí (ochrana proti nekonečné smyčce)
+	// Generate instances from starts_at forward
+	// Limit: max 365 instances (protection against infinite loop)
 	current := e.StartsAt
 	for i := 0; i < 365; i++ {
 		if current.After(to) {
@@ -101,7 +101,7 @@ func expandRecurringEvent(e models.Event, from, to time.Time) []models.Event {
 	return instances
 }
 
-// advanceByRule posune čas o jeden interval podle pravidla.
+// advanceByRule advances the time by one interval according to the rule.
 func advanceByRule(t time.Time, rule string) time.Time {
 	switch rule {
 	case "daily":
@@ -113,7 +113,7 @@ func advanceByRule(t time.Time, rule string) time.Time {
 	case "yearly":
 		return t.AddDate(1, 0, 0)
 	default:
-		// Neznámé pravidlo — posunout o rok (efektivně ukončit smyčku)
+		// Unknown rule — advance by 100 years (effectively end the loop)
 		return t.AddDate(100, 0, 0)
 	}
 }
@@ -128,7 +128,7 @@ func (d *Deps) CreateEvent(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Ověřit PermSendMessages
+	// Verify PermSendMessages
 	if err := d.requirePermission(user, models.PermSendMessages); err != nil {
 		util.Error(w, http.StatusForbidden, "no permission")
 		return
@@ -154,7 +154,7 @@ func (d *Deps) CreateEvent(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Validace recurrence_rule
+	// Validate recurrence_rule
 	if req.RecurrenceRule != "" && req.RecurrenceRule != "daily" && req.RecurrenceRule != "weekly" && req.RecurrenceRule != "monthly" && req.RecurrenceRule != "yearly" {
 		util.Error(w, http.StatusBadRequest, "recurrence_rule must be empty, daily, weekly, monthly or yearly")
 		return
@@ -201,7 +201,7 @@ func (d *Deps) CreateEvent(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Načíst s creator JOINem
+	// Load with creator JOIN
 	full, err := d.CalendarQ.GetEvent(event.ID)
 	if err != nil {
 		full = event
@@ -237,7 +237,7 @@ func (d *Deps) UpdateEvent(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Jen creator nebo admin
+	// Only creator or admin
 	if event.CreatorID != user.ID {
 		if err := d.requirePermission(user, models.PermManageChannels); err != nil {
 			util.Error(w, http.StatusForbidden, "only creator or admin can edit event")
@@ -300,7 +300,7 @@ func (d *Deps) UpdateEvent(w http.ResponseWriter, r *http.Request) {
 		event.AllDay = *req.AllDay
 	}
 	if req.RecurrenceRule != nil {
-		// Validace recurrence_rule
+		// Validate recurrence_rule
 		rule := *req.RecurrenceRule
 		if rule != "" && rule != "daily" && rule != "weekly" && rule != "monthly" && rule != "yearly" {
 			util.Error(w, http.StatusBadRequest, "recurrence_rule must be empty, daily, weekly, monthly or yearly")
@@ -331,7 +331,7 @@ func (d *Deps) DeleteEvent(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Jen creator nebo admin
+	// Only creator or admin
 	if event.CreatorID != user.ID {
 		if err := d.requirePermission(user, models.PermManageChannels); err != nil {
 			util.Error(w, http.StatusForbidden, "only creator or admin can delete event")
@@ -376,7 +376,7 @@ func (d *Deps) SetEventReminder(w http.ResponseWriter, r *http.Request) {
 
 	remindAt := event.StartsAt.Add(-time.Duration(req.MinutesBefore) * time.Minute)
 
-	// Smazat existující reminder pro tohoto uživatele
+	// Delete existing reminder for this user
 	d.CalendarQ.DeleteReminder(eventID, user.ID)
 
 	reminderID, _ := uuid.NewV7()
@@ -411,13 +411,13 @@ func (d *Deps) RemoveEventReminder(w http.ResponseWriter, r *http.Request) {
 	util.JSON(w, http.StatusOK, map[string]string{"status": "ok"})
 }
 
-// DispatchEventReminders je voláno z tickeru v main.go.
-// Pro recurring eventy: po dispatchi vytvoří nový reminder pro příští instanci.
+// DispatchEventReminders is called from the ticker in main.go.
+// For recurring events: after dispatch, creates a new reminder for the next instance.
 func (d *Deps) DispatchEventReminders() {
 	now := time.Now().UTC()
 	due, err := d.CalendarQ.ListDueReminders(now)
 	if err != nil {
-		slog.Error("calendar: výpis splatných reminderů selhal", "error", err)
+		slog.Error("calendar: failed to list due reminders", "error", err)
 		return
 	}
 
@@ -433,24 +433,24 @@ func (d *Deps) DispatchEventReminders() {
 
 		d.CalendarQ.MarkReminded(dr.ID)
 
-		// Pro recurring eventy vytvořit reminder pro příští instanci
+		// For recurring events, create reminder for next instance
 		event, err := d.CalendarQ.GetEvent(dr.EventID)
 		if err != nil || event.RecurrenceRule == "" {
 			continue
 		}
 
-		// Spočítat offset reminderu (kolik minut před startem)
+		// Calculate reminder offset (how many minutes before start)
 		reminderOffset := dr.StartsAt.Sub(dr.RemindAt)
 		if reminderOffset < 0 {
 			reminderOffset = 15 * time.Minute
 		}
 
-		// Najít příští instanci po aktuálním starts_at
+		// Find next instance after current starts_at
 		nextStart := advanceByRule(dr.StartsAt, event.RecurrenceRule)
 
 		nextRemindAt := nextStart.Add(-reminderOffset)
 		if nextRemindAt.Before(now) {
-			// Příští reminder je v minulosti, přeskočit
+			// Next reminder is in the past, skip
 			continue
 		}
 
@@ -462,7 +462,7 @@ func (d *Deps) DispatchEventReminders() {
 			RemindAt: nextRemindAt,
 		}
 		if err := d.CalendarQ.CreateReminder(nextReminder); err != nil {
-			slog.Error("calendar: vytvoření recurring reminderu selhalo", "error", err)
+			slog.Error("calendar: failed to create recurring reminder", "error", err)
 		}
 	}
 }

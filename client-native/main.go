@@ -31,7 +31,7 @@ func main() {
 		a := ui.NewApp(w, version)
 		defer a.Destroy()
 
-		// Deep link z command line argumentů
+		// Deep link from command line arguments
 		if len(os.Args) > 1 && strings.HasPrefix(os.Args[1], "nora://") {
 			a.PendingDeepLink = os.Args[1]
 		}
@@ -55,7 +55,7 @@ func main() {
 				log.Printf("main: ViewEvent received: %T valid=%v", e, e.Valid())
 				a.SetupFileDrop(e)
 			case app.FrameEvent:
-				// Zpracovat všechny přetažené soubory z OS, které čekají ve frontě.
+				// Process all dragged files from OS that are waiting in the queue.
 				for {
 					select {
 					case paths := <-a.DroppedFiles:

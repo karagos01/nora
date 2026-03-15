@@ -111,7 +111,7 @@ func powershellMultiFileDialog() []string {
 	return strings.Split(raw, "\n")
 }
 
-// saveFileDialog otevře "Save As" dialog s předvyplněným jménem souboru.
+// saveFileDialog opens a "Save As" dialog with a pre-filled file name.
 func saveFileDialog(defaultName string) string {
 	switch runtime.GOOS {
 	case "linux":
@@ -129,7 +129,7 @@ func saveFileDialog(defaultName string) string {
 
 func defaultSavePath(filename string) string {
 	home, _ := os.UserHomeDir()
-	// Zkusit Downloads složku
+	// Try the Downloads folder
 	dl := filepath.Join(home, "Downloads")
 	if info, err := os.Stat(dl); err == nil && info.IsDir() {
 		return filepath.Join(dl, filename)
@@ -141,7 +141,7 @@ func zenitySaveDialog(defaultName string) string {
 	savePath := defaultSavePath(defaultName)
 	cmd := exec.Command("zenity", "--file-selection", "--save",
 		"--title=Save file", "--filename="+savePath)
-	// Vynutit nativní GTK dialog místo xdg-desktop-portal (portal ignoruje --filename)
+	// Force native GTK dialog instead of xdg-desktop-portal (portal ignores --filename)
 	cmd.Env = append(os.Environ(), "GTK_USE_PORTAL=0")
 	out, err := cmd.Output()
 	if err != nil {
@@ -187,7 +187,7 @@ func osascriptSaveDialog(defaultName string) string {
 	if err != nil {
 		return ""
 	}
-	// osascript vrací "alias Macintosh HD:Users:..." — převod na POSIX path
+	// osascript returns "alias Macintosh HD:Users:..." — convert to POSIX path
 	raw := strings.TrimSpace(string(out))
 	if strings.HasPrefix(raw, "file ") || strings.HasPrefix(raw, "alias ") {
 		// Use separate -e argument to avoid injection from raw output
@@ -248,7 +248,7 @@ func powershellDirDialog() string {
 	return strings.TrimSpace(string(out))
 }
 
-// downloadFile stáhne soubor z URL a uloží na disk přes save dialog.
+// downloadFile downloads a file from a URL and saves it to disk via a save dialog.
 func downloadFile(fileURL, filename, token string) error {
 	savePath := saveFileDialog(filename)
 	if savePath == "" {
@@ -257,7 +257,7 @@ func downloadFile(fileURL, filename, token string) error {
 	return downloadToPath(fileURL, savePath, token)
 }
 
-// downloadToPath stáhne soubor z URL a uloží na zadanou cestu.
+// downloadToPath downloads a file from a URL and saves it to the given path.
 func downloadToPath(fileURL, savePath, token string) error {
 	req, err := http.NewRequest("GET", fileURL, nil)
 	if err != nil {

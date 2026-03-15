@@ -55,7 +55,7 @@ func (d *Deps) BlockUser(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Odebrat přátelství pokud existuje
+	// Remove friendship if it exists
 	areFriends, _ := d.Friends.AreFriends(user.ID, req.UserID)
 	if areFriends {
 		d.Friends.Remove(user.ID, req.UserID)
@@ -69,10 +69,10 @@ func (d *Deps) BlockUser(w http.ResponseWriter, r *http.Request) {
 		d.Hub.BroadcastToUser(req.UserID, ev2)
 	}
 
-	// Smazat pending friend requesty mezi nimi
+	// Delete pending friend requests between them
 	d.FriendRequests.DeleteBetween(user.ID, req.UserID)
 
-	// WS block.add jen blockérovi
+	// WS block.add only to the blocker
 	event, _ := ws.NewEvent(ws.EventBlockAdd, target)
 	d.Hub.BroadcastToUser(user.ID, event)
 

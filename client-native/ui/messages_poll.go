@@ -27,13 +27,13 @@ func (v *MessageView) layoutPoll(gtx layout.Context, idx int, msg api.Message) l
 		myUserID = conn.UserID
 	}
 
-	// Celkový počet hlasů
+	// Total vote count
 	totalVotes := 0
 	for _, opt := range poll.Options {
 		totalVotes += opt.Count
 	}
 
-	// Typ badge text
+	// Type badge text
 	typeLabel := "Single choice"
 	if poll.PollType == "multi" {
 		typeLabel = "Multiple choice"
@@ -100,7 +100,7 @@ func (v *MessageView) layoutPoll(gtx layout.Context, idx int, msg api.Message) l
 						optCopy := opt
 						btnIdx := j
 
-						// Zkontrolovat jestli jsem hlasoval na tuto option
+						// Check if I voted on this option
 						iVoted := false
 						for _, uid := range optCopy.UserIDs {
 							if uid == myUserID {
@@ -108,8 +108,8 @@ func (v *MessageView) layoutPoll(gtx layout.Context, idx int, msg api.Message) l
 								break
 							}
 						}
-						// Pro anonymous: kontrolovat přes count nelze, ale server vrátí user_ids=nil.
-						// Pokud anonymous, nemůžeme lokálně zjistit jestli jsem hlasoval — ponecháme false.
+						// For anonymous: cannot check via count, but server returns user_ids=nil.
+						// If anonymous, we cannot locally determine if I voted — leave as false.
 
 						pct := 0
 						if totalVotes > 0 {

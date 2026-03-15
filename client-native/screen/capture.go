@@ -8,8 +8,8 @@ import (
 	"github.com/kbinani/screenshot"
 )
 
-// CaptureRaw zachytí primární displej, downscaluje na maxW x maxH,
-// a vrátí raw RGBA bytes se sudými rozměry (ffmpeg vyžaduje).
+// CaptureRaw captures the primary display, downscales to maxW x maxH,
+// and returns raw RGBA bytes with even dimensions (ffmpeg requires it).
 func CaptureRaw(maxW, maxH int) (rgba []byte, width, height int, err error) {
 	bounds := screenshot.GetDisplayBounds(0)
 	img, err := screenshot.CaptureRect(bounds)
@@ -20,7 +20,7 @@ func CaptureRaw(maxW, maxH int) (rgba []byte, width, height int, err error) {
 	w := img.Bounds().Dx()
 	h := img.Bounds().Dy()
 
-	// Downscale pokud potřeba
+	// Downscale if needed
 	newW, newH := w, h
 	if w > maxW || h > maxH {
 		scaleW := float64(maxW) / float64(w)
@@ -39,7 +39,7 @@ func CaptureRaw(maxW, maxH int) (rgba []byte, width, height int, err error) {
 		}
 	}
 
-	// Zarovnat na sudé rozměry (ffmpeg H.264 vyžaduje)
+	// Align to even dimensions (ffmpeg H.264 requires it)
 	newW &^= 1
 	newH &^= 1
 	if newW < 2 {
@@ -49,7 +49,7 @@ func CaptureRaw(maxW, maxH int) (rgba []byte, width, height int, err error) {
 		newH = 2
 	}
 
-	// Vytvořit výstupní buffer
+	// Create output buffer
 	out := make([]byte, newW*newH*4)
 	srcStride := img.Stride
 	srcPix := img.Pix

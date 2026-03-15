@@ -8,7 +8,7 @@ import (
 	"time"
 )
 
-// StoredGroupAttachment je příloha uložená v lokální historii.
+// StoredGroupAttachment is an attachment stored in the local history.
 type StoredGroupAttachment struct {
 	Filename string `json:"filename"`
 	URL      string `json:"url"`
@@ -26,16 +26,16 @@ type StoredGroupMessage struct {
 	CreatedAt   time.Time               `json:"created_at"`
 }
 
-const keyRotationThreshold = 500 // rotace klíče po N odeslaných zprávách
+const keyRotationThreshold = 500 // key rotation after N sent messages
 
 // GroupHistory manages local group message and key persistence per identity.
 type GroupHistory struct {
 	mu         sync.Mutex
 	publicKey  string
 	messages   map[string][]StoredGroupMessage // groupID → messages
-	keys       map[string]string               // groupID → aktuální group key (hex)
-	oldKeys    map[string][]string             // groupID → staré klíče (pro dešifrování historie)
-	msgCount   map[string]int                  // groupID → počet odeslaných zpráv s aktuálním klíčem
+	keys       map[string]string               // groupID → current group key (hex)
+	oldKeys    map[string][]string             // groupID → old keys (for decrypting history)
+	msgCount   map[string]int                  // groupID → number of messages sent with current key
 	dirty      bool
 }
 
@@ -161,7 +161,7 @@ func (h *GroupHistory) GetKey(groupID string) string {
 	return h.keys[groupID]
 }
 
-// GetAllKeys vrátí aktuální klíč + všechny staré klíče (pro fallback dešifrování).
+// GetAllKeys returns the current key + all old keys (for fallback decryption).
 func (h *GroupHistory) GetAllKeys(groupID string) []string {
 	h.mu.Lock()
 	defer h.mu.Unlock()
@@ -173,7 +173,7 @@ func (h *GroupHistory) GetAllKeys(groupID string) []string {
 	return keys
 }
 
-// IncrementCount zvýší počítadlo odeslaných zpráv a vrátí novou hodnotu.
+// IncrementCount increments the sent message counter and returns the new value.
 func (h *GroupHistory) IncrementCount(groupID string) int {
 	h.mu.Lock()
 	defer h.mu.Unlock()
@@ -182,14 +182,14 @@ func (h *GroupHistory) IncrementCount(groupID string) int {
 	return h.msgCount[groupID]
 }
 
-// NeedsRotation vrátí true pokud je čas na rotaci klíče.
+// NeedsRotation returns true if it's time for key rotation.
 func (h *GroupHistory) NeedsRotation(groupID string) bool {
 	h.mu.Lock()
 	defer h.mu.Unlock()
 	return h.msgCount[groupID] >= keyRotationThreshold
 }
 
-// DeleteOlderThan smaže zprávy starší než maxAge, ale ZACHOVÁ klíče, oldKeys a msgCount.
+// DeleteOlderThan deletes messages older than maxAge, but PRESERVES keys, oldKeys and msgCount.
 func (h *GroupHistory) DeleteOlderThan(maxAge time.Duration) int {
 	h.mu.Lock()
 	defer h.mu.Unlock()
@@ -206,7 +206,7 @@ func (h *GroupHistory) DeleteOlderThan(maxAge time.Duration) int {
 			}
 		}
 		if len(kept) == 0 {
-			h.messages[groupID] = nil // nesmazat klíče!
+			h.messages[groupID] = nil // don't delete keys!
 		} else {
 			h.messages[groupID] = kept
 		}
@@ -217,7 +217,7 @@ func (h *GroupHistory) DeleteOlderThan(maxAge time.Duration) int {
 	return deleted
 }
 
-// MessageCount vrátí celkový počet zpráv přes všechny skupiny.
+// MessageCount returns the total number of messages across all groups.
 func (h *GroupHistory) MessageCount() int {
 	h.mu.Lock()
 	defer h.mu.Unlock()
@@ -229,12 +229,12 @@ func (h *GroupHistory) MessageCount() int {
 	return count
 }
 
-// RotateKey přesune aktuální klíč do historie, nastaví nový a resetuje počítadlo.
+// RotateKey moves the current key to history, sets a new one and resets the counter.
 func (h *GroupHistory) RotateKey(groupID, newKeyHex string) {
 	h.mu.Lock()
 	defer h.mu.Unlock()
 	if old := h.keys[groupID]; old != "" {
-		// Max 10 starých klíčů
+		// Max 10 old keys
 		history := h.oldKeys[groupID]
 		history = append([]string{old}, history...)
 		if len(history) > 10 {

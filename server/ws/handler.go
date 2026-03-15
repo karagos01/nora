@@ -11,7 +11,7 @@ import (
 
 func UpgradeHandler(hub *Hub, jwtSvc *auth.JWTService, isBanned auth.BanChecker) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		// Token z Authorization headeru (preferovaný) nebo query parametru (fallback)
+		// Token from Authorization header (preferred) or query parameter (fallback)
 		token := extractBearerToken(r)
 		if token == "" {
 			http.Error(w, "missing token", http.StatusUnauthorized)
@@ -33,13 +33,13 @@ func UpgradeHandler(hub *Hub, jwtSvc *auth.JWTService, isBanned auth.BanChecker)
 			InsecureSkipVerify: true, // CORS pro development
 		})
 		if err != nil {
-			slog.Error("ws: upgrade selhal", "error", err)
+			slog.Error("ws: upgrade failed", "error", err)
 			return
 		}
 
 		client := NewClient(hub, conn, claims.UserID)
 
-		// Synchronní registrace — klient je okamžitě v hubu + dostane broadcast
+		// Synchronous registration — client is immediately in the hub + receives broadcasts
 		onlineIDs := hub.RegisterSync(client)
 
 		initPayload := map[string]any{
@@ -51,7 +51,7 @@ func UpgradeHandler(hub *Hub, jwtSvc *auth.JWTService, isBanned auth.BanChecker)
 		initMsg, _ := NewEvent(EventPresenceUpdate, initPayload)
 		client.send <- initMsg
 
-		// OnConnect callback — IP refresh pro firewall
+		// OnConnect callback — IP refresh for firewall
 		if hub.onConnectFn != nil {
 			go hub.onConnectFn(claims.UserID, r)
 		}
@@ -61,7 +61,7 @@ func UpgradeHandler(hub *Hub, jwtSvc *auth.JWTService, isBanned auth.BanChecker)
 	}
 }
 
-// extractBearerToken extrahuje JWT token z Authorization headeru nebo query parametru
+// extractBearerToken extracts JWT token from the Authorization header or query parameter
 func extractBearerToken(r *http.Request) string {
 	if ah := r.Header.Get("Authorization"); strings.HasPrefix(ah, "Bearer ") {
 		return ah[7:]

@@ -14,7 +14,7 @@ import (
 	"nora-client/store"
 )
 
-// LobbyJoinDialog — popup dialog při kliknutí na lobby kanál
+// LobbyJoinDialog — popup dialog when clicking on a lobby channel
 type LobbyJoinDialog struct {
 	app        *App
 	visible    bool
@@ -27,7 +27,7 @@ type LobbyJoinDialog struct {
 	overlayBtn widget.Clickable
 	cardBtn    widget.Clickable
 
-	// Výsledek po kliknutí na Join
+	// Result after clicking Join
 	resultReady    bool
 	resultLobbyID  string
 	resultName     string
@@ -43,7 +43,7 @@ func NewLobbyJoinDialog(a *App) *LobbyJoinDialog {
 	return d
 }
 
-// Show otevře dialog pro vstup do lobby, předvyplní z cache
+// Show opens the dialog for joining a lobby, pre-fills from cache
 func (d *LobbyJoinDialog) Show(lobbyID, lobbyName string, prefs store.LobbyPrefs) {
 	d.visible = true
 	d.lobbyID = lobbyID
@@ -67,7 +67,7 @@ func (d *LobbyJoinDialog) submit() {
 	d.Hide()
 }
 
-// HandleResult vrátí vyplněné hodnoty po kliknutí na Join
+// HandleResult returns the filled values after clicking Join
 func (d *LobbyJoinDialog) HandleResult() (lobbyID, name, password string, ok bool) {
 	if !d.resultReady {
 		return "", "", "", false
@@ -199,11 +199,11 @@ func (d *LobbyJoinDialog) layoutContent(gtx layout.Context) layout.Dimensions {
 			return layout.Inset{Top: unit.Dp(20)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
 				return layout.Flex{Spacing: layout.SpaceStart}.Layout(gtx,
 					layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-						return d.layoutBtn(gtx, &d.cancelBtn, "Cancel", ColorInput, ColorText)
+						return layoutDialogBtn(gtx, d.app.Theme, &d.cancelBtn, "Cancel", ColorInput, ColorText)
 					}),
 					layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 						return layout.Inset{Left: unit.Dp(8)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-							return d.layoutBtn(gtx, &d.joinBtn, "Join", ColorAccent, color.NRGBA{R: 255, G: 255, B: 255, A: 255})
+							return layoutDialogBtn(gtx, d.app.Theme, &d.joinBtn, "Join", ColorAccent, color.NRGBA{R: 255, G: 255, B: 255, A: 255})
 						})
 					}),
 				)
@@ -234,34 +234,3 @@ func (d *LobbyJoinDialog) layoutEditor(gtx layout.Context, ed *widget.Editor, hi
 	)
 }
 
-func (d *LobbyJoinDialog) layoutBtn(gtx layout.Context, btn *widget.Clickable, text string, bg, fg color.NRGBA) layout.Dimensions {
-	return btn.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-		hoverBg := bg
-		if btn.Hovered() {
-			hoverBg = color.NRGBA{
-				R: min8(bg.R + 20),
-				G: min8(bg.G + 20),
-				B: min8(bg.B + 20),
-				A: 255,
-			}
-		}
-		return layout.Background{}.Layout(gtx,
-			func(gtx layout.Context) layout.Dimensions {
-				bounds := image.Rect(0, 0, gtx.Constraints.Min.X, gtx.Constraints.Min.Y)
-				rr := gtx.Dp(6)
-				paint.FillShape(gtx.Ops, hoverBg, clip.RRect{
-					Rect: bounds,
-					NE:   rr, NW: rr, SE: rr, SW: rr,
-				}.Op(gtx.Ops))
-				return layout.Dimensions{Size: bounds.Max}
-			},
-			func(gtx layout.Context) layout.Dimensions {
-				return layout.Inset{Top: unit.Dp(8), Bottom: unit.Dp(8), Left: unit.Dp(16), Right: unit.Dp(16)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-					lbl := material.Body2(d.app.Theme.Material, text)
-					lbl.Color = fg
-					return lbl.Layout(gtx)
-				})
-			},
-		)
-	})
-}

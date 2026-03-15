@@ -13,24 +13,24 @@ import (
 
 var webClientOnce sync.Once
 
-// ensureWebClient zajistí, že WebClient service běží a povoluje HTTP WebDAV.
-// Volá se jen jednou per session (sync.Once) — restart WebClient je pomalý a rozbíjí existující mapování.
+// ensureWebClient ensures the WebClient service is running and allows HTTP WebDAV.
+// Called only once per session (sync.Once) — restarting WebClient is slow and breaks existing mappings.
 func ensureWebClient() {
 	webClientOnce.Do(func() {
-		// Nastavit BasicAuthLevel=2 (povolí WebDAV přes HTTP, nejen HTTPS)
-		// Bez toho Windows odmítá HTTP WebDAV s chybou "Parametr není správný"
+		// Set BasicAuthLevel=2 (allows WebDAV over HTTP, not just HTTPS)
+		// Without this Windows rejects HTTP WebDAV with "The parameter is incorrect" error
 		exec.Command("reg", "add",
 			`HKLM\SYSTEM\CurrentControlSet\Services\WebClient\Parameters`,
 			"/v", "BasicAuthLevel", "/t", "REG_DWORD", "/d", "2", "/f",
 		).Run()
 
-		// Zvýšit max velikost souboru (výchozí 50MB → 4GB)
+		// Increase max file size (default 50MB → 4GB)
 		exec.Command("reg", "add",
 			`HKLM\SYSTEM\CurrentControlSet\Services\WebClient\Parameters`,
 			"/v", "FileSizeLimitInBytes", "/t", "REG_DWORD", "/d", "4294967295", "/f",
 		).Run()
 
-		// Restartovat WebClient aby se změny projevily
+		// Restart WebClient for changes to take effect
 		exec.Command("net", "stop", "WebClient").Run()
 		exec.Command("net", "start", "WebClient").Run()
 		time.Sleep(500 * time.Millisecond)
@@ -38,12 +38,12 @@ func ensureWebClient() {
 	})
 }
 
-// mapDrivePreferred zkusí preferované písmeno, pak fallback na volné.
+// mapDrivePreferred tries the preferred letter, then falls back to a free one.
 func mapDrivePreferred(webdavURL string, preferred string) (string, error) {
 	ensureWebClient()
 
 	if preferred != "" {
-		// Zkusit preferované písmeno
+		// Try the preferred letter
 		cmd := exec.Command("net", "use", preferred, webdavURL, "/persistent:no")
 		out, err := cmd.CombinedOutput()
 		if err == nil {
@@ -63,11 +63,11 @@ func mapDrivePreferred(webdavURL string, preferred string) (string, error) {
 		log.Printf("drive_windows: preferred %s failed: %s, falling back", preferred, strings.TrimSpace(string(out)))
 	}
 
-	// Fallback na standardní mapDrive
+	// Fallback to standard mapDrive
 	return mapDrive(webdavURL)
 }
 
-// mapDrive najde volné písmeno a namapuje WebDAV URL jako síťový disk.
+// mapDrive finds a free drive letter and maps the WebDAV URL as a network drive.
 func mapDrive(webdavURL string) (string, error) {
 	ensureWebClient()
 
@@ -80,8 +80,8 @@ func mapDrive(webdavURL string) (string, error) {
 	cmd := exec.Command("net", "use", letter, webdavURL, "/persistent:no")
 	out, err := cmd.CombinedOutput()
 	if err != nil {
-		// Pokud net use selže, zkusit alternativní formát URL
-		// Windows někdy chce \\host@port\DavWWWRoot formát
+		// If net use fails, try alternative URL format
+		// Windows sometimes wants \\host@port\DavWWWRoot format
 		altURL := webdavToUNC(webdavURL)
 		if altURL != "" {
 			cmd2 := exec.Command("net", "use", letter, altURL, "/persistent:no")
@@ -100,9 +100,9 @@ func mapDrive(webdavURL string) (string, error) {
 	return letter, nil
 }
 
-// renameDrive nastaví zobrazovaný název síťového disku v Průzkumníku.
+// renameDrive sets the display name of a network drive in Explorer.
 func renameDrive(letter, label string) {
-	// Shell.Application COM objekt — nastaví popisek v Exploreru
+	// Shell.Application COM object — sets the label in Explorer
 	ps := fmt.Sprintf(`(New-Object -ComObject Shell.Application).NameSpace('%s\').Self.Name = '%s'`,
 		letter, strings.ReplaceAll(label, "'", "''"))
 	cmd := exec.Command("powershell", "-NoProfile", "-Command", ps)
@@ -114,7 +114,7 @@ func renameDrive(letter, label string) {
 	}
 }
 
-// unmapDrive odpojí síťový disk.
+// unmapDrive disconnects a network drive.
 func unmapDrive(letter string) {
 	cmd := exec.Command("net", "use", letter, "/delete", "/yes")
 	out, err := cmd.CombinedOutput()
@@ -125,7 +125,7 @@ func unmapDrive(letter string) {
 	}
 }
 
-// findFreeDriveLetter najde první volné písmeno disku (Z → D).
+// findFreeDriveLetter finds the first free drive letter (Z → D).
 func findFreeDriveLetter() (string, error) {
 	cmd := exec.Command("powershell", "-Command", "(Get-PSDrive -PSProvider FileSystem).Name -join ','")
 	out, err := cmd.Output()
@@ -147,7 +147,7 @@ func findFreeDriveLetter() (string, error) {
 	return "", fmt.Errorf("no free drive letter found")
 }
 
-// webdavToUNC konvertuje http://localhost:PORT/ na \\localhost@PORT\DavWWWRoot
+// webdavToUNC converts http://localhost:PORT/ to \\localhost@PORT\DavWWWRoot
 func webdavToUNC(url string) string {
 	// http://127.0.0.1:65498/ → \\127.0.0.1@65498\DavWWWRoot
 	url = strings.TrimPrefix(url, "http://")

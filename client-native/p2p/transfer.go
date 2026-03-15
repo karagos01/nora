@@ -17,13 +17,13 @@ import (
 
 const chunkSize = 64 * 1024 // 64KB per data channel message
 
-// Směr přenosu
+// Transfer direction
 const (
 	DirSend    = 0
 	DirReceive = 1
 )
 
-// Stavy přenosu
+// Transfer states
 const (
 	StatusWaiting      = 0
 	StatusConnecting   = 1
@@ -33,20 +33,20 @@ const (
 	StatusCancelled    = 5
 )
 
-// SendWSFunc — callback pro odeslání WS eventu.
+// SendWSFunc — callback for sending a WS event.
 type SendWSFunc func(eventType string, payload any) error
 
-// RegisteredFile — soubor nabídnutý ke stažení přes kanálovou zprávu.
+// RegisteredFile — a file offered for download via a channel message.
 type RegisteredFile struct {
 	TransferID  string
 	FilePath    string
 	FileName    string
 	FileSize    int64
-	IsTemp      bool // dočasný soubor (ZIP z temp adresáře) — nabídnout smazání při unshare
-	IsTransient bool // dočasná registrace (share transfer/upload) — nezobrazovat v UI
+	IsTemp      bool // temporary file (ZIP from temp directory) — offer deletion on unshare
+	IsTransient bool // transient registration (share transfer/upload) — do not show in UI
 }
 
-// Transfer — jeden P2P přenos souboru.
+// Transfer — a single P2P file transfer.
 type Transfer struct {
 	ID        string
 	PeerID    string
@@ -60,30 +60,30 @@ type Transfer struct {
 	mu         sync.Mutex
 	pc         *webrtc.PeerConnection
 	dc         *webrtc.DataChannel
-	pendingICE []webrtc.ICECandidateInit // ICE kandidáti bufferovaní před remote description
-	remoteSet  bool                      // remote description nastavena (ICE lze přidávat)
-	file       *os.File                  // příjemce: otevřený soubor (pro cleanup)
+	pendingICE []webrtc.ICECandidateInit // ICE candidates buffered before remote description
+	remoteSet  bool                      // remote description set (ICE can be added)
+	file       *os.File                  // receiver: open file (for cleanup)
 	sendWS     SendWSFunc
 	stunURL    string
 
-	filePath    string    // odesílatel: cesta ke zdrojovému souboru
-	savePath    string    // příjemce: kam uložit
-	baseID      string    // původní transferID (bez composit suffixu, pro WS eventy)
-	Offset      int64     // resume offset (kolik bytů už příjemce má)
-	StartTime   time.Time // čas zahájení transferu (pro rychlost/ETA)
+	filePath    string    // sender: path to source file
+	savePath    string    // receiver: where to save
+	baseID      string    // original transferID (without composite suffix, for WS events)
+	Offset      int64     // resume offset (how many bytes receiver already has)
+	StartTime   time.Time // transfer start time (for speed/ETA)
 
-	offerSDP string // uložený SDP pro deferred accept
+	offerSDP string // stored SDP for deferred accept
 
 	onProgress   func()
 	onDone       func()
-	onMarkDone   func(string)                          // callback pro označení transferu jako staženého (transferID)
-	onMarkSent   func(string)                          // callback pro označení transferu jako odeslaného (sender-side)
-	onAutoRetry  func(peerID, transferID, savePath string, offset int64) // auto-retry při selhání
-	onZipStart   func(savePath string)                  // callback: .zip transfer zahájen
+	onMarkDone   func(string)                          // callback to mark transfer as downloaded (transferID)
+	onMarkSent   func(string)                          // callback to mark transfer as sent (sender-side)
+	onAutoRetry  func(peerID, transferID, savePath string, offset int64) // auto-retry on failure
+	onZipStart   func(savePath string)                  // callback: .zip transfer started
 	retries      int
 }
 
-// Manager — spravuje všechny P2P přenosy a registrované soubory.
+// Manager — manages all P2P transfers and registered files.
 type Manager struct {
 	mu         sync.Mutex
 	userID     string
@@ -93,25 +93,25 @@ type Manager struct {
 
 	transfers       map[string]*Transfer      // transferID → Transfer
 	registeredFiles map[string]*RegisteredFile // transferID → RegisteredFile
-	downloadedIDs   map[string]bool            // transferIDs úspěšně stažené
-	unavailableIDs  map[string]bool            // transferIDs nedostupné (rejected)
-	sentIDs         map[string]bool            // transferIDs úspěšně odeslané (sender-side)
+	downloadedIDs   map[string]bool            // transferIDs successfully downloaded
+	unavailableIDs  map[string]bool            // transferIDs unavailable (rejected)
+	sentIDs         map[string]bool            // transferIDs successfully sent (sender-side)
 
-	// Callback: příchozí cold offer (přímý P2P bez kanálu) → UI se zeptá uživatele
+	// Callback: incoming cold offer (direct P2P without channel) → UI asks user
 	onOffer func(t *Transfer)
-	// Callback: .zip transfer zahájen (StatusTransferring) → UI zobrazí dialog
+	// Callback: .zip transfer started (StatusTransferring) → UI shows dialog
 	onZipStart func(savePath string)
-	// Callback: .zip soubor úspěšně stažen → UI nabídne extrakci
+	// Callback: .zip file successfully downloaded → UI offers extraction
 	onZipDone func(savePath string)
 }
 
-// sharesFilePath vrátí cestu k souboru s persistovanými sdílenými soubory.
+// sharesFilePath returns the path to the file with persisted shared files.
 func sharesFilePath() string {
 	home, _ := os.UserHomeDir()
 	return filepath.Join(home, ".nora", "p2p_shares.json")
 }
 
-// persistedShare — JSON formát pro persistenci registrovaného souboru.
+// persistedShare — JSON format for persisting a registered file.
 type persistedShare struct {
 	TransferID string `json:"transfer_id"`
 	FilePath   string `json:"file_path"`
@@ -120,7 +120,7 @@ type persistedShare struct {
 	IsTemp     bool   `json:"is_temp,omitempty"`
 }
 
-// loadShares načte registrované soubory z disku. Validuje existenci souborů.
+// loadShares loads registered files from disk. Validates file existence.
 func loadShares() map[string]*RegisteredFile {
 	result := make(map[string]*RegisteredFile)
 	data, err := os.ReadFile(sharesFilePath())
@@ -132,7 +132,7 @@ func loadShares() map[string]*RegisteredFile {
 		return result
 	}
 	for _, s := range shares {
-		// Ověřit, že soubor stále existuje
+		// Verify that the file still exists
 		if _, err := os.Stat(s.FilePath); err != nil {
 			continue
 		}
@@ -147,7 +147,7 @@ func loadShares() map[string]*RegisteredFile {
 	return result
 }
 
-// saveShares uloží registrované soubory na disk.
+// saveShares saves registered files to disk.
 func (m *Manager) saveShares() {
 	shares := make([]persistedShare, 0, len(m.registeredFiles))
 	for _, rf := range m.registeredFiles {
@@ -169,7 +169,7 @@ func (m *Manager) saveShares() {
 	}
 }
 
-// NewManager vytvoří P2P Manager. Načte persistované sdílené soubory z disku.
+// NewManager creates a P2P Manager. Loads persisted shared files from disk.
 func NewManager(userID, stunURL string, sendWS SendWSFunc, invalidate func()) *Manager {
 	return &Manager{
 		userID:          userID,
@@ -184,43 +184,43 @@ func NewManager(userID, stunURL string, sendWS SendWSFunc, invalidate func()) *M
 	}
 }
 
-// SetOnOffer nastaví callback pro příchozí cold offer (přímé nabídky souborů).
+// SetOnOffer sets the callback for incoming cold offers (direct file offers).
 func (m *Manager) SetOnOffer(fn func(t *Transfer)) {
 	m.mu.Lock()
 	m.onOffer = fn
 	m.mu.Unlock()
 }
 
-// SetOnZipStart nastaví callback volaný při zahájení přenosu .zip (StatusTransferring).
+// SetOnZipStart sets the callback called when a .zip transfer starts (StatusTransferring).
 func (m *Manager) SetOnZipStart(fn func(savePath string)) {
 	m.mu.Lock()
 	m.onZipStart = fn
 	m.mu.Unlock()
 }
 
-// SetOnZipDone nastaví callback volaný po úspěšném stažení .zip souboru.
+// SetOnZipDone sets the callback called after a .zip file is successfully downloaded.
 func (m *Manager) SetOnZipDone(fn func(savePath string)) {
 	m.mu.Lock()
 	m.onZipDone = fn
 	m.mu.Unlock()
 }
 
-// IsDownloaded vrátí true pokud byl transfer úspěšně stažen.
+// IsDownloaded returns true if the transfer was successfully downloaded.
 func (m *Manager) IsDownloaded(id string) bool {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	return m.downloadedIDs[id]
 }
 
-// IsUnavailable vrátí true pokud je transfer nedostupný (rejected).
+// IsUnavailable returns true if the transfer is unavailable (rejected).
 func (m *Manager) IsUnavailable(id string) bool {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	return m.unavailableIDs[id]
 }
 
-// MarkDownloaded označí transfer jako úspěšně stažený.
-// Pokud je to DirReceive a soubor je .zip, zavolá onZipDone callback.
+// MarkDownloaded marks the transfer as successfully downloaded.
+// If it is DirReceive and the file is .zip, calls the onZipDone callback.
 func (m *Manager) MarkDownloaded(id string) {
 	m.mu.Lock()
 	m.downloadedIDs[id] = true
@@ -235,28 +235,28 @@ func (m *Manager) MarkDownloaded(id string) {
 	}
 }
 
-// IsTransferSent vrátí true pokud byl transfer úspěšně odeslán (sender-side).
+// IsTransferSent returns true if the transfer was successfully sent (sender-side).
 func (m *Manager) IsTransferSent(id string) bool {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	return m.sentIDs[id]
 }
 
-// MarkSent označí transfer jako úspěšně odeslaný (sender-side).
+// MarkSent marks the transfer as successfully sent (sender-side).
 func (m *Manager) MarkSent(id string) {
 	m.mu.Lock()
 	m.sentIDs[id] = true
 	m.mu.Unlock()
 }
 
-// MarkUnavailable označí transfer jako nedostupný.
+// MarkUnavailable marks the transfer as unavailable.
 func (m *Manager) MarkUnavailable(id string) {
 	m.mu.Lock()
 	m.unavailableIDs[id] = true
 	m.mu.Unlock()
 }
 
-// DismissTransfer smaže transfer z aktivních transferů (dismiss z UI).
+// DismissTransfer removes a transfer from active transfers (dismiss from UI).
 func (m *Manager) DismissTransfer(id string) {
 	m.mu.Lock()
 	if t, ok := m.transfers[id]; ok {
@@ -268,7 +268,7 @@ func (m *Manager) DismissTransfer(id string) {
 	}
 }
 
-// IsRegistered vrátí true pokud je soubor stále registrovaný pro sdílení.
+// IsRegistered returns true if the file is still registered for sharing.
 func (m *Manager) IsRegistered(transferID string) bool {
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -276,8 +276,8 @@ func (m *Manager) IsRegistered(transferID string) bool {
 	return ok
 }
 
-// GetRegisteredFiles vrátí kopii registrovaných souborů viditelných v UI (seřazeno podle názvu).
-// Transient soubory (share transfer/upload) jsou vynechány.
+// GetRegisteredFiles returns a copy of registered files visible in UI (sorted by name).
+// Transient files (share transfer/upload) are omitted.
 func (m *Manager) GetRegisteredFiles() []RegisteredFile {
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -294,8 +294,8 @@ func (m *Manager) GetRegisteredFiles() []RegisteredFile {
 	return result
 }
 
-// UnregisterFile odstraní soubor z registrovaných sdílení a persistuje změnu.
-// Vrátí info o odstraněném souboru (nil pokud nebyl nalezen).
+// UnregisterFile removes a file from registered shares and persists the change.
+// Returns info about the removed file (nil if not found).
 func (m *Manager) UnregisterFile(transferID string) *RegisteredFile {
 	m.mu.Lock()
 	rf := m.registeredFiles[transferID]
@@ -310,7 +310,7 @@ func (m *Manager) UnregisterFile(transferID string) *RegisteredFile {
 	return result
 }
 
-// GetSavePath vrátí uloženou cestu pro příjem (pro retry).
+// GetSavePath returns the saved path for receiving (for retry).
 func (m *Manager) GetSavePath(id string) string {
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -320,8 +320,8 @@ func (m *Manager) GetSavePath(id string) string {
 	return ""
 }
 
-// RegisterFileForShare registruje soubor pro jednorázový share transfer.
-// Použije zadané transferID (od serveru) místo generování nového.
+// RegisterFileForShare registers a file for a one-time share transfer.
+// Uses the provided transferID (from the server) instead of generating a new one.
 func (m *Manager) RegisterFileForShare(transferID, filePath, fileName string, fileSize int64) {
 	m.mu.Lock()
 	m.registeredFiles[transferID] = &RegisteredFile{
@@ -333,18 +333,18 @@ func (m *Manager) RegisterFileForShare(transferID, filePath, fileName string, fi
 		IsTransient: true,
 	}
 	m.mu.Unlock()
-	// Nepersistujeme — dočasná registrace pro tento transfer
+	// Not persisted — transient registration for this transfer
 }
 
-// --- Channel-link flow (hlavní) ---
+// --- Channel-link flow (main) ---
 
-// RegisterFile registruje soubor pro P2P stahování. Vrátí transferID.
-// Soubor zůstane dostupný dokud se Manager nezruší nebo soubor neodregistruje.
+// RegisterFile registers a file for P2P download. Returns transferID.
+// The file remains available until the Manager is closed or the file is unregistered.
 func (m *Manager) RegisterFile(filePath, fileName string, fileSize int64) string {
 	return m.registerFile(filePath, fileName, fileSize, false)
 }
 
-// RegisterTempFile registruje dočasný soubor (ZIP). Při unshare se nabídne smazání.
+// RegisterTempFile registers a temporary file (ZIP). Deletion is offered on unshare.
 func (m *Manager) RegisterTempFile(filePath, fileName string, fileSize int64) string {
 	return m.registerFile(filePath, fileName, fileSize, true)
 }
@@ -364,11 +364,11 @@ func (m *Manager) registerFile(filePath, fileName string, fileSize int64, isTemp
 	return id
 }
 
-// RequestDownload — příjemce klikl na P2P link, žádá odesílatele o soubor.
-// Pošle file.request přes WS a vytvoří Transfer pro sledování stavu.
-// Pokud existuje partial file na savePath, pošle offset pro resume.
+// RequestDownload — receiver clicked on a P2P link, requesting a file from the sender.
+// Sends file.request via WS and creates a Transfer for state tracking.
+// If a partial file exists at savePath, sends an offset for resume.
 func (m *Manager) RequestDownload(senderID, transferID, savePath string) {
-	// Detekce partial file pro resume
+	// Detect partial file for resume
 	var offset int64
 	if fi, err := os.Stat(savePath); err == nil {
 		offset = fi.Size()
@@ -404,7 +404,7 @@ func (m *Manager) RequestDownload(senderID, transferID, savePath string) {
 	m.transfers[transferID] = t
 	m.mu.Unlock()
 
-	// Poslat request odesílateli (s offsetem pro resume)
+	// Send request to sender (with offset for resume)
 	m.sendWS("file.request", map[string]any{
 		"to":          senderID,
 		"transfer_id": transferID,
@@ -412,7 +412,7 @@ func (m *Manager) RequestDownload(senderID, transferID, savePath string) {
 	})
 }
 
-// retryDownload — interní auto-retry: recykluje transfer a pošle nový file.request.
+// retryDownload — internal auto-retry: recycles the transfer and sends a new file.request.
 func (m *Manager) retryDownload(senderID, transferID, savePath string, offset int64) {
 	m.mu.Lock()
 	old, hasOld := m.transfers[transferID]
@@ -464,7 +464,7 @@ func (m *Manager) retryDownload(senderID, transferID, savePath string, offset in
 	}
 }
 
-// HandleRequest — odesílatel dostal žádost o soubor. Vytvoří WebRTC offer a začne posílat.
+// HandleRequest — sender received a file request. Creates a WebRTC offer and starts sending.
 func (m *Manager) HandleRequest(from string, payload json.RawMessage) {
 	var p struct {
 		TransferID string `json:"transfer_id"`
@@ -480,7 +480,7 @@ func (m *Manager) HandleRequest(from string, payload json.RawMessage) {
 	m.mu.Unlock()
 	if !ok {
 		log.Printf("p2p: request for unknown file: %s", p.TransferID)
-		// Soubor není registrovaný (odesílatel offline/restartoval)
+		// File is not registered (sender offline/restarted)
 		m.sendWS("file.reject", map[string]string{
 			"to":          from,
 			"transfer_id": p.TransferID,
@@ -489,14 +489,14 @@ func (m *Manager) HandleRequest(from string, payload json.RawMessage) {
 	}
 
 	t := &Transfer{
-		ID:         p.TransferID + "-" + from, // unikátní per requester
+		ID:         p.TransferID + "-" + from, // unique per requester
 		PeerID:     from,
 		FileName:   rf.FileName,
 		FileSize:   rf.FileSize,
 		Direction:  DirSend,
 		Status:     StatusConnecting,
 		filePath:   rf.FilePath,
-		baseID:     p.TransferID, // původní ID pro WS eventy
+		baseID:     p.TransferID, // original ID for WS events
 		Offset:     p.Offset,
 		Progress:   p.Offset,
 		sendWS:     m.sendWS,
@@ -513,7 +513,7 @@ func (m *Manager) HandleRequest(from string, payload json.RawMessage) {
 	go t.initSendOffer(from, p.TransferID)
 }
 
-// initSendOffer — odesílatel vytvoří PeerConnection + DataChannel + offer.
+// initSendOffer — sender creates PeerConnection + DataChannel + offer.
 func (t *Transfer) initSendOffer(requesterID, transferID string) {
 	config := webrtc.Configuration{}
 	if t.stunURL != "" {
@@ -587,7 +587,7 @@ func (t *Transfer) initSendOffer(requesterID, transferID string) {
 	})
 }
 
-// sendFile čte soubor po chunkách a posílá přes DataChannel s flow control.
+// sendFile reads the file in chunks and sends via DataChannel with flow control.
 func (t *Transfer) sendFile() {
 	f, err := os.Open(t.filePath)
 	if err != nil {
@@ -596,7 +596,7 @@ func (t *Transfer) sendFile() {
 	}
 	defer f.Close()
 
-	// Resume: přeskočit na offset
+	// Resume: skip to offset
 	if t.Offset > 0 {
 		if _, err := f.Seek(t.Offset, io.SeekStart); err != nil {
 			t.fail("seek file: " + err.Error())
@@ -605,7 +605,7 @@ func (t *Transfer) sendFile() {
 		log.Printf("p2p: resuming send from offset %d", t.Offset)
 	}
 
-	// Flow control: čekat když je SCTP buffer plný
+	// Flow control: wait when SCTP buffer is full
 	const maxBuffered = 512 * 1024 // 512KB
 	sendMore := make(chan struct{}, 1)
 	t.dc.SetBufferedAmountLowThreshold(maxBuffered / 2)
@@ -632,7 +632,7 @@ func (t *Transfer) sendFile() {
 			if t.onProgress != nil {
 				t.onProgress()
 			}
-			// Backpressure: čekat pokud buffer přeteče
+			// Backpressure: wait if buffer overflows
 			if t.dc.BufferedAmount() > maxBuffered {
 				<-sendMore
 			}
@@ -647,7 +647,7 @@ func (t *Transfer) sendFile() {
 	}
 
 	t.Status = StatusDone
-	// Zavřít DataChannel → příjemcův dc.OnClose uzavře soubor
+	// Close DataChannel → receiver's dc.OnClose closes the file
 	t.dc.Close()
 	tid := t.ID
 	if t.baseID != "" {
@@ -666,11 +666,11 @@ func (t *Transfer) sendFile() {
 	log.Printf("p2p: sent %s (%d bytes) to %s", t.FileName, t.Progress, t.PeerID)
 }
 
-// --- Příjem file.offer (obě flow — channel-link i přímý) ---
+// --- Receiving file.offer (both flows — channel-link and direct) ---
 
-// HandleOffer — příjemce dostal offer od odesílatele.
-// Pokud už existuje Transfer (channel-link flow / RequestDownload) → auto-accept.
-// Pokud ne → cold offer (přímý P2P) → zavolá onOffer callback.
+// HandleOffer — receiver got an offer from the sender.
+// If a Transfer already exists (channel-link flow / RequestDownload) → auto-accept.
+// If not → cold offer (direct P2P) → calls onOffer callback.
 func (m *Manager) HandleOffer(from string, payload json.RawMessage) {
 	var p struct {
 		TransferID string `json:"transfer_id"`
@@ -689,7 +689,7 @@ func (m *Manager) HandleOffer(from string, payload json.RawMessage) {
 	m.mu.Unlock()
 
 	if hasExisting && existing.Direction == DirReceive {
-		// Channel-link flow: příjemce už žádal o tento soubor → auto-accept
+		// Channel-link flow: receiver already requested this file → auto-accept
 		existing.FileName = p.FileName
 		existing.FileSize = p.FileSize
 		existing.Offset = p.Offset
@@ -703,7 +703,7 @@ func (m *Manager) HandleOffer(from string, payload json.RawMessage) {
 		return
 	}
 
-	// Cold offer (přímý P2P bez kanálu)
+	// Cold offer (direct P2P without channel)
 	t := &Transfer{
 		ID:         p.TransferID,
 		PeerID:     from,
@@ -740,7 +740,7 @@ func (m *Manager) HandleOffer(from string, payload json.RawMessage) {
 	}
 }
 
-// AcceptTransfer — příjemce akceptuje cold offer (P2POfferDialog → Save as...).
+// AcceptTransfer — receiver accepts a cold offer (P2POfferDialog → Save as...).
 func (m *Manager) AcceptTransfer(transferID, savePath string) {
 	m.mu.Lock()
 	t, ok := m.transfers[transferID]
@@ -758,7 +758,7 @@ func (m *Manager) AcceptTransfer(transferID, savePath string) {
 	go t.initReceive(transferID)
 }
 
-// initReceive — příjemce vytvoří PeerConnection, nastaví remote offer, pošle answer.
+// initReceive — receiver creates PeerConnection, sets remote offer, sends answer.
 func (t *Transfer) initReceive(transferID string) {
 	config := webrtc.Configuration{}
 	if t.stunURL != "" {
@@ -796,14 +796,14 @@ func (t *Transfer) initReceive(transferID string) {
 		}
 	})
 
-	// DataChannel přijde od odesílatele → přijímat chunky
+	// DataChannel comes from sender → receive chunks
 	pc.OnDataChannel(func(dc *webrtc.DataChannel) {
 		t.dc = dc
 
 		var f *os.File
 		var err error
 		if t.Offset > 0 {
-			// Resume: otevřít existující soubor a seeknout na offset
+			// Resume: open existing file and seek to offset
 			f, err = os.OpenFile(t.savePath, os.O_WRONLY, 0644)
 			if err == nil {
 				_, err = f.Seek(t.Offset, io.SeekStart)
@@ -862,7 +862,7 @@ func (t *Transfer) initReceive(transferID string) {
 				}
 				log.Printf("p2p: received %s (%d bytes) from %s", t.FileName, t.Progress, t.PeerID)
 			} else if t.Status == StatusTransferring && t.Progress < t.FileSize {
-				// Předčasné uzavření — trigger auto-retry
+				// Premature close — trigger auto-retry
 				t.fail("connection lost")
 			}
 		})
@@ -895,9 +895,9 @@ func (t *Transfer) initReceive(transferID string) {
 	})
 }
 
-// --- Signaling handlery ---
+// --- Signaling handlers ---
 
-// HandleAccept — odesílatel dostal answer SDP od příjemce.
+// HandleAccept — sender received answer SDP from receiver.
 func (m *Manager) HandleAccept(from string, payload json.RawMessage) {
 	var p struct {
 		TransferID string `json:"transfer_id"`
@@ -907,7 +907,7 @@ func (m *Manager) HandleAccept(from string, payload json.RawMessage) {
 		return
 	}
 
-	// Hledat transfer: buď přesný ID nebo composit ID (transferID-from)
+	// Look for transfer: either exact ID or composite ID (transferID-from)
 	m.mu.Lock()
 	t, ok := m.transfers[p.TransferID]
 	if !ok {
@@ -929,7 +929,7 @@ func (m *Manager) HandleAccept(from string, payload json.RawMessage) {
 	t.drainPendingICE()
 }
 
-// HandleIce — přidá ICE candidate.
+// HandleIce — adds an ICE candidate.
 func (m *Manager) HandleIce(from string, payload json.RawMessage) {
 	var p struct {
 		TransferID string `json:"transfer_id"`
@@ -956,7 +956,7 @@ func (m *Manager) HandleIce(from string, payload json.RawMessage) {
 
 	t.mu.Lock()
 	if t.pc == nil || !t.remoteSet {
-		// PC nebo remote description ještě nejsou ready — bufferovat
+		// PC or remote description not ready yet — buffer
 		t.pendingICE = append(t.pendingICE, candidate)
 		t.mu.Unlock()
 		return
@@ -969,7 +969,7 @@ func (m *Manager) HandleIce(from string, payload json.RawMessage) {
 	}
 }
 
-// HandleReject — příjemce odmítl / soubor není dostupný.
+// HandleReject — receiver declined / file is not available.
 func (m *Manager) HandleReject(from string, payload json.RawMessage) {
 	var p struct {
 		TransferID string `json:"transfer_id"`
@@ -996,7 +996,7 @@ func (m *Manager) HandleReject(from string, payload json.RawMessage) {
 	}
 }
 
-// HandleCancel — druhá strana zrušila přenos.
+// HandleCancel — the other side cancelled the transfer.
 func (m *Manager) HandleCancel(from string, payload json.RawMessage) {
 	var p struct {
 		TransferID string `json:"transfer_id"`
@@ -1027,7 +1027,7 @@ func (m *Manager) HandleCancel(from string, payload json.RawMessage) {
 	}
 }
 
-// HandleComplete — odesílatel potvrdil dokončení přenosu.
+// HandleComplete — sender confirmed transfer completion.
 func (m *Manager) HandleComplete(from string, payload json.RawMessage) {
 	var p struct {
 		TransferID string `json:"transfer_id"`
@@ -1049,7 +1049,7 @@ func (m *Manager) HandleComplete(from string, payload json.RawMessage) {
 	}
 }
 
-// RejectTransfer — příjemce odmítl cold offer.
+// RejectTransfer — receiver declined the cold offer.
 func (m *Manager) RejectTransfer(transferID string) {
 	m.mu.Lock()
 	t, ok := m.transfers[transferID]
@@ -1068,7 +1068,7 @@ func (m *Manager) RejectTransfer(transferID string) {
 	}
 }
 
-// CancelTransfer zruší transfer a notifikuje druhou stranu.
+// CancelTransfer cancels the transfer and notifies the other side.
 func (m *Manager) CancelTransfer(transferID string) {
 	m.mu.Lock()
 	t, ok := m.transfers[transferID]
@@ -1090,7 +1090,7 @@ func (m *Manager) CancelTransfer(transferID string) {
 	}
 }
 
-// GetActiveTransfers vrátí kopii aktivních transferů pro UI (seřazeno podle ID).
+// GetActiveTransfers returns a copy of active transfers for UI (sorted by ID).
 func (m *Manager) GetActiveTransfers() []*Transfer {
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -1105,8 +1105,8 @@ func (m *Manager) GetActiveTransfers() []*Transfer {
 	return result
 }
 
-// Cleanup — uzavře všechny transfery (při odpojení od serveru).
-// Registrované soubory zůstávají — jsou persistované a po reconnectu opět dostupné.
+// Cleanup — closes all transfers (on disconnect from server).
+// Registered files remain — they are persisted and available again after reconnect.
 func (m *Manager) Cleanup() {
 	m.mu.Lock()
 	transfers := make(map[string]*Transfer, len(m.transfers))
@@ -1125,8 +1125,8 @@ func (m *Manager) Cleanup() {
 	}
 }
 
-// drainPendingICE přidá všechny bufferované ICE kandidáty do PeerConnection.
-// Volat PO SetRemoteDescription.
+// drainPendingICE adds all buffered ICE candidates to the PeerConnection.
+// Call AFTER SetRemoteDescription.
 func (t *Transfer) drainPendingICE() {
 	t.mu.Lock()
 	t.remoteSet = true
@@ -1140,20 +1140,20 @@ func (t *Transfer) drainPendingICE() {
 	}
 }
 
-// SavePath vrátí cestu kam se soubor ukládá (pro retry).
+// SavePath returns the path where the file is being saved (for retry).
 func (t *Transfer) SavePath() string {
 	return t.savePath
 }
 
 const maxAutoRetries = 3
 
-// fail nastaví chybový stav transferu.
-// Pokud je to příjem a přenos byl aktivní, automaticky zkusí retry.
+// fail sets the error state of the transfer.
+// If it is a receive and the transfer was active, automatically tries retry.
 func (t *Transfer) fail(msg string) {
 	log.Printf("p2p: transfer %s error: %s", t.ID, msg)
 	t.cleanup()
 
-	// Auto-retry pro příjem pokud měl nějaký progress a ještě nepřekročil limit
+	// Auto-retry for receive if there was some progress and retry limit not exceeded
 	if t.Direction == DirReceive && t.Progress > 0 && t.retries < maxAutoRetries && t.onAutoRetry != nil {
 		t.retries++
 		t.Status = StatusWaiting
@@ -1181,7 +1181,7 @@ func (t *Transfer) fail(msg string) {
 	}
 }
 
-// cleanup uzavře PeerConnection a DataChannel.
+// cleanup closes PeerConnection and DataChannel.
 func (t *Transfer) cleanup() {
 	t.mu.Lock()
 	f := t.file

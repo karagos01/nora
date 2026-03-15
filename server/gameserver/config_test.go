@@ -69,7 +69,7 @@ func TestReadConfigDefaults(t *testing.T) {
 	gsDir := filepath.Join(dir, gsID)
 	os.MkdirAll(gsDir, 0755)
 
-	// Minimální config — jen image
+	// Minimal config — only image
 	content := `image = "nginx:latest"`
 	os.WriteFile(filepath.Join(gsDir, "server.toml"), []byte(content), 0644)
 
@@ -160,7 +160,7 @@ func TestBuildDockerArgs(t *testing.T) {
 	args := cfg.BuildDockerArgs("mc-test", "/opt/gs/test")
 	joined := strings.Join(args, " ")
 
-	// Základní argumenty
+	// Basic arguments
 	if !strings.Contains(joined, "run -d --name mc-test") {
 		t.Errorf("missing run/name: %s", joined)
 	}
@@ -169,6 +169,14 @@ func TestBuildDockerArgs(t *testing.T) {
 	}
 	if !strings.Contains(joined, "--restart unless-stopped") {
 		t.Errorf("missing restart: %s", joined)
+	}
+
+	// Security hardening
+	if !strings.Contains(joined, "--no-new-privileges") {
+		t.Errorf("missing --no-new-privileges: %s", joined)
+	}
+	if !strings.Contains(joined, "--cap-drop ALL") {
+		t.Errorf("missing --cap-drop ALL: %s", joined)
 	}
 
 	// Port mapping
@@ -181,13 +189,13 @@ func TestBuildDockerArgs(t *testing.T) {
 		t.Errorf("missing env: %s", joined)
 	}
 
-	// Image na konci
+	// Image at the end
 	if args[len(args)-1] != "itzg/minecraft-server:latest" {
 		t.Errorf("last arg should be image, got %q", args[len(args)-1])
 	}
 }
 
-func TestBuildDockerArgsAbsoluteVolume(t *testing.T) {
+func TestBuildDockerArgsAbsoluteVolumeRejected(t *testing.T) {
 	cfg := &ServerConfig{
 		Image:   "test:latest",
 		Memory:  "512m",
@@ -195,12 +203,69 @@ func TestBuildDockerArgsAbsoluteVolume(t *testing.T) {
 		Volumes: map[string]string{"/data": "/absolute/path"},
 	}
 
-	args := cfg.BuildDockerArgs("test", "/opt/gs/test")
-	joined := strings.Join(args, " ")
+	// Absolute host paths should be rejected by ValidateConfig
+	if err := cfg.ValidateConfig(); err == nil {
+		t.Error("ValidateConfig should reject absolute volume host path")
+	}
+}
 
-	// Absolutní cesta by měla zůstat absolutní
-	if !strings.Contains(joined, "-v /absolute/path:/data") {
-		t.Errorf("absolute volume path: %s", joined)
+func TestValidateConfigRejectsTraversalVolume(t *testing.T) {
+	cfg := &ServerConfig{
+		Image:   "test:latest",
+		Memory:  "512m",
+		Restart: "no",
+		Volumes: map[string]string{"/data": "../escape"},
+	}
+	if err := cfg.ValidateConfig(); err == nil {
+		t.Error("ValidateConfig should reject path traversal in volumes")
+	}
+}
+
+func TestValidateConfigRejectsBadImage(t *testing.T) {
+	cfg := &ServerConfig{
+		Image:   "--privileged alpine",
+		Memory:  "512m",
+		Restart: "no",
+	}
+	if err := cfg.ValidateConfig(); err == nil {
+		t.Error("ValidateConfig should reject image with flags")
+	}
+}
+
+func TestValidateConfigRejectsBadRestart(t *testing.T) {
+	cfg := &ServerConfig{
+		Image:   "test:latest",
+		Memory:  "512m",
+		Restart: "malicious; rm -rf /",
+	}
+	if err := cfg.ValidateConfig(); err == nil {
+		t.Error("ValidateConfig should reject invalid restart policy")
+	}
+}
+
+func TestValidateConfigRejectsBadEnvKey(t *testing.T) {
+	cfg := &ServerConfig{
+		Image:   "test:latest",
+		Memory:  "512m",
+		Restart: "no",
+		Env:     map[string]string{"VALID": "ok", "bad key": "nope"},
+	}
+	if err := cfg.ValidateConfig(); err == nil {
+		t.Error("ValidateConfig should reject env key with spaces")
+	}
+}
+
+func TestValidateConfigAcceptsValid(t *testing.T) {
+	cfg := &ServerConfig{
+		Image:          "itzg/minecraft-server:latest",
+		Memory:         "2048m",
+		Restart:        "unless-stopped",
+		ConsoleCommand: "rcon-cli",
+		Env:            map[string]string{"EULA": "TRUE"},
+		Volumes:        map[string]string{"/data": "./data"},
+	}
+	if err := cfg.ValidateConfig(); err != nil {
+		t.Errorf("ValidateConfig should accept valid config: %v", err)
 	}
 }
 
@@ -228,7 +293,7 @@ func TestSeedPresets(t *testing.T) {
 		t.Fatalf("SeedPresets: %v", err)
 	}
 
-	// Ověřit že se vytvořily soubory
+	// Verify that files were created
 	entries, err := os.ReadDir(presetsDir)
 	if err != nil {
 		t.Fatal(err)
@@ -237,7 +302,7 @@ func TestSeedPresets(t *testing.T) {
 		t.Errorf("expected 5 preset files, got %d", len(entries))
 	}
 
-	// Druhé volání by nemělo nic přepsat (adresář není prázdný)
+	// Second call should not overwrite anything (directory is not empty)
 	if err := SeedPresets(presetsDir); err != nil {
 		t.Fatalf("SeedPresets second call: %v", err)
 	}
@@ -253,7 +318,7 @@ func TestListPresets(t *testing.T) {
 		t.Fatalf("expected 5 presets, got %d", len(presets))
 	}
 
-	// Ověřit že minecraft je v seznamu
+	// Verify that minecraft is in the list
 	found := false
 	for _, p := range presets {
 		if p.Name == "minecraft" {

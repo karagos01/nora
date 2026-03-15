@@ -11,21 +11,21 @@ import (
 	"time"
 )
 
-// Source RCON packet typy
+// Source RCON packet types
 const (
 	rconAuth         int32 = 3 // SERVERDATA_AUTH
 	rconExecCommand  int32 = 2 // SERVERDATA_EXECCOMMAND
 	rconAuthResponse int32 = 2 // SERVERDATA_AUTH_RESPONSE
 )
 
-// rconPacket reprezentuje Source RCON paket
+// rconPacket represents a Source RCON packet
 type rconPacket struct {
 	ID   int32
 	Type int32
 	Body string
 }
 
-// marshal serializuje paket do binárního formátu:
+// marshal serializes a packet into binary format:
 // 4B size (LE) + 4B id (LE) + 4B type (LE) + body + 2B null terminator
 func (p *rconPacket) marshal() []byte {
 	bodyBytes := []byte(p.Body)
@@ -43,7 +43,7 @@ func (p *rconPacket) marshal() []byte {
 	return buf
 }
 
-// readRCONPacket čte jeden paket z readeru
+// readRCONPacket reads one packet from a reader
 func readRCONPacket(r io.Reader) (*rconPacket, error) {
 	var size int32
 	if err := binary.Read(r, binary.LittleEndian, &size); err != nil {
@@ -64,7 +64,7 @@ func readRCONPacket(r io.Reader) (*rconPacket, error) {
 		Type: int32(binary.LittleEndian.Uint32(payload[4:8])),
 	}
 
-	// Body je od offsetu 8 do konce minus 2 null bajty
+	// Body is from offset 8 to end minus 2 null bytes
 	bodyEnd := len(payload) - 2
 	if bodyEnd < 8 {
 		bodyEnd = 8
@@ -74,19 +74,19 @@ func readRCONPacket(r io.Reader) (*rconPacket, error) {
 	return p, nil
 }
 
-// RCONExec se připojí k RCON serveru, autentifikuje se a vykoná příkaz.
-// Vrátí response text nebo chybu.
+// RCONExec connects to an RCON server, authenticates and executes a command.
+// Returns response text or an error.
 func RCONExec(host string, port int, password, command string) (string, error) {
 	addr := net.JoinHostPort(host, strconv.Itoa(port))
 
-	// Připojení s timeoutem
+	// Connect with timeout
 	conn, err := net.DialTimeout("tcp", addr, 5*time.Second)
 	if err != nil {
 		return "", fmt.Errorf("connect to %s: %w", addr, err)
 	}
 	defer conn.Close()
 
-	// Auth — pošleme type 3 s heslem
+	// Auth — send type 3 with password
 	authPkt := &rconPacket{
 		ID:   1,
 		Type: rconAuth,
@@ -96,7 +96,7 @@ func RCONExec(host string, port int, password, command string) (string, error) {
 		return "", fmt.Errorf("send auth: %w", err)
 	}
 
-	// Čekáme na auth response (server může poslat prázdný response + auth response)
+	// Wait for auth response (server may send empty response + auth response)
 	conn.SetReadDeadline(time.Now().Add(10 * time.Second))
 	for {
 		resp, err := readRCONPacket(conn)
@@ -104,18 +104,18 @@ func RCONExec(host string, port int, password, command string) (string, error) {
 			return "", fmt.Errorf("read auth response: %w", err)
 		}
 
-		// Auth response má typ SERVERDATA_AUTH_RESPONSE (2)
+		// Auth response has type SERVERDATA_AUTH_RESPONSE (2)
 		if resp.Type == rconAuthResponse {
 			if resp.ID == -1 {
 				return "", fmt.Errorf("RCON authentication failed")
 			}
-			// Úspěšná autentifikace
+			// Successful authentication
 			break
 		}
-		// Některé servery posílají prázdný SERVERDATA_RESPONSE_VALUE před auth response
+		// Some servers send an empty SERVERDATA_RESPONSE_VALUE before auth response
 	}
 
-	// Vykonáme příkaz — type 2
+	// Execute command — type 2
 	cmdPkt := &rconPacket{
 		ID:   2,
 		Type: rconExecCommand,
@@ -125,7 +125,7 @@ func RCONExec(host string, port int, password, command string) (string, error) {
 		return "", fmt.Errorf("send command: %w", err)
 	}
 
-	// Čteme response
+	// Read response
 	conn.SetReadDeadline(time.Now().Add(10 * time.Second))
 	resp, err := readRCONPacket(conn)
 	if err != nil {
@@ -135,7 +135,7 @@ func RCONExec(host string, port int, password, command string) (string, error) {
 	return resp.Body, nil
 }
 
-// sendPacket odešle RCON paket přes TCP spojení
+// sendPacket sends an RCON packet over a TCP connection
 func sendPacket(conn net.Conn, pkt *rconPacket) error {
 	data := pkt.marshal()
 	conn.SetWriteDeadline(time.Now().Add(5 * time.Second))
@@ -143,7 +143,7 @@ func sendPacket(conn net.Conn, pkt *rconPacket) error {
 	return err
 }
 
-// GetContainerIP zjistí IP adresu Docker kontejneru přes docker inspect
+// GetContainerIP gets the IP address of a Docker container via docker inspect
 func GetContainerIP(containerID string) (string, error) {
 	if !isValidContainerID(containerID) {
 		return "", fmt.Errorf("invalid container ID")

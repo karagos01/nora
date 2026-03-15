@@ -5,7 +5,7 @@ import (
 	"time"
 )
 
-// FSEntry — univerzální záznam souboru/adresáře pro VirtualFS.
+// FSEntry — universal file/directory entry for VirtualFS.
 type FSEntry struct {
 	Name       string
 	IsDir      bool
@@ -13,35 +13,35 @@ type FSEntry struct {
 	ModifiedAt time.Time
 }
 
-// VirtualFS — interface pro virtuální filesystem (share, game server, ...).
+// VirtualFS — interface for virtual filesystem (share, game server, ...).
 type VirtualFS interface {
-	// FSName vrátí název filesystému (pro logy, UI).
+	// FSName returns the filesystem name (for logs, UI).
 	FSName() string
 
-	// CanWrite vrátí true pokud je filesystem zapisovatelný.
+	// CanWrite returns true if the filesystem is writable.
 	CanWrite() bool
 
-	// SetCanWrite nastaví write oprávnění.
+	// SetCanWrite sets write permissions.
 	SetCanWrite(v bool)
 
-	// ListDir vrátí obsah adresáře.
+	// ListDir returns directory contents.
 	ListDir(path string) ([]FSEntry, error)
 
-	// Stat vrátí informace o souboru/adresáři.
+	// Stat returns information about a file/directory.
 	Stat(path string) (*FSEntry, error)
 
-	// GetFile vrátí ReadSeekCloser a velikost souboru.
+	// GetFile returns a ReadSeekCloser and file size.
 	GetFile(path string) (io.ReadSeekCloser, int64, error)
 
-	// PutFile nahraje soubor z tempPath.
+	// PutFile uploads a file from tempPath.
 	PutFile(path string, tempPath string, size int64) error
 
-	// DeleteFile smaže soubor.
+	// DeleteFile deletes a file.
 	DeleteFile(relativePath, fileName string) error
 
-	// MkDir vytvoří adresář.
+	// MkDir creates a directory.
 	MkDir(path string) error
 
-	// RefreshListing obnoví listing pro danou cestu.
+	// RefreshListing refreshes the listing for a given path.
 	RefreshListing(path string) error
 }

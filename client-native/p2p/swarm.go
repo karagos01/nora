@@ -14,13 +14,13 @@ import (
 
 const (
 	swarmPieceSize    = 256 * 1024       // 256KB pieces
-	swarmChunkSize    = 64 * 1024        // 64KB sub-chunky přes DataChannel
+	swarmChunkSize    = 64 * 1024        // 64KB sub-chunks via DataChannel
 	swarmMaxRetries   = 3
-	swarmPieceTimeout = 30 * time.Second // timeout na stuck piece
+	swarmPieceTimeout = 30 * time.Second // timeout for stuck piece
 	swarmMaxBuffered  = 512 * 1024       // flow control: max buffered bytes
 )
 
-// Piece stavy
+// Piece states
 const (
 	PiecePending     = 0
 	PieceDownloading = 1
@@ -28,7 +28,7 @@ const (
 	PieceError       = 3
 )
 
-// SwarmDownload stavy
+// SwarmDownload states
 const (
 	SwarmIdle        = 0
 	SwarmDownloading = 1
@@ -42,8 +42,8 @@ type PieceState struct {
 	Size      int
 	Status    int
 	Retries   int
-	PeerID    string // kdo stahuje
-	Data      []byte // přijatá data (akumulace sub-chunků)
+	PeerID    string // who is downloading
+	Data      []byte // received data (accumulation of sub-chunks)
 	StartedAt time.Time
 }
 
@@ -56,7 +56,7 @@ type SwarmPeerConn struct {
 	PendingICE []webrtc.ICECandidateInit
 }
 
-// SeederConn — PeerConnection vytvořený seederem pro odesílání piece
+// SeederConn — PeerConnection created by seeder for sending a piece
 type SeederConn struct {
 	PC         *webrtc.PeerConnection
 	DC         *webrtc.DataChannel
@@ -64,7 +64,7 @@ type SeederConn struct {
 	PendingICE []webrtc.ICECandidateInit
 }
 
-// SwarmDownload — jeden multi-source download
+// SwarmDownload — a single multi-source download
 type SwarmDownload struct {
 	mu          sync.Mutex
 	TransferID  string
@@ -79,13 +79,13 @@ type SwarmDownload struct {
 	File        *os.File
 	SavePath    string
 	Status      int
-	Done        int // počet hotových pieces
+	Done        int // number of completed pieces
 	ActivePeers int
 	StartTime   time.Time
 	stopCh      chan struct{}
 }
 
-// SwarmSeedFile — soubor nabídnutý ke swarm seedingu
+// SwarmSeedFile — a file offered for swarm seeding
 type SwarmSeedFile struct {
 	ShareID  string
 	FileID   string
@@ -94,7 +94,7 @@ type SwarmSeedFile struct {
 	FileSize int64
 }
 
-// SwarmManager spravuje swarm downloads a seeding
+// SwarmManager manages swarm downloads and seeding
 type SwarmManager struct {
 	mu         sync.Mutex
 	userID     string
@@ -124,7 +124,7 @@ func seederConnKey(transferID, peerID string, pieceIdx int) string {
 	return fmt.Sprintf("%s:%s:%d", transferID, peerID, pieceIdx)
 }
 
-// Close — zavře všechny downloady, seeder konekce a uvolní resources
+// Close — closes all downloads, seeder connections and releases resources
 func (m *SwarmManager) Close() {
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -162,7 +162,7 @@ func (m *SwarmManager) Close() {
 	}
 }
 
-// RegisterSeedFile — zaregistruje lokální soubor pro swarm seeding
+// RegisterSeedFile — registers a local file for swarm seeding
 func (m *SwarmManager) RegisterSeedFile(shareID, fileID, filePath, fileName string, fileSize int64) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -175,14 +175,14 @@ func (m *SwarmManager) RegisterSeedFile(shareID, fileID, filePath, fileName stri
 	}
 }
 
-// UnregisterSeedFile — odregistruje soubor ze seedingu
+// UnregisterSeedFile — unregisters a file from seeding
 func (m *SwarmManager) UnregisterSeedFile(fileID string) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	delete(m.seedFiles, fileID)
 }
 
-// StartDownload — zahájí multi-source download
+// StartDownload — starts a multi-source download
 func (m *SwarmManager) StartDownload(transferID, shareID, fileID, fileName, savePath string, fileSize int64, pieceSize, totalPieces int, sources []string) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -199,7 +199,7 @@ func (m *SwarmManager) StartDownload(transferID, shareID, fileID, fileName, save
 		return fmt.Errorf("create file: %w", err)
 	}
 
-	// Pre-allocate soubor
+	// Pre-allocate file
 	if fileSize > 0 {
 		if err := f.Truncate(fileSize); err != nil {
 			f.Close()
@@ -249,7 +249,7 @@ func (m *SwarmManager) StartDownload(transferID, shareID, fileID, fileName, save
 	return nil
 }
 
-// runScheduler — round-robin scheduler, přiděluje pending pieces volným peerům
+// runScheduler — round-robin scheduler, assigns pending pieces to idle peers
 func (m *SwarmManager) runScheduler(transferID string, sources []string, stopCh <-chan struct{}) {
 	ticker := time.NewTicker(200 * time.Millisecond)
 	defer ticker.Stop()
@@ -274,7 +274,7 @@ func (m *SwarmManager) runScheduler(transferID string, sources []string, stopCh 
 			return
 		}
 
-		// Timeout na stuck pieces
+		// Timeout for stuck pieces
 		now := time.Now()
 		for i := range dl.Pieces {
 			p := &dl.Pieces[i]
@@ -301,7 +301,7 @@ func (m *SwarmManager) runScheduler(transferID string, sources []string, stopCh 
 			}
 		}
 
-		// Zkontrolovat jestli jsou všechny pieces hotové nebo failed
+		// Check if all pieces are done or failed
 		allDoneOrFailed := true
 		hasError := false
 		for i := range dl.Pieces {
@@ -326,14 +326,14 @@ func (m *SwarmManager) runScheduler(transferID string, sources []string, stopCh 
 			return
 		}
 
-		// Najít volné peery a přidělit pending pieces
+		// Find idle peers and assign pending pieces
 		for _, peerID := range sources {
 			peer := dl.Peers[peerID]
 			if peer != nil && peer.Busy {
 				continue
 			}
 
-			// Najít pending piece
+			// Find a pending piece
 			pieceIdx := -1
 			for i := range dl.Pieces {
 				if dl.Pieces[i].Status == PiecePending && dl.Pieces[i].Retries < swarmMaxRetries {
@@ -342,7 +342,7 @@ func (m *SwarmManager) runScheduler(transferID string, sources []string, stopCh 
 				}
 			}
 			if pieceIdx < 0 {
-				break // žádné pending pieces
+				break // no pending pieces
 			}
 
 			dl.Pieces[pieceIdx].Status = PieceDownloading
@@ -364,7 +364,7 @@ func (m *SwarmManager) runScheduler(transferID string, sources []string, stopCh 
 	}
 }
 
-// requestPiece — pošle swarm.piece_request peerovi (přes WS relay)
+// requestPiece — sends swarm.piece_request to peer (via WS relay)
 func (m *SwarmManager) requestPiece(transferID, shareID, fileID, peerID string, pieceIdx int, offset int64, size int) {
 	m.sendWS("swarm.piece_request", map[string]any{
 		"to":           peerID,
@@ -377,7 +377,7 @@ func (m *SwarmManager) requestPiece(transferID, shareID, fileID, peerID string, 
 	})
 }
 
-// HandlePieceRequest — seeder obdržel požadavek na piece, pošle offer
+// HandlePieceRequest — seeder received a piece request, sends offer
 func (m *SwarmManager) HandlePieceRequest(from string, payload json.RawMessage) {
 	var req struct {
 		TransferID string `json:"transfer_id"`
@@ -400,7 +400,7 @@ func (m *SwarmManager) HandlePieceRequest(from string, payload json.RawMessage) 
 		return
 	}
 
-	// C9 fix: validovat offset a size proti skutečné velikosti souboru
+	// C9 fix: validate offset and size against actual file size
 	if req.Offset < 0 || req.Size <= 0 || req.Offset+int64(req.Size) > seed.FileSize {
 		m.mu.Unlock()
 		log.Printf("swarm: invalid offset/size: offset=%d size=%d fileSize=%d", req.Offset, req.Size, seed.FileSize)
@@ -412,7 +412,7 @@ func (m *SwarmManager) HandlePieceRequest(from string, payload json.RawMessage) 
 	go m.sendPiece(from, req.TransferID, req.PieceIndex, req.Offset, req.Size, filePath)
 }
 
-// sendPiece — otevře soubor, vytvoří WebRTC DC a pošle piece data
+// sendPiece — opens the file, creates WebRTC DC and sends piece data
 func (m *SwarmManager) sendPiece(to, transferID string, pieceIdx int, offset int64, size int, filePath string) {
 	stunURL := m.stunURL
 	if stunURL == "" {
@@ -436,7 +436,7 @@ func (m *SwarmManager) sendPiece(to, transferID string, pieceIdx int, offset int
 		return
 	}
 
-	// C1+C3 fix: uložit seeder connection pro answer/ICE
+	// C1+C3 fix: store seeder connection for answer/ICE
 	key := seederConnKey(transferID, to, pieceIdx)
 	m.mu.Lock()
 	m.seederConns[key] = &SeederConn{PC: pc, DC: dc}
@@ -477,7 +477,7 @@ func (m *SwarmManager) sendPiece(to, transferID string, pieceIdx int, offset int
 		}
 		defer f.Close()
 
-		// C10 fix: kontrola Seek chyby
+		// C10 fix: check Seek error
 		if _, err := f.Seek(offset, io.SeekStart); err != nil {
 			log.Printf("swarm: seek error: %v", err)
 			return
@@ -509,13 +509,13 @@ func (m *SwarmManager) sendPiece(to, transferID string, pieceIdx int, offset int
 			}
 			sent += n
 
-			// Backpressure: čekat pokud buffer přeteče
+			// Backpressure: wait if buffer overflows
 			if dc.BufferedAmount() > swarmMaxBuffered {
 				<-sendMore
 			}
 		}
 
-		// Signalizace dokončení — prázdný message
+		// Completion signal — empty message
 		dc.Send([]byte{})
 	})
 
@@ -539,7 +539,7 @@ func (m *SwarmManager) sendPiece(to, transferID string, pieceIdx int, offset int
 	})
 }
 
-// HandlePieceOffer — downloader obdržel SDP offer od seedera
+// HandlePieceOffer — downloader received SDP offer from seeder
 func (m *SwarmManager) HandlePieceOffer(from string, payload json.RawMessage) {
 	var msg struct {
 		TransferID string `json:"transfer_id"`
@@ -580,7 +580,7 @@ func (m *SwarmManager) HandlePieceOffer(from string, payload json.RawMessage) {
 	peer.PC = pc
 	pieceIdx := msg.PieceIndex
 
-	// C7 fix: zjistit expected size pro validaci
+	// C7 fix: get expected size for validation
 	expectedSize := 0
 	if pieceIdx >= 0 && pieceIdx < len(dl.Pieces) {
 		dl.Pieces[pieceIdx].Data = nil
@@ -605,7 +605,7 @@ func (m *SwarmManager) HandlePieceOffer(from string, payload json.RawMessage) {
 	pc.OnDataChannel(func(dc *webrtc.DataChannel) {
 		dc.OnMessage(func(dcMsg webrtc.DataChannelMessage) {
 			if len(dcMsg.Data) == 0 {
-				// Piece dokončen
+				// Piece completed
 				m.onPieceDone(dl, pieceIdx, from)
 				dc.Close()
 				pc.Close()
@@ -615,7 +615,7 @@ func (m *SwarmManager) HandlePieceOffer(from string, payload json.RawMessage) {
 			dl.mu.Lock()
 			if pieceIdx >= 0 && pieceIdx < len(dl.Pieces) {
 				piece := &dl.Pieces[pieceIdx]
-				// C7 fix: validace velikosti — nepřekročit expected size
+				// C7 fix: size validation — do not exceed expected size
 				if len(piece.Data)+len(dcMsg.Data) > expectedSize {
 					log.Printf("swarm: piece %d data exceeds expected size (%d > %d)", pieceIdx, len(piece.Data)+len(dcMsg.Data), expectedSize)
 					dl.mu.Unlock()
@@ -681,7 +681,7 @@ func (m *SwarmManager) HandlePieceOffer(from string, payload json.RawMessage) {
 	})
 }
 
-// C1 fix: HandlePieceAccept — seeder obdržel SDP answer od downloadera
+// C1 fix: HandlePieceAccept — seeder received SDP answer from downloader
 func (m *SwarmManager) HandlePieceAccept(from string, payload json.RawMessage) {
 	var msg struct {
 		TransferID string `json:"transfer_id"`
@@ -723,7 +723,7 @@ func (m *SwarmManager) HandlePieceAccept(from string, payload json.RawMessage) {
 	m.mu.Unlock()
 }
 
-// C3 fix: HandlePieceIce — ICE candidate relay (pro downloader i seeder)
+// C3 fix: HandlePieceIce — ICE candidate relay (for downloader and seeder)
 func (m *SwarmManager) HandlePieceIce(from string, payload json.RawMessage) {
 	var msg struct {
 		TransferID string                  `json:"transfer_id"`
@@ -734,7 +734,7 @@ func (m *SwarmManager) HandlePieceIce(from string, payload json.RawMessage) {
 		return
 	}
 
-	// Zkusit downloader peers
+	// Try downloader peers
 	m.mu.Lock()
 	dl, dlOK := m.downloads[msg.TransferID]
 	m.mu.Unlock()
@@ -755,7 +755,7 @@ func (m *SwarmManager) HandlePieceIce(from string, payload json.RawMessage) {
 		return
 	}
 
-	// Zkusit seeder connections
+	// Try seeder connections
 	key := seederConnKey(msg.TransferID, from, msg.PieceIndex)
 	m.mu.Lock()
 	sc, scOK := m.seederConns[key]
@@ -769,7 +769,7 @@ func (m *SwarmManager) HandlePieceIce(from string, payload json.RawMessage) {
 	m.mu.Unlock()
 }
 
-// onPieceDone — piece stažen, zapsat na disk
+// onPieceDone — piece downloaded, write to disk
 func (m *SwarmManager) onPieceDone(dl *SwarmDownload, pieceIdx int, peerID string) {
 	dl.mu.Lock()
 	defer dl.mu.Unlock()
@@ -782,7 +782,7 @@ func (m *SwarmManager) onPieceDone(dl *SwarmDownload, pieceIdx int, peerID strin
 		return
 	}
 
-	// Validovat velikost dat
+	// Validate data size
 	if len(piece.Data) != piece.Size {
 		log.Printf("swarm: piece %d size mismatch: got %d, expected %d", pieceIdx, len(piece.Data), piece.Size)
 		piece.Retries++
@@ -806,7 +806,7 @@ func (m *SwarmManager) onPieceDone(dl *SwarmDownload, pieceIdx int, peerID strin
 		return
 	}
 
-	// C15 fix: kontrola WriteAt chyby
+	// C15 fix: check WriteAt error
 	if dl.File != nil && len(piece.Data) > 0 {
 		if _, err := dl.File.WriteAt(piece.Data, piece.Offset); err != nil {
 			log.Printf("swarm: WriteAt piece %d error: %v", pieceIdx, err)
@@ -824,7 +824,7 @@ func (m *SwarmManager) onPieceDone(dl *SwarmDownload, pieceIdx int, peerID strin
 	piece.Data = nil
 	dl.Done++
 
-	// Uvolnit peera
+	// Release peer
 	if peer := dl.Peers[peerID]; peer != nil {
 		peer.Busy = false
 		if peer.PC != nil {
@@ -837,10 +837,10 @@ func (m *SwarmManager) onPieceDone(dl *SwarmDownload, pieceIdx int, peerID strin
 		dl.ActivePeers--
 	}
 
-	// Zkontrolovat dokončení
+	// Check for completion
 	if dl.Done >= dl.TotalPieces {
 		dl.Status = SwarmDone
-		// C16 fix: kontrola Close chyby
+		// C16 fix: check Close error
 		if dl.File != nil {
 			if err := dl.File.Close(); err != nil {
 				log.Printf("swarm: file close error: %v", err)
@@ -855,14 +855,14 @@ func (m *SwarmManager) onPieceDone(dl *SwarmDownload, pieceIdx int, peerID strin
 	}
 }
 
-// GetDownload vrátí download info
+// GetDownload returns download info
 func (m *SwarmManager) GetDownload(transferID string) *SwarmDownload {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	return m.downloads[transferID]
 }
 
-// IsDownloaded — je download hotový?
+// IsDownloaded — is the download complete?
 func (m *SwarmManager) IsDownloaded(transferID string) bool {
 	m.mu.Lock()
 	dl := m.downloads[transferID]
@@ -875,7 +875,7 @@ func (m *SwarmManager) IsDownloaded(transferID string) bool {
 	return dl.Status == SwarmDone
 }
 
-// IsFailed — selhal download?
+// IsFailed — did the download fail?
 func (m *SwarmManager) IsFailed(transferID string) bool {
 	m.mu.Lock()
 	dl := m.downloads[transferID]
@@ -888,7 +888,7 @@ func (m *SwarmManager) IsFailed(transferID string) bool {
 	return dl.Status == SwarmError
 }
 
-// GetProgress vrátí progres (0.0 - 1.0)
+// GetProgress returns progress (0.0 - 1.0)
 func (m *SwarmManager) GetProgress(transferID string) (float64, int, int) {
 	m.mu.Lock()
 	dl := m.downloads[transferID]
@@ -904,7 +904,7 @@ func (m *SwarmManager) GetProgress(transferID string) (float64, int, int) {
 	return float64(dl.Done) / float64(dl.TotalPieces), dl.Done, dl.ActivePeers
 }
 
-// ActiveDownloads vrátí aktivní downloady
+// ActiveDownloads returns active downloads
 func (m *SwarmManager) ActiveDownloads() []*SwarmDownload {
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -919,7 +919,7 @@ func (m *SwarmManager) ActiveDownloads() []*SwarmDownload {
 	return result
 }
 
-// Cleanup — vyčistí hotové/chybné downloady
+// Cleanup — cleans up completed/failed downloads
 func (m *SwarmManager) Cleanup() {
 	m.mu.Lock()
 	defer m.mu.Unlock()

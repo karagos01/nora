@@ -1,7 +1,9 @@
 package ui
 
 import (
+	"fmt"
 	"image"
+	"image/draw"
 	_ "image/gif"
 	_ "image/jpeg"
 	_ "image/png"
@@ -14,6 +16,7 @@ import (
 	"gioui.org/op/paint"
 
 	_ "golang.org/x/image/webp"
+	xdraw "golang.org/x/image/draw"
 )
 
 // ImageCache downloads and caches images from server URLs.
@@ -93,11 +96,42 @@ func (c *ImageCache) download(url string) *cachedImage {
 		return &cachedImage{ok: false}
 	}
 
+	// Convert to NRGBA for consistent GPU rendering (paletted PNGs can cause issues)
+	if _, ok := img.(*image.NRGBA); !ok {
+		b := img.Bounds()
+		nrgba := image.NewNRGBA(b)
+		draw.Draw(nrgba, b, img, b.Min, draw.Over)
+		img = nrgba
+	}
+
 	return &cachedImage{
 		img: img,
 		op:  paint.NewImageOp(img),
 		ok:  true,
 	}
+}
+
+// GetScaled returns a paint.ImageOp for a pre-scaled version of the image.
+// The scaled version is cached by URL + target size to avoid per-frame allocation.
+func (c *ImageCache) GetScaled(url string, w, h int, src image.Image) paint.ImageOp {
+	key := fmt.Sprintf("%s@%dx%d", url, w, h)
+	c.mu.RLock()
+	if ci, ok := c.images[key]; ok {
+		c.mu.RUnlock()
+		return ci.op
+	}
+	c.mu.RUnlock()
+
+	// Pre-scale on CPU using high-quality BiLinear interpolation
+	dst := image.NewNRGBA(image.Rect(0, 0, w, h))
+	xdraw.BiLinear.Scale(dst, dst.Bounds(), src, src.Bounds(), xdraw.Over, nil)
+	imgOp := paint.NewImageOp(dst)
+
+	c.mu.Lock()
+	c.images[key] = &cachedImage{img: dst, op: imgOp, ok: true}
+	c.mu.Unlock()
+
+	return imgOp
 }
 
 // InvalidatePrefix removes all cached entries whose URL contains the given substring.

@@ -10,7 +10,7 @@ type GalleryQueries struct {
 	DB *sql.DB
 }
 
-// ListMedia vrátí přílohy s kontextem zprávy, filtrované podle typu, kanálu, uživatele
+// ListMedia returns attachments with message context, filtered by type, channel, user
 func (q *GalleryQueries) ListMedia(mimePrefix, channelID, userID, before string, limit int) ([]models.GalleryItem, error) {
 	query := `SELECT a.id, a.message_id, a.filepath, a.filename, a.mime_type, a.size,
 		m.channel_id, COALESCE(c.name, ''), m.user_id, COALESCE(u.username, ''), m.created_at
@@ -62,7 +62,7 @@ func (q *GalleryQueries) ListMedia(mimePrefix, channelID, userID, before string,
 	return result, rows.Err()
 }
 
-// Search hledá přílohy podle názvu souboru
+// Search searches attachments by filename
 func (q *GalleryQueries) Search(term string, limit int) ([]models.GalleryItem, error) {
 	query := `SELECT a.id, a.message_id, a.filepath, a.filename, a.mime_type, a.size,
 		m.channel_id, COALESCE(c.name, ''), m.user_id, COALESCE(u.username, ''), m.created_at

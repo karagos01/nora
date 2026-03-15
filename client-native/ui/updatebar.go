@@ -20,14 +20,14 @@ import (
 	"nora-client/update"
 )
 
-// updateState popisuje aktuální stav update baru.
+// updateState describes the current state of the update bar.
 type updateState int
 
 const (
-	updateStateAvailable   updateState = iota // update k dispozici, čeká na akci
-	updateStateDownloading                    // stahování probíhá
-	updateStateReady                          // staženo + aplikováno, čeká na restart
-	updateStateError                          // chyba při stahování nebo aplikaci
+	updateStateAvailable   updateState = iota // update available, waiting for action
+	updateStateDownloading                    // download in progress
+	updateStateReady                          // downloaded + applied, waiting for restart
+	updateStateError                          // error during download or apply
 )
 
 type UpdateBar struct {
@@ -39,9 +39,9 @@ type UpdateBar struct {
 	sha256      string
 
 	state    updateState
-	progress atomic.Int64 // 0-1000 (promile), atomická pro goroutinu
+	progress atomic.Int64 // 0-1000 (per mille), atomic for goroutine
 	errMsg   string
-	tmpPath  string // cesta ke staženému souboru
+	tmpPath  string // path to downloaded file
 
 	downloadBtn widget.Clickable
 	restartBtn  widget.Clickable
@@ -64,7 +64,7 @@ func (u *UpdateBar) SetAvailable(version, url, sha256 string) {
 	u.progress.Store(0)
 }
 
-// getProgress vrátí progress jako float64 0.0-1.0
+// getProgress returns progress as float64 0.0-1.0
 func (u *UpdateBar) getProgress() float64 {
 	return float64(u.progress.Load()) / 1000.0
 }
@@ -74,7 +74,7 @@ func (u *UpdateBar) Layout(gtx layout.Context) layout.Dimensions {
 		return layout.Dimensions{}
 	}
 
-	// Dismiss — jen v available a error stavu
+	// Dismiss — only in available and error states
 	if u.dismissBtn.Clicked(gtx) {
 		u.available = false
 		return layout.Dimensions{}
@@ -88,7 +88,7 @@ func (u *UpdateBar) Layout(gtx layout.Context) layout.Dimensions {
 		go u.doDownloadAndApply()
 	}
 
-	// Retry po chybě
+	// Retry after error
 	if u.retryBtn.Clicked(gtx) && u.state == updateStateError {
 		u.state = updateStateDownloading
 		u.errMsg = ""
@@ -101,7 +101,7 @@ func (u *UpdateBar) Layout(gtx layout.Context) layout.Dimensions {
 		u.doRestart()
 	}
 
-	// Barva pozadí podle stavu
+	// Background color based on state
 	bgColor := u.bgColorForState()
 
 	return layout.Background{}.Layout(gtx,
@@ -127,20 +127,20 @@ func (u *UpdateBar) Layout(gtx layout.Context) layout.Dimensions {
 	)
 }
 
-// bgColorForState vrátí barvu pozadí podle stavu.
+// bgColorForState returns the background color based on state.
 func (u *UpdateBar) bgColorForState() color.NRGBA {
 	switch u.state {
 	case updateStateAvailable:
-		// Žlutý/amber bar
+		// Yellow/amber bar
 		return color.NRGBA{R: 100, G: 80, B: 20, A: 255}
 	case updateStateDownloading:
-		// Žlutý/amber bar
+		// Yellow/amber bar
 		return color.NRGBA{R: 100, G: 80, B: 20, A: 255}
 	case updateStateReady:
-		// Zelený bar
+		// Green bar
 		return color.NRGBA{R: 30, G: 90, B: 50, A: 255}
 	case updateStateError:
-		// Červený bar
+		// Red bar
 		return color.NRGBA{R: 120, G: 35, B: 35, A: 255}
 	}
 	return color.NRGBA{R: 100, G: 80, B: 20, A: 255}
@@ -232,12 +232,12 @@ func (u *UpdateBar) layoutError(gtx layout.Context) layout.Dimensions {
 	)
 }
 
-// layoutProgressBar vykreslí progress bar (tenký pruh).
+// layoutProgressBar renders a progress bar (thin strip).
 func (u *UpdateBar) layoutProgressBar(gtx layout.Context, progress float64) layout.Dimensions {
 	barHeight := gtx.Dp(4)
 	totalWidth := gtx.Constraints.Max.X
 
-	// Pozadí (tmavé)
+	// Background (dark)
 	bgRect := image.Rect(0, 0, totalWidth, barHeight)
 	bgColor := color.NRGBA{R: 0, G: 0, B: 0, A: 80}
 	paint.FillShape(gtx.Ops, bgColor, clip.RRect{
@@ -245,7 +245,7 @@ func (u *UpdateBar) layoutProgressBar(gtx layout.Context, progress float64) layo
 		NE:   2, NW: 2, SE: 2, SW: 2,
 	}.Op(gtx.Ops))
 
-	// Výplň (bílá)
+	// Fill (white)
 	fillWidth := int(float64(totalWidth) * progress)
 	if fillWidth > 0 {
 		fillRect := image.Rect(0, 0, fillWidth, barHeight)
@@ -259,7 +259,7 @@ func (u *UpdateBar) layoutProgressBar(gtx layout.Context, progress float64) layo
 	return layout.Dimensions{Size: image.Pt(totalWidth, barHeight)}
 }
 
-// layoutButton vykreslí barevné tlačítko.
+// layoutButton renders a colored button.
 func (u *UpdateBar) layoutButton(gtx layout.Context, btn *widget.Clickable, text string, bgNormal, bgHover color.NRGBA) layout.Dimensions {
 	return layout.Inset{Left: unit.Dp(8)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
 		return layout.Background{}.Layout(gtx,
@@ -289,7 +289,7 @@ func (u *UpdateBar) layoutButton(gtx layout.Context, btn *widget.Clickable, text
 	})
 }
 
-// layoutDismiss vykreslí textové Dismiss tlačítko.
+// layoutDismiss renders a text Dismiss button.
 func (u *UpdateBar) layoutDismiss(gtx layout.Context) layout.Dimensions {
 	return layout.Inset{Left: unit.Dp(8)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
 		return u.dismissBtn.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
@@ -306,9 +306,9 @@ func (u *UpdateBar) layoutDismiss(gtx layout.Context) layout.Dimensions {
 	})
 }
 
-// doDownloadAndApply stáhne update a aplikuje ho (běží v goroutině).
+// doDownloadAndApply downloads an update and applies it (runs in a goroutine).
 func (u *UpdateBar) doDownloadAndApply() {
-	// Stáhnout binárku
+	// Download the binary
 	tmpPath, err := update.Download(u.downloadURL, u.sha256, func(downloaded, total int64) {
 		if total > 0 {
 			prom := int64(float64(downloaded) / float64(total) * 1000)
@@ -323,7 +323,7 @@ func (u *UpdateBar) doDownloadAndApply() {
 		return
 	}
 
-	// Aplikovat (přejmenování binárky)
+	// Apply (rename binary)
 	if err := update.Apply(tmpPath); err != nil {
 		u.errMsg = err.Error()
 		u.state = updateStateError
@@ -346,7 +346,7 @@ func (u *UpdateBar) doRestart() {
 		return
 	}
 
-	// Linux: syscall.Exec nahradí aktuální proces
+	// Linux: syscall.Exec replaces the current process
 	if runtime.GOOS != "windows" {
 		err := syscall.Exec(exe, os.Args, os.Environ())
 		if err != nil {
@@ -354,6 +354,6 @@ func (u *UpdateBar) doRestart() {
 		}
 	}
 
-	// Windows (nebo fallback): spustí nový proces a ukončí aktuální
+	// Windows (or fallback): starts a new process and exits the current one
 	update.Restart()
 }

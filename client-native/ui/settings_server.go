@@ -56,7 +56,7 @@ func (v *SettingsView) doSaveServerSettings() {
 	}()
 }
 
-// hasServerChanges vrátí true pokud jsou neuložené změny v server settings.
+// hasServerChanges returns true if there are unsaved changes in server settings.
 func (v *SettingsView) hasServerChanges() bool {
 	if v.nameEditor.Text() != v.origName {
 		return true
@@ -132,7 +132,7 @@ func (v *SettingsView) layoutServerSection(gtx layout.Context, conn *ServerConne
 			})
 		})
 	}))
-	// Docker status + install (jen pokud zapínáme game servers a Docker není dostupný)
+	// Docker status + install (only if enabling game servers and Docker is not available)
 	if v.gameServersToggle && !v.dockerAvailable {
 		items = append(items, layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 			return layout.Inset{Top: unit.Dp(8)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
@@ -240,7 +240,7 @@ func (v *SettingsView) layoutServerSection(gtx layout.Context, conn *ServerConne
 		}))
 	}
 
-	// Save tlačítko — jen pokud jsou neuložené změny
+	// Save button — only if there are unsaved changes
 	if v.hasServerChanges() {
 		gsChanged := v.gameServersToggle != v.gameServersOriginal
 		saveLabel := "Save"
@@ -422,7 +422,7 @@ func (v *SettingsView) layoutBansSection(gtx layout.Context) layout.Dimensions {
 	for i := range v.bansSubBtns {
 		if v.bansSubBtns[i].Clicked(gtx) {
 			v.bansSubTab = i
-			// Lazy load data pro nový tab
+			// Lazy load data for new tab
 			switch i {
 			case 1:
 				v.deviceBansLoaded = false
@@ -436,7 +436,7 @@ func (v *SettingsView) layoutBansSection(gtx layout.Context) layout.Dimensions {
 		}
 	}
 
-	// Lazy-load data dle aktivního tabu
+	// Lazy-load data based on active tab
 	v.lazyLoadBansSubdata()
 
 	var items []layout.FlexChild
@@ -483,7 +483,7 @@ func (v *SettingsView) layoutBansSection(gtx layout.Context) layout.Dimensions {
 		})
 	}))
 
-	// Content dle aktivního tabu
+	// Content based on active tab
 	switch v.bansSubTab {
 	case 0:
 		items = append(items, v.layoutBansList(gtx)...)
@@ -599,7 +599,7 @@ func (v *SettingsView) layoutBansList(gtx layout.Context) []layout.FlexChild {
 									if ban.Reason != "" {
 										text += " (" + ban.Reason + ")"
 									}
-									// Expirace
+									// Expiration
 									if ban.ExpiresAt != nil {
 										remaining := time.Until(*ban.ExpiresAt)
 										if remaining > 0 {
@@ -726,7 +726,7 @@ func (v *SettingsView) layoutInviteChainList(gtx layout.Context) []layout.FlexCh
 			})
 		}))
 	} else {
-		// Zobrazit strom
+		// Display tree
 		for _, node := range v.inviteChain {
 			items = append(items, v.layoutInviteChainNode(node, 0)...)
 		}
@@ -1111,7 +1111,7 @@ func (v *SettingsView) layoutRoleItem(gtx layout.Context, idx int, role api.Role
 										return v.layoutEditor(gtx, &v.roleColorEditors[idx], "Color (#ff0000)")
 									}),
 									layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-										// Náhled barvy — malý čtvereček
+										// Color preview — small square
 										hexStr := v.roleColorEditors[idx].Text()
 										if hexStr == "" {
 											hexStr = role.Color
@@ -1337,7 +1337,7 @@ func (v *SettingsView) doSaveAutomod() {
 	spamWindowStr := strings.TrimSpace(v.automodSpamWindowEditor.Text())
 	spamTimeoutStr := strings.TrimSpace(v.automodSpamTimeoutEditor.Text())
 
-	// Rozdělit slova po řádcích, odfiltrovat prázdné
+	// Split words by lines, filter out empty ones
 	var words []string
 	for _, line := range strings.Split(wordsText, "\n") {
 		w := strings.TrimSpace(line)
@@ -1381,7 +1381,7 @@ func (v *SettingsView) doSaveAutomod() {
 func (v *SettingsView) layoutServerDiskSection(gtx layout.Context) layout.Dimensions {
 	a := v.app
 
-	// Auto-scan při prvním zobrazení
+	// Auto-scan on first display
 	if !v.serverDiskScanned && !v.serverDiskScanning {
 		v.serverDiskScanning = true
 		go func() {
@@ -1412,12 +1412,12 @@ func (v *SettingsView) layoutServerDiskSection(gtx layout.Context) layout.Dimens
 		}()
 	}
 
-	// Rescan klik
+	// Rescan click
 	if v.serverDiskRescanBtn.Clicked(gtx) {
 		v.serverDiskScanned = false
 	}
 
-	// Save klik
+	// Save click
 	if v.serverDiskSaveBtn.Clicked(gtx) {
 		mbStr := strings.TrimSpace(v.serverDiskMaxMBEditor.Text())
 		hlStr := strings.TrimSpace(v.serverDiskHistoryEditor.Text())
@@ -1440,13 +1440,13 @@ func (v *SettingsView) layoutServerDiskSection(gtx layout.Context) layout.Dimens
 			}
 			v.serverDiskOrigMaxMB = mbStr
 			v.serverDiskOrigHistory = hlStr
-			// Rescan po uložení
+			// Rescan after saving
 			v.serverDiskScanned = false
 			a.Window.Invalidate()
 		}()
 	}
 
-	// Trim History klik
+	// Trim History click
 	if v.serverDiskTrimBtn.Clicked(gtx) {
 		a.ConfirmDlg.ShowConfirm("Trim Channel History", "Trim messages exceeding the channel history limit on the server?\nThis cannot be undone.", func() {
 			hlStr := strings.TrimSpace(v.serverDiskHistoryEditor.Text())
@@ -1604,7 +1604,7 @@ func (v *SettingsView) layoutServerDiskSection(gtx layout.Context) layout.Dimens
 		})
 	}))
 
-	// Save button (jen pokud jsou změny)
+	// Save button (only if there are changes)
 	if v.hasServerDiskChanges() {
 		items = append(items, layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 			return layout.Inset{Top: unit.Dp(4), Bottom: unit.Dp(4)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
@@ -1661,7 +1661,7 @@ func (v *SettingsView) layoutBackupSection(gtx layout.Context) layout.Dimensions
 	}
 	th := v.app.Theme.Material
 
-	// Načíst backup info pokud ještě ne
+	// Load backup info if not yet loaded
 	if !v.backupInfoLoaded && !v.backupInfoLoading {
 		v.backupInfoLoading = true
 		go func() {
@@ -1677,7 +1677,7 @@ func (v *SettingsView) layoutBackupSection(gtx layout.Context) layout.Dimensions
 		}()
 	}
 
-	// Kliknutí
+	// Click handling
 	if v.backupBtn.Clicked(gtx) {
 		v.backupError = ""
 		v.backupSuccess = ""

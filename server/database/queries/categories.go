@@ -49,13 +49,13 @@ func (q *CategoryQueries) List() ([]models.ChannelCategory, error) {
 		return nil, err
 	}
 
-	// Stavba hierarchie: top-level kategorie s Children polem
+	// Build hierarchy: top-level categories with Children array
 	catByID := make(map[string]*models.ChannelCategory, len(all))
 	var topLevel []models.ChannelCategory
 	for i := range all {
 		catByID[all[i].ID] = &all[i]
 	}
-	// Přiřadit children k rodičům
+	// Assign children to parents
 	for i := range all {
 		if all[i].ParentID != nil && *all[i].ParentID != "" {
 			if parent, ok := catByID[*all[i].ParentID]; ok {
@@ -63,10 +63,10 @@ func (q *CategoryQueries) List() ([]models.ChannelCategory, error) {
 			}
 		}
 	}
-	// Vrátit jen top-level (bez parenta)
+	// Return only top-level (without parent)
 	for i := range all {
 		if all[i].ParentID == nil || *all[i].ParentID == "" {
-			// Kopírovat children z catByID (pointer → aktualizovaná data)
+			// Copy children from catByID (pointer -> updated data)
 			cat := *catByID[all[i].ID]
 			topLevel = append(topLevel, cat)
 		}
@@ -83,7 +83,7 @@ func (q *CategoryQueries) Update(cat *models.ChannelCategory) error {
 }
 
 func (q *CategoryQueries) Delete(id string) error {
-	// Children se smažou CASCADE, kanály v kategorii se stanou uncategorized (ON DELETE SET NULL)
+	// Children are deleted via CASCADE, channels in the category become uncategorized (ON DELETE SET NULL)
 	_, err := q.DB.Exec("DELETE FROM channel_categories WHERE id = ?", id)
 	return err
 }

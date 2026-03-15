@@ -224,7 +224,7 @@ func (v *LibraryView) loadFiles() {
 
 		wg.Wait()
 
-		// Seřadit od nejnovějšího
+		// Sort from newest
 		sort.Slice(items, func(i, j int) bool {
 			return items[i].CreatedAt.After(items[j].CreatedAt)
 		})
@@ -296,7 +296,7 @@ func (v *LibraryView) applyFilter() {
 		if query != "" && !strings.Contains(strings.ToLower(item.FileName), query) {
 			continue
 		}
-		// Type filter (lokálně pro non-attachment zdroje)
+		// Type filter (locally for non-attachment sources)
 		if v.ActiveType != TypeAll && !v.matchesType(item) {
 			continue
 		}
@@ -357,7 +357,7 @@ func guessMimeFromName(name string) string {
 	return "application/octet-stream"
 }
 
-// LayoutSidebar — levý panel (240px, vyplňuje channel sidebar slot)
+// LayoutSidebar — left panel (240px, fills the channel sidebar slot)
 func (v *LibraryView) LayoutSidebar(gtx layout.Context) layout.Dimensions {
 	paint.FillShape(gtx.Ops, ColorCard, clip.Rect{Max: gtx.Constraints.Max}.Op())
 
@@ -507,7 +507,7 @@ func (v *LibraryView) LayoutSidebar(gtx layout.Context) layout.Dimensions {
 					}))
 				}
 
-				// CHANNEL section (jen pro Attachments)
+				// CHANNEL section (only for Attachments)
 				if v.ActiveSource == SourceAll || v.ActiveSource == SourceAttachments {
 					items = append(items, v.sidebarSection("CHANNEL")...)
 					items = append(items, layout.Rigid(func(gtx layout.Context) layout.Dimensions {
@@ -524,7 +524,7 @@ func (v *LibraryView) LayoutSidebar(gtx layout.Context) layout.Dimensions {
 					}
 				}
 
-				// UPLOADED BY section (pro Attachments/Storage)
+				// UPLOADED BY section (for Attachments/Storage)
 				if v.ActiveSource == SourceAll || v.ActiveSource == SourceAttachments || v.ActiveSource == SourceStorage {
 					items = append(items, v.sidebarSection("UPLOADED BY")...)
 					items = append(items, layout.Rigid(func(gtx layout.Context) layout.Dimensions {
@@ -589,7 +589,7 @@ func (v *LibraryView) layoutSidebarItem(gtx layout.Context, btn *widget.Clickabl
 	})
 }
 
-// LayoutMain — hlavní oblast (zprávy/soubory)
+// LayoutMain — main area (messages/files)
 func (v *LibraryView) LayoutMain(gtx layout.Context) layout.Dimensions {
 	paint.FillShape(gtx.Ops, ColorBg, clip.Rect{Max: gtx.Constraints.Max}.Op())
 
@@ -604,7 +604,7 @@ func (v *LibraryView) LayoutMain(gtx layout.Context) layout.Dimensions {
 	totalSize := v.TotalSize
 	v.mu.Unlock()
 
-	// Zajistit dostatek tlačítek
+	// Ensure enough buttons
 	if len(v.downloadBtns) < len(filtered) {
 		v.downloadBtns = make([]widget.Clickable, len(filtered)+20)
 	}
@@ -719,7 +719,7 @@ func (v *LibraryView) layoutFileItem(gtx layout.Context, idx int, item LibraryIt
 		func(gtx layout.Context) layout.Dimensions {
 			return layout.Inset{Top: unit.Dp(6), Bottom: unit.Dp(6), Left: unit.Dp(16), Right: unit.Dp(12)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
 				return layout.Flex{Axis: layout.Vertical}.Layout(gtx,
-					// Řádek 1: filename, source, size
+					// Row 1: filename, source, size
 					layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 						return layout.Flex{Alignment: layout.Middle}.Layout(gtx,
 							// File icon
@@ -754,7 +754,7 @@ func (v *LibraryView) layoutFileItem(gtx layout.Context, idx int, item LibraryIt
 							}),
 						)
 					}),
-					// Řádek 2: uploader, date, download
+					// Row 2: uploader, date, download
 					layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 						return layout.Inset{Top: unit.Dp(2), Left: unit.Dp(26)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
 							return layout.Flex{Alignment: layout.Middle}.Layout(gtx,

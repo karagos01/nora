@@ -15,16 +15,16 @@ import (
 	"nora-client/api"
 )
 
-// TunnelView zobrazuje a spravuje personální VPN tunely
+// TunnelView displays and manages personal VPN tunnels
 type TunnelView struct {
 	app  *App
 	list widget.List
 
-	// Tlačítka per tunnel (accept/close)
+	// Buttons per tunnel (accept/close)
 	acceptBtns []widget.Clickable
 	closeBtns  []widget.Clickable
 
-	// Nový tunnel
+	// New tunnel
 	createBtn   widget.Clickable
 	friendBtns  []widget.Clickable
 	showCreate  bool
@@ -51,18 +51,18 @@ func (tv *TunnelView) Layout(gtx layout.Context) layout.Dimensions {
 	userID := conn.UserID
 	a.mu.RUnlock()
 
-	// Zajistit dostatek tlačítek
+	// Ensure enough buttons
 	if len(tv.acceptBtns) < len(tunnels)+1 {
 		tv.acceptBtns = make([]widget.Clickable, len(tunnels)+10)
 		tv.closeBtns = make([]widget.Clickable, len(tunnels)+10)
 	}
 
-	// Zpracovat kliknutí
+	// Handle clicks
 	for i, t := range tunnels {
 		if i < len(tv.acceptBtns) && tv.acceptBtns[i].Clicked(gtx) {
 			tunnel := t
 			go func() {
-				// Vygenerovat WG keypair pro accept
+				// Generate WG keypair for accept
 				pubKey := fmt.Sprintf("tunnel-accept-%s", tunnel.ID[:8])
 				resp, err := conn.Client.AcceptTunnel(tunnel.ID, pubKey)
 				if err == nil {
@@ -147,7 +147,7 @@ func (tv *TunnelView) Layout(gtx layout.Context) layout.Dimensions {
 				)
 			})
 		}),
-		// Friend picker (pro vytvoření tunnelu)
+		// Friend picker (for creating a tunnel)
 		layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 			if !tv.showCreate {
 				return layout.Dimensions{}
@@ -160,7 +160,7 @@ func (tv *TunnelView) Layout(gtx layout.Context) layout.Dimensions {
 			paint.FillShape(gtx.Ops, ColorDivider, clip.Rect{Max: size}.Op())
 			return layout.Dimensions{Size: size}
 		}),
-		// Seznam tunnelů
+		// Tunnel list
 		layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
 			if len(tunnels) == 0 {
 				return layout.Center.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
@@ -177,11 +177,11 @@ func (tv *TunnelView) Layout(gtx layout.Context) layout.Dimensions {
 	)
 }
 
-// layoutFriendPicker zobrazuje seznam přátel pro výběr cíle tunnelu
+// layoutFriendPicker displays the friend list for selecting a tunnel target
 func (tv *TunnelView) layoutFriendPicker(gtx layout.Context, friends []api.User, tunnels []api.Tunnel, myID string) layout.Dimensions {
 	a := tv.app
 
-	// Filtrovat přátele — vyloučit ty s existujícím tunnelem
+	// Filter friends — exclude those with an existing tunnel
 	var available []api.User
 	var availIdxs []int
 	for i, f := range friends {
@@ -247,11 +247,11 @@ func (tv *TunnelView) layoutFriendPicker(gtx layout.Context, friends []api.User,
 	})
 }
 
-// layoutTunnelCard renderuje jednu kartu tunnelu
+// layoutTunnelCard renders a single tunnel card
 func (tv *TunnelView) layoutTunnelCard(gtx layout.Context, t api.Tunnel, idx int, myID string) layout.Dimensions {
 	a := tv.app
 
-	// Zjistit jméno protistrany
+	// Determine peer name
 	peerName := t.TargetName
 	peerIP := t.TargetIP
 	myIP := t.CreatorIP
@@ -262,19 +262,19 @@ func (tv *TunnelView) layoutTunnelCard(gtx layout.Context, t api.Tunnel, idx int
 		myIP = t.TargetIP
 	}
 
-	// Status barva
+	// Status color
 	statusColor := ColorTextDim
 	statusText := t.Status
 	switch t.Status {
 	case "pending":
-		statusColor = color.NRGBA{R: 255, G: 180, B: 0, A: 255} // žlutá
+		statusColor = color.NRGBA{R: 255, G: 180, B: 0, A: 255} // yellow
 		if isCreator {
 			statusText = "Waiting for acceptance"
 		} else {
 			statusText = "Incoming request"
 		}
 	case "active":
-		statusColor = color.NRGBA{R: 80, G: 200, B: 120, A: 255} // zelená
+		statusColor = color.NRGBA{R: 80, G: 200, B: 120, A: 255} // green
 		statusText = "Connected"
 	}
 
@@ -289,7 +289,7 @@ func (tv *TunnelView) layoutTunnelCard(gtx layout.Context, t api.Tunnel, idx int
 			func(gtx layout.Context) layout.Dimensions {
 				return layout.Inset{Top: unit.Dp(12), Bottom: unit.Dp(12), Left: unit.Dp(16), Right: unit.Dp(16)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
 					return layout.Flex{Axis: layout.Vertical}.Layout(gtx,
-						// Hlavní řádek: ikona + jméno + status
+						// Main row: icon + name + status
 						layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 							return layout.Flex{Alignment: layout.Middle}.Layout(gtx,
 								layout.Rigid(func(gtx layout.Context) layout.Dimensions {
@@ -313,7 +313,7 @@ func (tv *TunnelView) layoutTunnelCard(gtx layout.Context, t api.Tunnel, idx int
 								}),
 							)
 						}),
-						// IP info (pokud active)
+						// IP info (if active)
 						layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 							if t.Status != "active" {
 								return layout.Dimensions{}
@@ -333,11 +333,11 @@ func (tv *TunnelView) layoutTunnelCard(gtx layout.Context, t api.Tunnel, idx int
 								)
 							})
 						}),
-						// Tlačítka
+						// Buttons
 						layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 							return layout.Inset{Top: unit.Dp(8)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
 								return layout.Flex{Spacing: layout.SpaceStart}.Layout(gtx,
-									// Accept tlačítko (jen pro target u pending)
+									// Accept button (only for target on pending)
 									layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 										if t.Status != "pending" || isCreator {
 											return layout.Dimensions{}
@@ -347,7 +347,7 @@ func (tv *TunnelView) layoutTunnelCard(gtx layout.Context, t api.Tunnel, idx int
 										btn.Color = color.NRGBA{R: 255, G: 255, B: 255, A: 255}
 										return btn.Layout(gtx)
 									}),
-									// Close/Decline tlačítko
+									// Close/Decline button
 									layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 										label := "Close"
 										if t.Status == "pending" && !isCreator {
