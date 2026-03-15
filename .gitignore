@@ -65,8 +65,10 @@ wg-helper/nora-lan
 wg-helper/nora-native
 
 # Claude / AI prompts
+CLAUDE.md
+FEATURES.md
+AGENTS.md
 nora-*-prompt.md
 codex.md
 audit.md
 bugs.md
-AGENTS.md
