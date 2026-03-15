@@ -17,17 +17,20 @@ const (
 )
 
 type Client struct {
-	hub    *Hub
-	conn   *websocket.Conn
-	send   chan []byte
-	UserID string
+	hub     *Hub
+	conn    *websocket.Conn
+	send    chan []byte
+	UserID  string
+	dropped int // number of dropped messages (slow client detection)
 }
+
+const sendBufSize = 64
 
 func NewClient(hub *Hub, conn *websocket.Conn, userID string) *Client {
 	return &Client{
 		hub:    hub,
 		conn:   conn,
-		send:   make(chan []byte, 256),
+		send:   make(chan []byte, sendBufSize),
 		UserID: userID,
 	}
 }

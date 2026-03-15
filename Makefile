@@ -1,4 +1,4 @@
-.PHONY: all build server client client-windows clean dev-server test test-verbose docker
+.PHONY: all build server client client-windows clean dev-server test test-verbose test-client docker
 
 BUILD_NUM := $(shell grep -o '"build": [0-9]*' version.json | grep -o '[0-9]*')
 LDFLAGS := -X main.version=$(BUILD_NUM)

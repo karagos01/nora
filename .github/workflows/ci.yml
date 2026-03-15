@@ -1,0 +1,40 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  server:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.24'
+      - name: Vet
+        run: cd server && go vet ./...
+      - name: Test
+        run: cd server && go test ./...
+      - name: Build
+        run: cd server && go build -o nora .
+
+  client:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.24'
+      - name: Install system deps
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libasound2-dev libgl-dev libxkbcommon-dev libxkbcommon-x11-dev libx11-dev libxcursor-dev libxfixes-dev libvulkan-dev
+      - name: Vet
+        run: cd client-native && go vet ./...
+      - name: Test
+        run: cd client-native && go test ./...
+      - name: Build
+        run: cd client-native && go build -o nora-native .

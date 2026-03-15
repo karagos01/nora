@@ -209,10 +209,15 @@ func (h *Hub) Run() {
 			for client := range h.clients {
 				select {
 				case client.send <- message:
+					client.dropped = 0
 				default:
-					go func(c *Client) {
-						h.unregister <- c
-					}(client)
+					client.dropped++
+					if client.dropped >= 10 {
+						slog.Warn("ws: dropping slow client", "user_id", client.UserID, "dropped", client.dropped)
+						go func(c *Client) {
+							h.unregister <- c
+						}(client)
+					}
 				}
 			}
 			h.mu.RUnlock()
@@ -238,10 +243,15 @@ func (h *Hub) BroadcastExcluding(msg []byte, excludedUserIDs map[string]bool) {
 		}
 		select {
 		case client.send <- msg:
+			client.dropped = 0
 		default:
-			go func(c *Client) {
-				h.unregister <- c
-			}(client)
+			client.dropped++
+			if client.dropped >= 10 {
+				slog.Warn("ws: dropping slow client", "user_id", client.UserID, "dropped", client.dropped)
+				go func(c *Client) {
+					h.unregister <- c
+				}(client)
+			}
 		}
 	}
 }
