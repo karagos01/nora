@@ -1,0 +1,1198 @@
+package ui
+
+import (
+	"context"
+	"fmt"
+	"image"
+	_ "image/jpeg"
+	_ "image/png"
+	"log"
+	"net/http"
+	"path/filepath"
+	"sort"
+	"strings"
+	"time"
+
+	"nora-client/api"
+	"nora-client/crypto"
+	"nora-client/device"
+	"nora-client/mount"
+	"nora-client/p2p"
+	"nora-client/store"
+	"nora-client/voice"
+)
+
+// ServerConnection holds the state of one connected server.
+type ServerConnection struct {
+	URL         string
+	Name        string
+	Description string
+	Client *api.Client
+	WS     *api.WSClient
+	UserID string
+	Cancel context.CancelFunc
+	Ctx    context.Context
+
+	Users      []api.User
+	Channels   []api.Channel
+	Categories []api.ChannelCategory
+	Members    []api.User
+	Messages   []api.Message
+
+	Friends        []api.User
+	FriendRequests     []api.FriendRequest // incoming pending requests
+	SentFriendRequests []api.FriendRequest // sent outgoing requests
+	BlockedUsers   []api.User
+	Invites        []api.Invite
+	Roles          []api.Role
+	Emojis         []api.CustomEmoji
+
+	DMConversations []api.DMConversation
+	DMMessages      []api.DMPendingMessage
+	ActiveDMID      string
+	ActiveDMPeerKey string
+
+	ActiveChannelID   string
+	ActiveChannelName string
+
+	// Groups
+	Groups       []api.Group
+	GroupMessages []api.GroupMessage // current group messages
+	ActiveGroupID string
+
+	OnlineUsers    map[string]bool
+	UserStatuses   map[string]string    // userID → status (away/dnd)
+	UserStatusText map[string]string    // userID → status text
+	TypingUsers    map[string]time.Time // userID → last typing time (aktivní kanál, legacy)
+	TypingDMUsers  map[string]time.Time // userID → last DM typing time
+	ChannelTyping  map[string]map[string]time.Time // channelID → userID → lastTypingTime
+	UnreadCount    map[string]int       // channelID → unread count
+	UnreadDMCount  map[string]int       // conversationID → unread count
+	UnreadGroups   map[string]bool      // groupID → has unread
+
+	// Voice state: channelID → list of userIDs in that voice channel
+	VoiceState map[string][]string
+	// Voice manager (WebRTC + audio)
+	Voice *voice.Manager
+	// Call manager (1:1 DM hovory)
+	Call *voice.CallManager
+	// P2P file transfer manager
+	P2P *p2p.Manager
+
+	// LAN Party
+	LANParties []api.LANParty
+	LANMembers map[string][]api.LANPartyMember // partyID → members
+
+	// Screen sharing: userID → channelID
+	ScreenSharers map[string]string
+
+	// File sharing
+	MyShares     []api.SharedDirectory
+	SharedWithMe []api.SharedDirectory
+	SharePaths   map[string]string // shareID → local path (jen owner)
+	Mounts       *mount.MountManager
+
+	// Game servers
+	GameServers        []api.GameServerInstance
+	GameServersEnabled bool
+
+	// Swarm sharing
+	Swarm               *p2p.SwarmManager
+	SwarmSharingEnabled bool
+
+	// Auto-moderation
+	AutoModEnabled bool
+
+	// Notification overrides (z identity store)
+	NotifyLevel   *store.NotifyLevel
+	ChannelNotify map[string]store.NotifyLevel
+
+	// Mapování userID → set role IDs (pro role colors a permissions)
+	UserRolesMap map[string]map[string]bool
+
+	// Cached permissions (bitwise OR ze všech rolí uživatele)
+	MyPermissions int64
+
+	// Server info
+	IconURL string
+	StunURL string
+	Icon    image.Image
+
+	// Message cache (lokální cache channel zpráv)
+	MsgCache *store.MessageCache
+
+	// VPN Tunnels
+	Tunnels []api.Tunnel
+
+	// Lobby voice channels
+	LastVoiceError string // poslední voice error (e.g. "Wrong password")
+}
+
+// Unlock unlocks or creates an identity.
+// passwordVerifyPlaintext je známý string šifrovaný heslem pro detekci špatného hesla.
+const passwordVerifyPlaintext = "NORA"
+
+func (a *App) Unlock(username, password string) error {
+	ids, _ := store.LoadIdentities()
+
+	// Pokud existují identity, jen odemknout — nikdy nevytvářet novou
+	if len(ids) > 0 && password != "" {
+		for i, id := range ids {
+			// Rychlá kontrola přes PasswordVerify (pokud existuje)
+			if id.PasswordVerify != "" {
+				plain, err := crypto.DecryptKey(id.PasswordVerify, password)
+				if err != nil || plain != passwordVerifyPlaintext {
+					continue // špatné heslo pro tuto identitu
+				}
+			}
+
+			secret, err := crypto.DecryptKey(id.Encrypted, password)
+			if err != nil {
+				continue
+			}
+
+			a.PublicKey = id.PublicKey
+			a.SecretKey = secret
+			a.Username = id.Username
+			a.Mode = ViewHome
+			a.GlobalNotifyLevel = id.NotifyLevel
+
+			vol := id.NotifVolume
+			if vol == 0 {
+				vol = 1.0
+			}
+			a.NotifVolume = vol
+			a.CustomNotifSnd = id.CustomNotifSnd
+			a.CustomDMSnd = id.CustomDMSnd
+			SetSoundSettings(vol, id.CustomNotifSnd, id.CustomDMSnd)
+
+			if id.VideoVolume > 0 {
+				a.VideoPlayer.SetVolume(id.VideoVolume)
+			}
+
+			fs := id.FontScale
+			if fs == 0 {
+				fs = 1.0
+			}
+			a.Theme.ApplyFontScale(float32(fs))
+			a.Theme.CompactMode = id.CompactMode
+
+			a.DMHistory = store.NewDMHistory(id.PublicKey)
+			a.GroupHistory = store.NewGroupHistory(id.PublicKey)
+			a.Bookmarks = store.NewBookmarkStore(id.PublicKey)
+
+			if cdb, err := store.OpenContacts(id.PublicKey); err == nil {
+				a.Contacts = cdb
+			} else {
+				log.Printf("contacts DB open: %v", err)
+			}
+
+			// Migrace: doplnit PasswordVerify pro staré identity
+			if id.PasswordVerify == "" {
+				if verify, err := crypto.EncryptKey(passwordVerifyPlaintext, password); err == nil {
+					ids[i].PasswordVerify = verify
+					_ = store.SaveIdentities(ids)
+				}
+			}
+
+			go a.runAutoCleanup(id.PublicKey)
+			go a.reconnectSavedServers(id.Servers)
+			go a.handlePendingDeepLink()
+
+			return nil
+		}
+		return fmt.Errorf("wrong password")
+	}
+
+	// Žádné identity — vytvořit novou
+	return a.createIdentity(username, password)
+}
+
+// CreateNewIdentity explicitně vytvoří novou identitu (volá se z login UI v create mode).
+func (a *App) CreateNewIdentity(username, password string) error {
+	if username == "" {
+		return fmt.Errorf("username is required")
+	}
+	if password == "" {
+		return fmt.Errorf("password is required")
+	}
+	return a.createIdentity(username, password)
+}
+
+func (a *App) createIdentity(username, password string) error {
+	kp, err := crypto.GenerateKeypair()
+	if err != nil {
+		return err
+	}
+
+	if password != "" {
+		encrypted, err := crypto.EncryptKey(kp.SecretKey, password)
+		if err != nil {
+			return fmt.Errorf("key encryption: %w", err)
+		}
+		verify, err := crypto.EncryptKey(passwordVerifyPlaintext, password)
+		if err != nil {
+			return fmt.Errorf("verify encryption: %w", err)
+		}
+		if err := store.SaveOrUpdateIdentity(store.StoredIdentity{
+			PublicKey:      kp.PublicKey,
+			Username:       username,
+			Encrypted:      encrypted,
+			PasswordVerify: verify,
+		}); err != nil {
+			return err
+		}
+	}
+
+	a.PublicKey = kp.PublicKey
+	a.SecretKey = kp.SecretKey
+	a.Username = username
+	a.Mode = ViewHome
+	a.DMHistory = store.NewDMHistory(kp.PublicKey)
+	a.GroupHistory = store.NewGroupHistory(kp.PublicKey)
+	a.Bookmarks = store.NewBookmarkStore(kp.PublicKey)
+	if cdb, err := store.OpenContacts(kp.PublicKey); err == nil {
+		a.Contacts = cdb
+	} else {
+		log.Printf("contacts DB open: %v", err)
+	}
+	return nil
+}
+
+// reconnectSavedServers reconnects to all previously saved servers.
+func (a *App) reconnectSavedServers(servers []store.StoredServer) {
+	for _, s := range servers {
+		if s.URL == "" || s.RefreshToken == "" {
+			continue
+		}
+		if err := a.reconnectServer(s); err != nil {
+			log.Printf("auto-reconnect %s: %v", s.URL, err)
+		}
+	}
+	a.Window.Invalidate()
+}
+
+// reconnectServer reconnects to a single server using its refresh token.
+func (a *App) reconnectServer(s store.StoredServer) error {
+	client := api.NewClient(s.URL)
+	client.SetTokens("", s.RefreshToken)
+
+	refreshResp, err := client.Refresh()
+	if err != nil {
+		// Refresh token expired — try challenge-response
+		challengeResp, err := client.Challenge(a.PublicKey, "", "", device.GetDeviceID(), device.GetHardwareHash())
+		if err != nil {
+			return fmt.Errorf("challenge: %w", err)
+		}
+		sig, err := crypto.Sign(a.SecretKey, challengeResp.Nonce)
+		if err != nil {
+			return fmt.Errorf("sign: %w", err)
+		}
+		verifyResp, err := client.Verify(a.PublicKey, challengeResp.Nonce, sig)
+		if err != nil {
+			return fmt.Errorf("verify: %w", err)
+		}
+		client.SetTokens(verifyResp.AccessToken, verifyResp.RefreshToken)
+		store.UpdateServerToken(a.PublicKey, s.URL, verifyResp.RefreshToken)
+
+		return a.setupServerConnection(s.URL, s.Name, "", "", "", false, false, false, client, verifyResp.User.ID)
+	}
+
+	client.SetTokens(refreshResp.AccessToken, refreshResp.RefreshToken)
+	store.UpdateServerToken(a.PublicKey, s.URL, refreshResp.RefreshToken)
+
+	// Get user ID from server
+	info, _ := client.GetServerInfo()
+	users, _ := client.GetUsers()
+	userID := ""
+	for _, u := range users {
+		if u.PublicKey == a.PublicKey {
+			userID = u.ID
+			break
+		}
+	}
+
+	name := s.Name
+	description := ""
+	if info != nil && info.Name != "" {
+		name = info.Name
+		description = info.Description
+	}
+
+	iconURL := ""
+	stunURL := ""
+	gsEnabled := false
+	swarmEnabled := false
+	autoMod := false
+	if info != nil {
+		iconURL = info.IconURL
+		stunURL = info.StunURL
+		gsEnabled = info.GameServersEnabled
+		swarmEnabled = info.SwarmSharingEnabled
+		autoMod = info.AutoModEnabled
+	}
+
+	return a.setupServerConnection(s.URL, name, description, iconURL, stunURL, gsEnabled, swarmEnabled, autoMod, client, userID)
+}
+
+// setupServerConnection creates the connection, loads data, and adds it to the server list.
+func (a *App) setupServerConnection(serverURL, name, description, iconURL, stunURL string, gsEnabled, swarmEnabled, autoModEnabled bool, client *api.Client, userID string) error {
+	if name == "" {
+		name = serverURL
+	}
+
+	sctx, scancel := context.WithCancel(a.ctx)
+	conn := &ServerConnection{
+		URL:         serverURL,
+		Name:        name,
+		Description: description,
+		Client:      client,
+		UserID:      userID,
+		Ctx:         sctx,
+		Cancel:      scancel,
+		OnlineUsers:    make(map[string]bool),
+		UserStatuses:   make(map[string]string),
+		UserStatusText: make(map[string]string),
+		TypingUsers:   make(map[string]time.Time),
+		TypingDMUsers: make(map[string]time.Time),
+		ChannelTyping: make(map[string]map[string]time.Time),
+		UnreadCount:   make(map[string]int),
+		UnreadDMCount: make(map[string]int),
+		UnreadGroups:  make(map[string]bool),
+		VoiceState:     make(map[string][]string),
+		LANMembers:     make(map[string][]api.LANPartyMember),
+		ScreenSharers: make(map[string]string),
+		SharePaths:    make(map[string]string),
+	}
+
+	// Načíst persistované SharePaths z identity
+	if saved := store.GetSharePaths(a.PublicKey, serverURL); saved != nil {
+		for k, v := range saved {
+			conn.SharePaths[k] = v
+		}
+	}
+
+	// Inicializovat message cache pro tento server
+	conn.MsgCache = store.NewMessageCache(a.PublicKey, serverURL)
+
+	// Načíst notify settings z identity
+	srvNotify, chNotify := store.GetServerNotifySettings(a.PublicKey, serverURL)
+	conn.NotifyLevel = srvNotify
+	if chNotify != nil {
+		conn.ChannelNotify = chNotify
+	} else {
+		conn.ChannelNotify = make(map[string]store.NotifyLevel)
+	}
+
+	// Auto-refresh callback — uložit nový refresh token
+	pubKey := a.PublicKey
+	client.OnTokenRefresh = func(_, refresh string) {
+		store.UpdateServerToken(pubKey, serverURL, refresh)
+	}
+
+	conn.IconURL = iconURL
+	conn.StunURL = stunURL
+	conn.GameServersEnabled = gsEnabled
+
+	conn.SwarmSharingEnabled = swarmEnabled
+	conn.AutoModEnabled = autoModEnabled
+	if iconURL != "" {
+		go a.downloadServerIcon(conn, serverURL+iconURL)
+	}
+
+	a.loadServerData(conn)
+
+	ws := api.NewWSClient(serverURL, client.GetAccessToken(), func() {
+		a.Window.Invalidate()
+	})
+	if err := ws.Connect(sctx); err != nil {
+		log.Printf("WS connect error: %v", err)
+		a.Toasts.Error("WebSocket connection failed")
+	}
+	ws.SetOnReconnect(func() {
+		a.loadServerData(conn)
+	})
+	conn.WS = ws
+
+	// Initialize voice manager with WS send callback
+	sendWS := func(eventType string, payload any) error {
+		return conn.WS.SendJSON(eventType, payload)
+	}
+	invalidate := func() {
+		a.Window.Invalidate()
+	}
+	conn.Voice = voice.NewManager(conn.UserID, conn.StunURL, sendWS, invalidate)
+
+	// Screen share frame callback
+	conn.Voice.OnScreenFrame = func(from string, data []byte) {
+		if a.StreamViewer != nil && a.StreamViewer.Visible && a.StreamViewer.StreamerID == from {
+			a.StreamViewer.HandleMessage(data)
+		}
+	}
+
+	// Initialize call manager (mutual exclusion s voice)
+	conn.Call = voice.NewCallManager(conn.StunURL, sendWS, invalidate, func() {
+		conn.Voice.Leave()
+	}, func() {
+		StopCallRingLoop()
+	})
+
+	// Initialize P2P file transfer manager
+	conn.P2P = p2p.NewManager(conn.UserID, conn.StunURL, sendWS, invalidate)
+	conn.P2P.SetOnOffer(func(t *p2p.Transfer) {
+		// Najít username odesílatele
+		senderName := t.PeerID
+		a.mu.RLock()
+		for _, u := range conn.Users {
+			if u.ID == t.PeerID {
+				senderName = u.Username
+				break
+			}
+		}
+		a.mu.RUnlock()
+		a.P2POfferDlg.Show(conn, t, senderName)
+		a.Window.Invalidate()
+	})
+	conn.P2P.SetOnZipStart(func(savePath string) {
+		a.ZipExtractDlg.Show(savePath)
+		a.Window.Invalidate()
+	})
+	conn.P2P.SetOnZipDone(func(savePath string) {
+		a.ZipExtractDlg.MarkDownloaded()
+		a.Window.Invalidate()
+		go func() {
+			choice := a.ZipExtractDlg.WaitChoice()
+			dir := filepath.Dir(savePath)
+			if choice == zipChoiceExtractDelete || choice == zipChoiceExtractOnly {
+				doExtract := true
+				conflicts := zipConflicts(savePath, dir)
+				if len(conflicts) > 0 {
+					ch := make(chan bool, 1)
+					a.ConfirmDlg.ShowWithCancel(
+						"Overwrite files",
+						formatConflictMessage(conflicts),
+						"Overwrite",
+						func() { ch <- true },
+						func() { ch <- false },
+					)
+					a.Window.Invalidate()
+					doExtract = <-ch
+				}
+				if doExtract {
+					extractZip(savePath, dir)
+					if choice == zipChoiceExtractDelete {
+						removeWithRetry(savePath)
+					}
+				}
+			}
+		}()
+	})
+
+	// Initialize swarm manager
+	conn.Swarm = p2p.NewSwarmManager(conn.UserID, conn.StunURL, sendWS, invalidate)
+
+	// Inicializovat MountManager pro sdílené adresáře
+	conn.Mounts = mount.NewMountManager(serverURL, client, func(shareID, fileID, savePath string) error {
+		if conn.P2P == nil {
+			return fmt.Errorf("P2P not available")
+		}
+		// Najít ownerID pro tento share
+		a.mu.RLock()
+		var ownerID string
+		for _, s := range conn.SharedWithMe {
+			if s.ID == shareID {
+				ownerID = s.OwnerID
+				break
+			}
+		}
+		a.mu.RUnlock()
+		if ownerID == "" {
+			return fmt.Errorf("owner not found for share %s", shareID)
+		}
+
+		// Zavolat RequestTransfer na API
+		resp, err := conn.Client.RequestTransfer(shareID, fileID)
+		if err != nil {
+			return fmt.Errorf("request transfer: %w", err)
+		}
+		transferID, _ := resp["transfer_id"].(string)
+		if transferID == "" {
+			return fmt.Errorf("no transfer_id in response")
+		}
+
+		// Počkat na registraci u ownera
+		time.Sleep(500 * time.Millisecond)
+
+		// Zahájit P2P download
+		conn.P2P.RequestDownload(ownerID, transferID, savePath)
+
+		// Čekat na dokončení (polling)
+		for i := 0; i < 600; i++ { // max 10 minut
+			time.Sleep(time.Second)
+			if conn.P2P.IsDownloaded(transferID) {
+				return nil
+			}
+			if conn.P2P.IsUnavailable(transferID) {
+				return fmt.Errorf("transfer unavailable")
+			}
+		}
+		return fmt.Errorf("transfer timeout")
+	}, func(shareID, fileName, relativePath, stagedPath string, fileSize int64) error {
+		// Upload: zavolat RequestUpload API → dostat uploadID → registrovat staged file → pollovat
+		if conn.P2P == nil {
+			return fmt.Errorf("P2P not available")
+		}
+
+		resp, err := conn.Client.RequestUpload(shareID, fileName, fileSize, relativePath)
+		if err != nil {
+			return fmt.Errorf("request upload: %w", err)
+		}
+		uploadID, _ := resp["upload_id"].(string)
+		if uploadID == "" {
+			return fmt.Errorf("no upload_id in response")
+		}
+
+		// Registrovat staged soubor v P2P — owner pošle file.request a HandleRequest auto-respond
+		conn.P2P.RegisterFileForShare(uploadID, stagedPath, fileName, fileSize)
+
+		// Čekat na dokončení (owner stáhne soubor přes P2P)
+		for i := 0; i < 600; i++ { // max 10 minut
+			time.Sleep(time.Second)
+			if conn.P2P.IsTransferSent(uploadID) {
+				return nil
+			}
+			if conn.P2P.IsUnavailable(uploadID) {
+				return fmt.Errorf("upload unavailable")
+			}
+		}
+		return fmt.Errorf("upload timeout")
+	}, func(shareID, relativePath, fileName string) error {
+		// Delete: zavolat DeleteShareFile API
+		return conn.Client.DeleteShareFile(shareID, relativePath, fileName)
+	})
+
+	go a.handleWSEvents(conn)
+
+	a.mu.Lock()
+	a.Servers = append(a.Servers, conn)
+	a.mu.Unlock()
+
+	// Auto-remount dříve mountnutých shares
+	if mounted := store.GetMountedShares(a.PublicKey, serverURL); len(mounted) > 0 {
+		go func() {
+			for shareID, msi := range mounted {
+				if conn.Mounts == nil {
+					continue
+				}
+				// Zjistit aktuální canWrite ze server dat (ne z uloženého stavu)
+				canWrite := msi.CanWrite
+				for _, s := range conn.SharedWithMe {
+					if s.ID == shareID {
+						canWrite = s.CanWrite
+						break
+					}
+				}
+				info, err := conn.Mounts.MountPreferred(shareID, msi.DisplayName, msi.DriveLetter, msi.Port, canWrite)
+				if err != nil {
+					log.Printf("Auto-remount %s: %v", msi.DisplayName, err)
+				} else {
+					log.Printf("Auto-remounted %s at %s (port=%d, canWrite=%v)", msi.DisplayName, info.Path, info.Port, canWrite)
+				}
+			}
+			// Persist aby se uložil případně nový port/letter
+			if v := a.SharesView; v != nil {
+				v.persistMountedShares(conn)
+			}
+			a.Window.Invalidate()
+		}()
+	}
+
+	return nil
+}
+
+// ConnectServer connects to a server and adds it to the list.
+// username is optional — empty string means existing user (no registration).
+// inviteCode is optional — used for servers with closed registration.
+func (a *App) ConnectServer(serverURL string, username string, inviteCode ...string) error {
+	if !strings.HasPrefix(serverURL, "http") {
+		serverURL = "http://" + serverURL
+	}
+	serverURL = strings.TrimRight(serverURL, "/")
+	if !strings.Contains(serverURL[7:], ":") {
+		serverURL += ":9021"
+	}
+
+	// Already connected?
+	a.mu.RLock()
+	for i, s := range a.Servers {
+		if s.URL == serverURL {
+			a.mu.RUnlock()
+			a.mu.Lock()
+			a.ActiveServer = i
+			a.Mode = ViewChannels
+			a.mu.Unlock()
+			return nil
+		}
+	}
+	a.mu.RUnlock()
+
+	client := api.NewClient(serverURL)
+
+	invite := ""
+	if len(inviteCode) > 0 {
+		invite = inviteCode[0]
+	}
+
+	challengeResp, err := client.Challenge(a.PublicKey, username, invite, device.GetDeviceID(), device.GetHardwareHash())
+	if err != nil {
+		return fmt.Errorf("challenge: %w", err)
+	}
+
+	sig, err := crypto.Sign(a.SecretKey, challengeResp.Nonce)
+	if err != nil {
+		return fmt.Errorf("sign: %w", err)
+	}
+
+	verifyResp, err := client.Verify(a.PublicKey, challengeResp.Nonce, sig)
+	if err != nil {
+		return fmt.Errorf("verify: %w", err)
+	}
+
+	client.SetTokens(verifyResp.AccessToken, verifyResp.RefreshToken)
+	store.UpdateServerToken(a.PublicKey, serverURL, verifyResp.RefreshToken)
+
+	info, _ := client.GetServerInfo()
+	name := serverURL
+	addDescription := ""
+	if info != nil && info.Name != "" {
+		name = info.Name
+		addDescription = info.Description
+	}
+
+	// Save server name to store
+	store.UpdateServerName(a.PublicKey, serverURL, name)
+
+	addIconURL := ""
+	addStunURL := ""
+	addGSEnabled := false
+	addSwarmEnabled := false
+	addAutoMod := false
+	if info != nil {
+		addIconURL = info.IconURL
+		addStunURL = info.StunURL
+		addGSEnabled = info.GameServersEnabled
+		addSwarmEnabled = info.SwarmSharingEnabled
+		addAutoMod = info.AutoModEnabled
+	}
+
+	if err := a.setupServerConnection(serverURL, name, addDescription, addIconURL, addStunURL, addGSEnabled, addSwarmEnabled, addAutoMod, client, verifyResp.User.ID); err != nil {
+		return err
+	}
+
+	a.mu.Lock()
+	a.ActiveServer = len(a.Servers) - 1
+	a.Mode = ViewChannels
+	a.ShowAddServer = false
+	a.mu.Unlock()
+
+	return nil
+}
+
+func (a *App) loadServerData(conn *ServerConnection) {
+	channels, err := conn.Client.GetChannels()
+	if err == nil {
+		conn.Channels = channels
+		sort.Slice(conn.Channels, func(i, j int) bool {
+			return conn.Channels[i].Position < conn.Channels[j].Position
+		})
+		if conn.ActiveChannelID == "" {
+			for _, ch := range channels {
+				if ch.Type == "" || ch.Type == "text" {
+					conn.ActiveChannelID = ch.ID
+					conn.ActiveChannelName = ch.Name
+					break
+				}
+			}
+		}
+	}
+
+	cats, err := conn.Client.GetCategories()
+	if err == nil {
+		conn.Categories = cats
+	}
+
+	users, err := conn.Client.GetUsers()
+	if err == nil {
+		conn.Users = users
+		conn.Members = users
+		// Auto-create kontaktů
+		if a.Contacts != nil {
+			for _, u := range users {
+				if u.PublicKey != "" {
+					name := u.DisplayName
+					if name == "" {
+						name = u.Username
+					}
+					a.Contacts.EnsureContact(u.PublicKey, name, conn.URL, conn.Name)
+				}
+			}
+		}
+	}
+
+	convs, err := conn.Client.GetDMConversations()
+	if err == nil {
+		conn.DMConversations = convs
+	}
+
+	friends, err := conn.Client.GetFriends()
+	if err == nil {
+		conn.Friends = friends
+	}
+
+	freqs, err := conn.Client.GetFriendRequests()
+	if err == nil {
+		conn.FriendRequests = freqs.Incoming
+		conn.SentFriendRequests = freqs.Sent
+	}
+
+	blocks, err := conn.Client.GetBlocks()
+	if err == nil {
+		conn.BlockedUsers = blocks
+		// Sync do klientského cross-server blocklistu
+		if a.Contacts != nil {
+			for _, u := range blocks {
+				if u.PublicKey != "" {
+					a.Contacts.SetBlocked(u.PublicKey, true)
+				}
+			}
+		}
+	}
+
+	invites, errInv := conn.Client.GetInvites()
+	if errInv == nil {
+		conn.Invites = invites
+	}
+
+	roles, errRoles := conn.Client.GetRoles()
+	if errRoles == nil {
+		conn.Roles = roles
+	}
+
+	// Načíst role mapping pro všechny uživatele (pro role colors)
+	conn.UserRolesMap = make(map[string]map[string]bool)
+	for _, u := range conn.Members {
+		userRoles, err := conn.Client.GetUserRoles(u.ID)
+		if err == nil && len(userRoles) > 0 {
+			roleIDs := make(map[string]bool, len(userRoles))
+			for _, r := range userRoles {
+				roleIDs[r.ID] = true
+			}
+			conn.UserRolesMap[u.ID] = roleIDs
+		}
+	}
+
+	// Spočítat permissions aktuálního uživatele
+	myRoleIDs := conn.UserRolesMap[conn.UserID]
+	var perms int64
+	for _, r := range roles {
+		if myRoleIDs[r.ID] {
+			perms |= r.Permissions
+		}
+	}
+	// Owner má plný přístup
+	for _, u := range conn.Users {
+		if u.ID == conn.UserID && u.IsOwner {
+			perms = 0x7FFFFFFFFFFFFFFF
+			break
+		}
+	}
+	conn.MyPermissions = perms
+
+	groups, errGroups := conn.Client.GetGroups()
+	if errGroups == nil {
+		conn.Groups = groups
+	}
+
+	emojis, errEmojis := conn.Client.GetEmojis()
+	if errEmojis == nil {
+		conn.Emojis = emojis
+	}
+
+	voiceResp, errVoice := conn.Client.GetVoiceState()
+	if errVoice == nil && voiceResp != nil {
+		conn.VoiceState = voiceResp.Channels
+		if voiceResp.ScreenSharers != nil {
+			conn.ScreenSharers = voiceResp.ScreenSharers
+		}
+	}
+
+	lanResp, errLAN := conn.Client.GetLANParties()
+	if errLAN == nil && lanResp != nil {
+		conn.LANParties = lanResp.Parties
+		conn.LANMembers = lanResp.Members
+	}
+
+	// VPN Tunnels (tiché selhání — server nemusí mít WG povolený)
+	if tunnels, err := conn.Client.GetTunnels(); err == nil {
+		conn.Tunnels = tunnels
+	}
+
+	// Game servers (tiché selhání — server nemusí mít feature povolenu)
+	if gsInstances, err := conn.Client.GetGameServers(); err == nil {
+		conn.GameServers = gsInstances
+	}
+
+	// Načíst členy game serverů na pozadí
+	if a.GameServers != nil {
+		a.GameServers.LoadMembers(conn)
+	}
+
+	sharesResp, errShares := conn.Client.GetShares()
+	if errShares == nil && sharesResp != nil {
+		if sharesResp.Own != nil {
+			conn.MyShares = sharesResp.Own
+		}
+		if sharesResp.Accessible != nil {
+			conn.SharedWithMe = sharesResp.Accessible
+		}
+		// Aktualizovat canWrite na existujících mountech podle aktuálních permissions
+		if conn.Mounts != nil {
+			for _, s := range conn.SharedWithMe {
+				conn.Mounts.UpdateCanWrite(s.ID, s.CanWrite)
+			}
+		}
+	}
+
+	if conn.ActiveChannelID != "" {
+		msgs, err := conn.Client.GetMessages(conn.ActiveChannelID, "", 50)
+		if err == nil {
+			reverseMessages(msgs)
+			conn.Messages = msgs
+		}
+		pins, err := conn.Client.GetPinnedMessages(conn.ActiveChannelID)
+		if err == nil {
+			a.MsgView.pinnedMsgs = pins
+		}
+		a.MsgView.pinSeenID = store.GetPinSeenID(a.PublicKey, conn.URL, conn.ActiveChannelID)
+	}
+}
+
+// messagesToCached konvertuje api.Message slice na CachedMessage slice.
+func messagesToCached(msgs []api.Message) []store.CachedMessage {
+	cached := make([]store.CachedMessage, len(msgs))
+	for i, m := range msgs {
+		cm := store.CachedMessage{
+			ID:        m.ID,
+			ChannelID: m.ChannelID,
+			UserID:    m.UserID,
+			Content:   m.Content,
+			CreatedAt: m.CreatedAt,
+			IsPinned:  m.IsPinned,
+			IsHidden:  m.IsHidden,
+		}
+		if m.Author != nil {
+			cm.Username = m.Author.Username
+		}
+		if m.ReplyToID != nil {
+			cm.ReplyToID = *m.ReplyToID
+		}
+		for _, a := range m.Attachments {
+			cm.Attachments = append(cm.Attachments, store.CachedAttachment{
+				Filename: a.Filename,
+				URL:      a.URL,
+				Size:     a.Size,
+				MimeType: a.MimeType,
+			})
+		}
+		cached[i] = cm
+	}
+	return cached
+}
+
+// cachedToMessages konvertuje CachedMessage slice na api.Message slice.
+func cachedToMessages(cached []store.CachedMessage) []api.Message {
+	msgs := make([]api.Message, len(cached))
+	for i, cm := range cached {
+		m := api.Message{
+			ID:        cm.ID,
+			ChannelID: cm.ChannelID,
+			UserID:    cm.UserID,
+			Content:   cm.Content,
+			CreatedAt: cm.CreatedAt,
+			IsPinned:  cm.IsPinned,
+			IsHidden:  cm.IsHidden,
+			Author:    &api.User{ID: cm.UserID, Username: cm.Username},
+		}
+		if cm.ReplyToID != "" {
+			rid := cm.ReplyToID
+			m.ReplyToID = &rid
+		}
+		for _, ca := range cm.Attachments {
+			m.Attachments = append(m.Attachments, api.Attachment{
+				Filename: ca.Filename,
+				URL:      ca.URL,
+				Size:     ca.Size,
+				MimeType: ca.MimeType,
+			})
+		}
+		msgs[i] = m
+	}
+	return msgs
+}
+
+func reverseMessages(msgs []api.Message) {
+	for i, j := 0, len(msgs)-1; i < j; i, j = i+1, j-1 {
+		msgs[i], msgs[j] = msgs[j], msgs[i]
+	}
+}
+
+func reverseDMMessages(msgs []api.DMPendingMessage) {
+	for i, j := 0, len(msgs)-1; i < j; i, j = i+1, j-1 {
+		msgs[i], msgs[j] = msgs[j], msgs[i]
+	}
+}
+
+func (a *App) downloadServerIcon(conn *ServerConnection, url string) {
+	resp, err := http.Get(url)
+	if err != nil {
+		log.Printf("download server icon: %v", err)
+		return
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != 200 {
+		return
+	}
+	img, _, err := image.Decode(resp.Body)
+	if err != nil {
+		log.Printf("decode server icon: %v", err)
+		return
+	}
+	a.mu.Lock()
+	conn.Icon = img
+	a.mu.Unlock()
+	a.Window.Invalidate()
+}
+
+func (a *App) SelectChannel(id, name string) {
+	conn := a.Conn()
+	if conn == nil {
+		return
+	}
+
+	a.mu.Lock()
+	conn.ActiveChannelID = id
+	conn.ActiveChannelName = name
+	delete(conn.UnreadCount, id)
+	a.Mode = ViewChannels
+
+	// Načíst z lokální cache pro okamžité zobrazení
+	if conn.MsgCache != nil {
+		cached := conn.MsgCache.GetMessages(id)
+		if len(cached) > 0 {
+			conn.Messages = cachedToMessages(cached)
+		}
+	}
+	a.mu.Unlock()
+
+	a.MsgView.ResetScrollState()
+
+	go func() {
+		msgs, err := conn.Client.GetMessages(id, "", 50)
+		if err != nil {
+			log.Printf("GetMessages error: %v", err)
+			return
+		}
+		reverseMessages(msgs)
+		a.mu.Lock()
+		conn.Messages = msgs
+		a.mu.Unlock()
+		a.Window.Invalidate()
+
+		// Uložit do cache
+		if conn.MsgCache != nil {
+			conn.MsgCache.SetMessages(id, messagesToCached(msgs))
+			conn.MsgCache.Save()
+		}
+	}()
+
+	// Načíst pinSeenID z uloženého stavu
+	a.MsgView.pinSeenID = store.GetPinSeenID(a.PublicKey, conn.URL, id)
+
+	// Načíst připnuté zprávy pro zobrazení v pin baru
+	go func() {
+		pins, err := conn.Client.GetPinnedMessages(id)
+		if err == nil {
+			a.MsgView.pinnedMsgs = pins
+			a.Window.Invalidate()
+		}
+	}()
+}
+
+func (a *App) SelectGroup(groupID, groupName string) {
+	conn := a.Conn()
+	if conn == nil {
+		return
+	}
+
+	a.mu.Lock()
+	conn.ActiveGroupID = groupID
+	a.Mode = ViewGroup
+	delete(conn.UnreadGroups, groupID)
+	a.mu.Unlock()
+
+	// Load messages from local history
+	if a.GroupHistory != nil {
+		stored := a.GroupHistory.GetMessages(groupID)
+		msgs := make([]api.GroupMessage, len(stored))
+		for i, m := range stored {
+			gm := api.GroupMessage{
+				ID:               m.ID,
+				GroupID:          m.GroupID,
+				SenderID:         m.SenderID,
+				DecryptedContent: m.Content,
+				CreatedAt:        m.CreatedAt,
+			}
+			for _, sa := range m.Attachments {
+				gm.Attachments = append(gm.Attachments, api.Attachment{
+					Filename: sa.Filename,
+					URL:      sa.URL,
+					Size:     sa.Size,
+					MimeType: sa.MimeType,
+				})
+			}
+			msgs[i] = gm
+		}
+		a.mu.Lock()
+		conn.GroupMessages = msgs
+		a.mu.Unlock()
+	}
+	a.Window.Invalidate()
+}
+
+func (a *App) SelectDM(convID string) {
+	conn := a.Conn()
+	if conn == nil {
+		return
+	}
+
+	a.mu.Lock()
+	conn.ActiveDMID = convID
+	a.Mode = ViewDM
+	delete(conn.UnreadDMCount, convID)
+	conn.TypingDMUsers = make(map[string]time.Time)
+
+	var peerKey string
+	for _, conv := range conn.DMConversations {
+		if conv.ID == convID {
+			for _, p := range conv.Participants {
+				if p.UserID != conn.UserID {
+					peerKey = p.PublicKey
+					conn.ActiveDMPeerKey = peerKey
+					break
+				}
+			}
+			break
+		}
+	}
+	secretKey := a.SecretKey
+
+	// Load local history first (instant display)
+	if a.DMHistory != nil {
+		stored := a.DMHistory.GetMessages(convID)
+		pending := make([]api.DMPendingMessage, len(stored))
+		for i, m := range stored {
+			pending[i] = api.DMPendingMessage{
+				ID:               m.ID,
+				ConversationID:   m.ConversationID,
+				SenderID:         m.SenderID,
+				DecryptedContent: m.Content,
+				CreatedAt:        m.CreatedAt,
+			}
+		}
+		conn.DMMessages = pending
+	}
+	a.mu.Unlock()
+
+	// Fetch pending messages from server, decrypt, merge with history
+	go func() {
+		msgs, err := conn.Client.GetDMPending(convID)
+		if err != nil {
+			log.Printf("GetDMPending error: %v", err)
+			a.Window.Invalidate()
+			return
+		}
+		reverseDMMessages(msgs)
+
+		// Decrypt and save new pending messages to local history
+		if a.DMHistory != nil && peerKey != "" && secretKey != "" {
+			for _, msg := range msgs {
+				decrypted, err := crypto.DecryptDM(secretKey, peerKey, msg.EncryptedContent)
+				if err == nil {
+					a.DMHistory.AddMessage(store.StoredDMMessage{
+						ID:             msg.ID,
+						ConversationID: msg.ConversationID,
+						SenderID:       msg.SenderID,
+						Content:        decrypted,
+						CreatedAt:      msg.CreatedAt,
+					})
+				}
+			}
+			a.DMHistory.Save()
+
+			// Rebuild message list from full history
+			stored := a.DMHistory.GetMessages(convID)
+			pending := make([]api.DMPendingMessage, len(stored))
+			for i, m := range stored {
+				pending[i] = api.DMPendingMessage{
+					ID:               m.ID,
+					ConversationID:   m.ConversationID,
+					SenderID:         m.SenderID,
+					DecryptedContent: m.Content,
+					CreatedAt:        m.CreatedAt,
+				}
+			}
+			a.mu.Lock()
+			conn.DMMessages = pending
+			a.mu.Unlock()
+		} else {
+			a.mu.Lock()
+			conn.DMMessages = msgs
+			a.mu.Unlock()
+		}
+		a.Window.Invalidate()
+	}()
+}
+
+// handlePendingDeepLink zpracuje deep link předaný z command line.
+func (a *App) handlePendingDeepLink() {
+	link := a.PendingDeepLink
+	if link == "" {
+		return
+	}
+	a.PendingDeepLink = ""
+
+	dl := ParseDeepLink(link)
+	if dl == nil {
+		return
+	}
+
+	switch dl.Type {
+	case "contact":
+		if dl.Key != "" && a.Contacts != nil {
+			name := dl.Name
+			if name == "" {
+				name = ShortenKey(dl.Key)
+			}
+			a.Contacts.EnsureContact(dl.Key, name, "", "")
+			log.Printf("Deep link: added contact %s (%s)", name, ShortenKey(dl.Key))
+		}
+	case "invite":
+		if dl.Server != "" && dl.Code != "" {
+			log.Printf("Deep link: invite for %s code=%s", dl.Server, dl.Code)
+			if err := a.ConnectServer(dl.Server, "", dl.Code); err != nil {
+				log.Printf("Deep link connect error: %v", err)
+			}
+			a.Window.Invalidate()
+		}
+	}
+}

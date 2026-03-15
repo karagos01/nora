@@ -1,0 +1,386 @@
+package ws
+
+import (
+	"context"
+	"encoding/json"
+	"log/slog"
+	"time"
+
+	"github.com/coder/websocket"
+)
+
+const (
+	writeWait      = 10 * time.Second
+	pongWait       = 60 * time.Second
+	pingPeriod     = 54 * time.Second
+	maxMessageSize = 131072
+)
+
+type Client struct {
+	hub    *Hub
+	conn   *websocket.Conn
+	send   chan []byte
+	UserID string
+}
+
+func NewClient(hub *Hub, conn *websocket.Conn, userID string) *Client {
+	return &Client{
+		hub:    hub,
+		conn:   conn,
+		send:   make(chan []byte, 256),
+		UserID: userID,
+	}
+}
+
+func (c *Client) ReadPump() {
+	defer func() {
+		c.hub.unregister <- c
+		c.conn.Close(websocket.StatusNormalClosure, "")
+	}()
+
+	c.conn.SetReadLimit(maxMessageSize)
+
+	for {
+		_, msg, err := c.conn.Read(context.Background())
+		if err != nil {
+			break
+		}
+
+		var event IncomingEvent
+		if err := json.Unmarshal(msg, &event); err != nil {
+			continue
+		}
+
+		c.handleEvent(event)
+	}
+}
+
+func (c *Client) WritePump() {
+	ticker := time.NewTicker(pingPeriod)
+	defer func() {
+		ticker.Stop()
+		c.conn.Close(websocket.StatusNormalClosure, "")
+	}()
+
+	for {
+		select {
+		case message, ok := <-c.send:
+			if !ok {
+				return
+			}
+			ctx, cancel := context.WithTimeout(context.Background(), writeWait)
+			err := c.conn.Write(ctx, websocket.MessageText, message)
+			cancel()
+			if err != nil {
+				return
+			}
+
+		case <-ticker.C:
+			ctx, cancel := context.WithTimeout(context.Background(), writeWait)
+			err := c.conn.Ping(ctx)
+			cancel()
+			if err != nil {
+				return
+			}
+		}
+	}
+}
+
+func (c *Client) handleEvent(event IncomingEvent) {
+	switch event.Type {
+	case EventTypingStart:
+		var payload TypingPayload
+		if err := json.Unmarshal(event.Payload, &payload); err != nil {
+			return
+		}
+		payload.UserID = c.UserID
+		msg, err := NewEvent(EventTypingStart, payload)
+		if err != nil {
+			return
+		}
+		c.hub.Broadcast(msg)
+
+	case EventChannelTyping:
+		// Channel typing — broadcast do všech klientů (klient filtruje podle channel_id)
+		var payload struct {
+			ChannelID string `json:"channel_id"`
+		}
+		if err := json.Unmarshal(event.Payload, &payload); err != nil || payload.ChannelID == "" {
+			return
+		}
+		msg, err := NewEvent(EventChannelTyping, map[string]string{
+			"channel_id": payload.ChannelID,
+			"user_id":    c.UserID,
+		})
+		if err != nil {
+			return
+		}
+		// Broadcast všem kromě odesílatele
+		c.hub.mu.RLock()
+		for client := range c.hub.clients {
+			if client.UserID != c.UserID {
+				select {
+				case client.send <- msg:
+				default:
+				}
+			}
+		}
+		c.hub.mu.RUnlock()
+
+	case EventFileOffer, EventFileAccept, EventFileReject, EventFileChunk, EventFileAck, EventFileComplete, EventFileCancel, EventFileResume, EventFileIce, EventFileRequest:
+		c.relayFileEvent(event)
+
+	case EventGroupMessage, EventGroupKey:
+		c.relayGroupEvent(event)
+
+	case EventVoiceJoin:
+		c.handleVoiceJoin(event)
+	case EventVoiceLeave:
+		c.handleVoiceLeave()
+	case EventVoiceMute:
+		c.handleVoiceMute(event)
+	case EventVoiceOffer, EventVoiceAnswer, EventVoiceIce, EventScreenWatch:
+		c.relayFileEvent(event)
+	case EventDMMessageDelete, EventDMMessageEdit:
+		c.relayFileEvent(event)
+	case EventCallRing, EventCallAccept, EventCallDecline, EventCallHangup, EventCallOffer, EventCallAnswer, EventCallIce:
+		c.relayFileEvent(event)
+	case EventTransferReady, EventTransferProgress, EventTransferComplete, EventTransferError:
+		c.relayFileEvent(event)
+
+	case EventSwarmPieceRequest, EventSwarmPieceOffer, EventSwarmPieceAccept, EventSwarmPieceIce, EventSwarmPieceComplete:
+		c.relayFileEvent(event)
+
+	case EventScreenShare:
+		c.handleScreenShare(event)
+
+	case EventLobbyRename:
+		c.handleLobbyRename(event)
+	case EventLobbyPassword:
+		c.handleLobbyPassword(event)
+
+	default:
+		slog.Warn("ws: neznámý typ eventu", "type", event.Type)
+	}
+}
+
+func (c *Client) handleVoiceJoin(event IncomingEvent) {
+	var payload struct {
+		ChannelID string `json:"channel_id"`
+		Name      string `json:"name"`
+		Password  string `json:"password"`
+	}
+	if err := json.Unmarshal(event.Payload, &payload); err != nil || payload.ChannelID == "" {
+		return
+	}
+
+	targetChannelID := payload.ChannelID
+
+	// Zjistit zda kanál je lobby → spawne nový sub-kanál
+	if c.hub.isLobbyFn != nil && c.hub.isLobbyFn(payload.ChannelID) {
+		newID, err := c.hub.SpawnFromLobby(payload.ChannelID, c.UserID, payload.Name, payload.Password)
+		if err != nil {
+			slog.Error("lobby: chyba při vytváření roomu", "error", err)
+			c.sendError("voice.error", "Failed to create lobby room")
+			return
+		}
+		targetChannelID = newID
+
+		// Broadcast channel.create pro nový sub-kanál
+		if c.hub.lobbyCreateFn != nil {
+			// Channel data se broadcastne z lobbyCreateFn callback (v main.go)
+			// Ale potřebujeme broadcast — delegujeme to na callbackový kód v main
+		}
+	}
+
+	// Ověřit heslo pro dynamický sub-kanál
+	if c.hub.IsDynamic(targetChannelID) {
+		if !c.hub.CheckDynamicPassword(targetChannelID, payload.Password) {
+			c.sendError("voice.error", "Wrong password")
+			return
+		}
+	}
+
+	users := c.hub.VoiceJoin(targetChannelID, c.UserID)
+	msg, _ := NewEvent(EventVoiceState, map[string]any{
+		"channel_id": targetChannelID,
+		"users":      users,
+		"joined":     c.UserID,
+	})
+	c.hub.Broadcast(msg)
+}
+
+func (c *Client) handleVoiceLeave() {
+	channelID, remaining := c.hub.VoiceLeave(c.UserID)
+	if channelID == "" {
+		return
+	}
+	msg, _ := NewEvent(EventVoiceState, map[string]any{
+		"channel_id": channelID,
+		"users":      remaining,
+		"left":       c.UserID,
+	})
+	c.hub.Broadcast(msg)
+
+	// Cleanup dynamického lobby sub-kanálu pokud prázdný
+	c.hub.checkDynamicCleanup(channelID)
+}
+
+func (c *Client) handleLobbyRename(event IncomingEvent) {
+	var payload struct {
+		ChannelID string `json:"channel_id"`
+		Name      string `json:"name"`
+	}
+	if err := json.Unmarshal(event.Payload, &payload); err != nil || payload.ChannelID == "" || payload.Name == "" {
+		return
+	}
+
+	c.hub.mu.RLock()
+	info := c.hub.dynamicChannels[payload.ChannelID]
+	c.hub.mu.RUnlock()
+
+	if info == nil || info.ManagerID != c.UserID {
+		c.sendError("voice.error", "Not the room manager")
+		return
+	}
+
+	// Přejmenovat v DB přes callback
+	if c.hub.lobbyRenameFn != nil {
+		if err := c.hub.lobbyRenameFn(payload.ChannelID, payload.Name); err != nil {
+			slog.Error("lobby: přejmenování selhalo", "channel_id", payload.ChannelID, "error", err)
+			return
+		}
+	}
+
+	c.hub.mu.Lock()
+	if di := c.hub.dynamicChannels[payload.ChannelID]; di != nil {
+		di.Name = payload.Name
+	}
+	c.hub.mu.Unlock()
+
+	// Broadcast channel.update
+	msg, _ := NewEvent(EventChannelUpdate, map[string]any{
+		"id":   payload.ChannelID,
+		"name": payload.Name,
+	})
+	c.hub.Broadcast(msg)
+}
+
+func (c *Client) handleLobbyPassword(event IncomingEvent) {
+	var payload struct {
+		ChannelID string `json:"channel_id"`
+		Password  string `json:"password"`
+	}
+	if err := json.Unmarshal(event.Payload, &payload); err != nil || payload.ChannelID == "" {
+		return
+	}
+
+	if !c.hub.SetDynamicPassword(payload.ChannelID, c.UserID, payload.Password) {
+		c.sendError("voice.error", "Not the room manager")
+	}
+}
+
+// sendError posílá chybový event zpět klientovi
+func (c *Client) sendError(eventType, message string) {
+	msg, err := NewEvent(EventType(eventType), map[string]string{"error": message})
+	if err != nil {
+		return
+	}
+	select {
+	case c.send <- msg:
+	default:
+	}
+}
+
+func (c *Client) handleVoiceMute(event IncomingEvent) {
+	var payload struct {
+		Muted    bool `json:"muted"`
+		Deafened bool `json:"deafened"`
+	}
+	if err := json.Unmarshal(event.Payload, &payload); err != nil {
+		return
+	}
+	msg, _ := NewEvent(EventVoiceMute, map[string]any{
+		"user_id":  c.UserID,
+		"muted":    payload.Muted,
+		"deafened": payload.Deafened,
+	})
+	c.hub.Broadcast(msg)
+}
+
+func (c *Client) relayFileEvent(event IncomingEvent) {
+	var target struct {
+		To string `json:"to"`
+	}
+	if err := json.Unmarshal(event.Payload, &target); err != nil || target.To == "" {
+		return
+	}
+
+	// Přidat "from" do payloadu (anti-spoof)
+	var payload map[string]any
+	if err := json.Unmarshal(event.Payload, &payload); err != nil {
+		return
+	}
+	payload["from"] = c.UserID
+
+	p, err := json.Marshal(payload)
+	if err != nil {
+		return
+	}
+
+	msg, err := json.Marshal(Event{Type: event.Type, Payload: p})
+	if err != nil {
+		return
+	}
+
+	c.hub.BroadcastToUser(target.To, msg)
+}
+
+func (c *Client) handleScreenShare(event IncomingEvent) {
+	var payload struct {
+		ChannelID string `json:"channel_id"`
+		Sharing   bool   `json:"sharing"`
+	}
+	if err := json.Unmarshal(event.Payload, &payload); err != nil || payload.ChannelID == "" {
+		return
+	}
+
+	// Trackovat screen share stav v hubu
+	c.hub.SetScreenShare(c.UserID, payload.ChannelID, payload.Sharing)
+
+	msg, _ := NewEvent(EventScreenShare, map[string]any{
+		"channel_id": payload.ChannelID,
+		"user_id":    c.UserID,
+		"sharing":    payload.Sharing,
+	})
+	c.hub.Broadcast(msg)
+}
+
+func (c *Client) relayGroupEvent(event IncomingEvent) {
+	var parsed struct {
+		To []string `json:"to"`
+	}
+	if err := json.Unmarshal(event.Payload, &parsed); err != nil || len(parsed.To) == 0 {
+		return
+	}
+
+	var payload map[string]any
+	if err := json.Unmarshal(event.Payload, &payload); err != nil {
+		return
+	}
+	payload["from"] = c.UserID
+
+	p, err := json.Marshal(payload)
+	if err != nil {
+		return
+	}
+
+	msg, err := json.Marshal(Event{Type: event.Type, Payload: p})
+	if err != nil {
+		return
+	}
+
+	for _, userID := range parsed.To {
+		c.hub.BroadcastToUser(userID, msg)
+	}
+}

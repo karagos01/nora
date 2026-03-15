@@ -1,0 +1,876 @@
+<!DOCTYPE html>
+<html lang="cs">
+<head>
+	<meta charset="UTF-8">
+	<meta name="viewport" content="width=device-width, initial-scale=1.0">
+	<title>NORA — No-Oversight Realtime Alternative</title>
+	<meta name="description" content="Self-hosted chat bez sledování. Žádné hesla, žádné servery třetích stran, plná kontrola nad daty.">
+	<style>
+		*, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
+
+		:root {
+			--bg: #0e0e12;
+			--bg-card: #16161d;
+			--bg-card-hover: #1c1c26;
+			--accent: #7c6aef;
+			--accent-dim: #5b4cc4;
+			--text: #e4e4eb;
+			--text-dim: #8e8ea0;
+			--border: #2a2a3a;
+			--green: #43b581;
+			--red: #e74c3c;
+		}
+
+		body {
+			font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+			background: var(--bg);
+			color: var(--text);
+			line-height: 1.6;
+			overflow-x: hidden;
+		}
+
+		a { color: var(--accent); text-decoration: none; }
+		a:hover { text-decoration: underline; }
+
+		/* Hero */
+		.hero {
+			min-height: 100vh;
+			display: flex;
+			flex-direction: column;
+			align-items: center;
+			justify-content: center;
+			text-align: center;
+			padding: 2rem;
+			position: relative;
+		}
+
+		.hero::before {
+			content: '';
+			position: absolute;
+			top: -40%;
+			left: 50%;
+			transform: translateX(-50%);
+			width: 800px;
+			height: 800px;
+			background: radial-gradient(circle, rgba(124, 106, 239, 0.12) 0%, transparent 70%);
+			pointer-events: none;
+		}
+
+		.logo {
+			font-size: 5rem;
+			font-weight: 800;
+			letter-spacing: -0.04em;
+			background: linear-gradient(135deg, var(--accent), #a78bfa);
+			-webkit-background-clip: text;
+			background-clip: text;
+			-webkit-text-fill-color: transparent;
+			margin-bottom: 1rem;
+		}
+
+		.tagline {
+			font-size: 1.4rem;
+			color: var(--text-dim);
+			max-width: 600px;
+			margin-bottom: 0.5rem;
+		}
+
+		.subtitle {
+			font-size: 1rem;
+			color: var(--text-dim);
+			opacity: 0.7;
+			margin-bottom: 3rem;
+		}
+
+		.hero-badges {
+			display: flex;
+			gap: 1rem;
+			flex-wrap: wrap;
+			justify-content: center;
+			margin-bottom: 3rem;
+		}
+
+		.badge {
+			padding: 0.5rem 1.2rem;
+			border-radius: 100px;
+			font-size: 0.85rem;
+			font-weight: 600;
+			border: 1px solid var(--border);
+			background: var(--bg-card);
+		}
+
+		.badge.green { border-color: var(--green); color: var(--green); }
+		.badge.purple { border-color: var(--accent); color: var(--accent); }
+
+		.download-grid {
+			display: grid;
+			grid-template-columns: repeat(4, 1fr);
+			gap: 1rem;
+			max-width: 700px;
+			margin-bottom: 2rem;
+		}
+
+		@media (max-width: 700px) {
+			.download-grid { grid-template-columns: 1fr 1fr; }
+		}
+
+		.dl-card {
+			display: flex;
+			flex-direction: column;
+			align-items: center;
+			gap: 0.5rem;
+			padding: 1.2rem 1rem;
+			background: var(--bg-card);
+			border: 1px solid var(--border);
+			border-radius: 12px;
+			text-decoration: none;
+			color: var(--text);
+			transition: border-color 0.2s, transform 0.1s, background 0.2s;
+		}
+		.dl-card:hover {
+			border-color: var(--accent);
+			background: var(--bg-card-hover);
+			text-decoration: none;
+			transform: translateY(-2px);
+		}
+		.dl-card svg { flex-shrink: 0; color: var(--accent); }
+		.dl-card .dl-title {
+			font-size: 0.9rem;
+			font-weight: 600;
+		}
+		.dl-card .dl-hint {
+			font-size: 0.72rem;
+			color: var(--text-dim);
+			text-align: center;
+		}
+
+		.install-cmd {
+			background: var(--bg-card);
+			border: 1px solid var(--border);
+			border-radius: 8px;
+			padding: 0.6rem 1.2rem;
+			font-family: 'SFMono-Regular', Consolas, monospace;
+			font-size: 0.82rem;
+			color: var(--text-dim);
+			margin-bottom: 2rem;
+			user-select: all;
+		}
+		.install-cmd span { color: var(--accent); }
+
+		.scroll-hint {
+			position: absolute;
+			bottom: 2rem;
+			animation: bounce 2s infinite;
+			color: var(--text-dim);
+			opacity: 0.5;
+		}
+
+		@keyframes bounce {
+			0%, 100% { transform: translateY(0); }
+			50% { transform: translateY(8px); }
+		}
+
+		/* Manifesto */
+		.manifesto {
+			max-width: 740px;
+			margin: 0 auto;
+			padding: 6rem 2rem 4rem;
+		}
+
+		.manifesto-title {
+			font-size: 2rem;
+			font-weight: 700;
+			margin-bottom: 2.5rem;
+			letter-spacing: -0.02em;
+			color: var(--text);
+		}
+
+		.manifesto p {
+			font-size: 1.05rem;
+			line-height: 1.85;
+			color: var(--text-dim);
+			margin-bottom: 1.5rem;
+		}
+
+		.manifesto p strong {
+			color: var(--text);
+			font-weight: 600;
+		}
+
+		.manifesto p em {
+			color: var(--accent);
+			font-style: normal;
+		}
+
+		.manifesto .sig {
+			margin-top: 2.5rem;
+			padding-top: 1.5rem;
+			border-top: 1px solid var(--border);
+			font-size: 0.95rem;
+			color: var(--text-dim);
+		}
+
+		.manifesto .sig span {
+			color: var(--text);
+			font-weight: 600;
+		}
+
+		/* Sections */
+		section {
+			max-width: 1100px;
+			margin: 0 auto;
+			padding: 6rem 2rem;
+		}
+
+		.section-title {
+			font-size: 2.2rem;
+			font-weight: 700;
+			margin-bottom: 1rem;
+			letter-spacing: -0.02em;
+		}
+
+		.section-desc {
+			font-size: 1.1rem;
+			color: var(--text-dim);
+			max-width: 700px;
+			margin-bottom: 3rem;
+		}
+
+		/* Key analogy boxes */
+		.key-grid {
+			display: grid;
+			grid-template-columns: 1fr 1fr;
+			gap: 2rem;
+			margin-bottom: 2.5rem;
+		}
+
+		@media (max-width: 600px) {
+			.key-grid { grid-template-columns: 1fr; }
+		}
+
+		.key-box {
+			background: var(--bg-card);
+			border: 1px solid var(--border);
+			border-radius: 16px;
+			padding: 2rem;
+		}
+
+		.key-box h3 {
+			font-size: 1.3rem;
+			margin-bottom: 0.3rem;
+		}
+
+		.key-box .analogy {
+			color: var(--accent);
+			font-size: 1rem;
+			margin-bottom: 1rem;
+		}
+
+		.key-box ul {
+			list-style: none;
+			display: flex;
+			flex-direction: column;
+			gap: 0.5rem;
+		}
+
+		.key-box li {
+			color: var(--text-dim);
+			font-size: 0.95rem;
+			padding-left: 1.2rem;
+			position: relative;
+		}
+
+		.key-box li::before {
+			content: '·';
+			position: absolute;
+			left: 0;
+			color: var(--text-dim);
+			font-weight: bold;
+		}
+
+		.key-note {
+			color: var(--text-dim);
+			font-size: 1rem;
+			max-width: 700px;
+			line-height: 1.7;
+		}
+
+		/* Flow diagrams */
+		.flow-diagram {
+			font-family: 'SF Mono', 'Fira Code', 'Cascadia Code', 'Consolas', monospace;
+			background: var(--bg-card);
+			border: 1px solid var(--border);
+			border-radius: 16px;
+			padding: 2rem 2.5rem;
+			max-width: 700px;
+			margin: 0 auto 2rem;
+			overflow-x: auto;
+			font-size: 0.9rem;
+			line-height: 1.8;
+			white-space: pre;
+		}
+
+		.flow-diagram .arrow {
+			color: var(--accent);
+			font-weight: bold;
+		}
+
+		.flow-diagram .label {
+			color: var(--text);
+			font-weight: 600;
+		}
+
+		.flow-diagram .dim {
+			color: var(--text-dim);
+		}
+
+		.flow-note {
+			text-align: center;
+			color: var(--text-dim);
+			font-size: 1rem;
+			max-width: 650px;
+			margin: 0 auto;
+			line-height: 1.7;
+		}
+
+		/* How it works */
+		.steps {
+			display: grid;
+			grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+			gap: 1.5rem;
+		}
+
+		.step {
+			background: var(--bg-card);
+			border: 1px solid var(--border);
+			border-radius: 16px;
+			padding: 2rem;
+			transition: background 0.2s;
+		}
+
+		.step:hover { background: var(--bg-card-hover); }
+
+		.step-num {
+			display: inline-flex;
+			align-items: center;
+			justify-content: center;
+			width: 36px;
+			height: 36px;
+			border-radius: 10px;
+			background: var(--accent);
+			color: white;
+			font-weight: 700;
+			font-size: 0.9rem;
+			margin-bottom: 1rem;
+		}
+
+		.step h3 {
+			font-size: 1.15rem;
+			margin-bottom: 0.5rem;
+		}
+
+		.step p {
+			color: var(--text-dim);
+			font-size: 0.95rem;
+		}
+
+		/* Comparison */
+		.comparison {
+			display: grid;
+			grid-template-columns: 1fr 1fr;
+			gap: 2rem;
+			margin-top: 2rem;
+		}
+
+		@media (max-width: 700px) {
+			.comparison { grid-template-columns: 1fr; }
+		}
+
+		.compare-card {
+			background: var(--bg-card);
+			border: 1px solid var(--border);
+			border-radius: 16px;
+			padding: 2rem;
+		}
+
+		.compare-card h3 {
+			font-size: 1.3rem;
+			margin-bottom: 1.5rem;
+			display: flex;
+			align-items: center;
+			gap: 0.5rem;
+		}
+
+		.compare-card ul {
+			list-style: none;
+			display: flex;
+			flex-direction: column;
+			gap: 0.8rem;
+		}
+
+		.compare-card li {
+			display: flex;
+			align-items: flex-start;
+			gap: 0.6rem;
+			font-size: 0.95rem;
+			color: var(--text-dim);
+		}
+
+		.compare-card li .icon {
+			flex-shrink: 0;
+			width: 20px;
+			height: 20px;
+			margin-top: 2px;
+		}
+
+		.discord-card { border-color: #5865f222; }
+		.discord-card h3 { color: #5865f2; }
+		.nora-card { border-color: rgba(124, 106, 239, 0.15); }
+		.nora-card h3 { color: var(--accent); }
+
+		/* Features */
+		.features {
+			display: grid;
+			grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+			gap: 1.5rem;
+		}
+
+		.feature {
+			background: var(--bg-card);
+			border: 1px solid var(--border);
+			border-radius: 16px;
+			padding: 2rem;
+			transition: background 0.2s;
+		}
+
+		.feature:hover { background: var(--bg-card-hover); }
+
+		.feature-icon {
+			width: 44px;
+			height: 44px;
+			border-radius: 12px;
+			background: rgba(124, 106, 239, 0.12);
+			display: flex;
+			align-items: center;
+			justify-content: center;
+			margin-bottom: 1rem;
+			color: var(--accent);
+		}
+
+		.feature h3 {
+			font-size: 1.1rem;
+			margin-bottom: 0.5rem;
+		}
+
+		.feature p {
+			color: var(--text-dim);
+			font-size: 0.95rem;
+		}
+
+		/* Tech */
+		.tech-grid {
+			display: grid;
+			grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+			gap: 1rem;
+		}
+
+		.tech-item {
+			background: var(--bg-card);
+			border: 1px solid var(--border);
+			border-radius: 12px;
+			padding: 1.5rem;
+			text-align: center;
+		}
+
+		.tech-item .label {
+			font-size: 0.8rem;
+			color: var(--text-dim);
+			text-transform: uppercase;
+			letter-spacing: 0.05em;
+			margin-bottom: 0.3rem;
+		}
+
+		.tech-item .value {
+			font-size: 1.1rem;
+			font-weight: 600;
+		}
+
+		/* Footer */
+		footer {
+			border-top: 1px solid var(--border);
+			padding: 3rem 2rem;
+			text-align: center;
+			color: var(--text-dim);
+			font-size: 0.9rem;
+		}
+
+		footer a { color: var(--text-dim); }
+		footer a:hover { color: var(--text); }
+
+		.footer-links {
+			display: flex;
+			gap: 2rem;
+			justify-content: center;
+			margin-bottom: 1rem;
+		}
+	</style>
+</head>
+<body>
+
+<div class="hero">
+	<div class="logo">NORA</div>
+	<p class="tagline">No-Oversight Realtime Alternative</p>
+	<p class="subtitle">Self-hosted chat, kde data patří tobě.</p>
+	<div class="hero-badges">
+		<span class="badge green">Open Source (AGPL-3.0)</span>
+		<span class="badge purple">Žádná hesla</span>
+		<span class="badge green">E2E šifrování</span>
+		<span class="badge purple">WebRTC voice</span>
+	</div>
+	<div class="download-grid">
+		<a href="/NORA-windows.zip" class="dl-card">
+			<svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="3" y="3" width="8" height="8"/><rect x="13" y="3" width="8" height="8"/><rect x="3" y="13" width="8" height="8"/><rect x="13" y="13" width="8" height="8"/></svg>
+			<span class="dl-title">Windows</span>
+			<span class="dl-hint">portable .exe</span>
+		</a>
+		<a href="/nora-native" class="dl-card">
+			<svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="12" cy="12" r="3"/><path d="M12 1v4M12 19v4M4.22 4.22l2.83 2.83M16.95 16.95l2.83 2.83M1 12h4M19 12h4M4.22 19.78l2.83-2.83M16.95 7.05l2.83-2.83"/></svg>
+			<span class="dl-title">Linux</span>
+			<span class="dl-hint">klient (binary)</span>
+		</a>
+		<a href="/nora-server" class="dl-card">
+			<svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="2" y="2" width="20" height="8" rx="2"/><rect x="2" y="14" width="20" height="8" rx="2"/><circle cx="6" cy="6" r="1" fill="currentColor"/><circle cx="6" cy="18" r="1" fill="currentColor"/></svg>
+			<span class="dl-title">Server</span>
+			<span class="dl-hint">Linux x86_64</span>
+		</a>
+		<a href="/nora-source.tar.gz" class="dl-card">
+			<svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/></svg>
+			<span class="dl-title">Zdrojový kód</span>
+			<span class="dl-hint">server + klient</span>
+		</a>
+	</div>
+	<div class="install-cmd"><span>curl -fsSL</span> https://noraproject.eu/install.sh <span>| sudo bash</span></div>
+	<div class="scroll-hint">
+		<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+			<path d="M7 13l5 5 5-5M7 6l5 5 5-5"/>
+		</svg>
+	</div>
+</div>
+
+<!-- Proč NORA existuje -->
+<div class="manifesto" id="why">
+	<h2 class="manifesto-title">Proč NORA existuje</h2>
+
+	<p>Začalo to na YouTube. Videa, kde si lidi stěžují na Discord — jak vyžaduje občanský průkaz pro ověření identity, jak sleduje aktivitu uživatelů, jak postupně ubírá anonymitu. Pak jsem narazil na to, jak je Discord a další platformy propojený se společnostmi, které se živí sběrem a vyhodnocováním uživatelských dat. A říkal jsem si — proč to nezkusit jinak?</p>
+
+	<p><strong>Discord má v podmínkách služby, že může číst tvoje zprávy.</strong> Černé na bílém. Vědí, s kým mluvíš, kdy, jak dlouho, o čem. Sbírají telemetrii z klienta — co klikáš, kam scrolluješ, jaké hry hraješ. A tyhle data pak putují dál.</p>
+
+	<p>Když se nad tím zamyslíš, je to absurdní. <strong>Soukromá konverzace mezi přáteli putuje přes servery firmy, která na ní vydělává.</strong> Jako kdyby pošťák otvíral každý dopis, pročítal ho, a pak ti do schránky přihodil leták na věci, o kterých ses zmínil.</p>
+
+	<p>A nejde jen o Discord. Stejný model má Messenger, Teams, Slack — všichni. Centralizované platformy fungují tak, že <em>ty jsi produkt</em>. Tvoje data jsou suroviny, tvoje pozornost je zboží.</p>
+
+	<p>Tak jsem si řekl: <strong>co kdybych si to celé prostě napsal sám?</strong></p>
+
+	<p>Server, který běží na nejlevnějším VPS za pár korun měsíčně. Klient, který nevyžaduje browser engine ani gigabajty RAM. Přihlášení bez e-mailu, bez telefonu, bez hesla na serveru — jen kryptografický klíč, který nikdy neopustí tvé zařízení. Tvoje data zůstávají na tvém serveru, oddělená od všech ostatních.</p>
+
+	<p>Není to utopie. Je to pár tisíc řádků Go kódu, SQLite databáze a WebRTC pro hlasové hovory přímo mezi účastníky. Žádné AI modely trénované na tvých konverzacích. Žádná telemetrie. Žádný analytics dashboard. <strong>Prostě chat.</strong></p>
+
+	<p>NORA není pro všechny. Je pro lidi, kterým záleží na tom, kdo čte jejich zprávy. Pro partu kamarádů, která chce vlastní prostor bez dohledu. Pro každého, kdo věří, že soukromí konverzace by mělo být výchozí stav, ne prémiová funkce za $10 měsíčně.</p>
+
+	<p>Celý kód je otevřený pod AGPL-3.0. Můžeš si ho přečíst, forknout, upravit, hostovat. Server ti dokonce nabídne stažení svého vlastního zdrojového kódu. Protože důvěra bez transparentnosti je jen marketing.</p>
+
+	<p class="sig"><span>— K.</span>, autor NORY</p>
+</div>
+
+<!-- Co NORA umí -->
+<section id="what">
+	<h2 class="section-title">Co NORA umí</h2>
+	<p class="section-desc">Všechno co znáš z Discordu — textové kanály, hlasové hovory, sdílení obrazovky, soubory, emoji, role. Ale pod tvou kontrolou. Dál ti vysvětlíme, jak se jednotlivé věci liší.</p>
+</section>
+
+<!-- Anonymita — klíč místo identity -->
+<section id="keys">
+	<h2 class="section-title">Jsi jen klíč</h2>
+	<p class="section-desc">V NORA neexistuje registrace přes e-mail nebo telefon. Tvoje identita je kryptografický klíč. Jméno, které si zvolíš, slouží jen pro přehlednost — server tě zná pouze jako klíč.</p>
+
+	<div class="key-grid">
+		<div class="key-box">
+			<h3>Veřejný klíč</h3>
+			<p class="analogy">= tvoje identita na serveru</p>
+			<ul>
+				<li>Server tě zná jen podle tohoto klíče</li>
+				<li>Ostatní ti přes něj posílají zprávy</li>
+				<li>Žádný e-mail, telefon ani osobní údaj</li>
+			</ul>
+		</div>
+		<div class="key-box">
+			<h3>Privátní klíč</h3>
+			<p class="analogy">= důkaz, že jsi to ty</p>
+			<ul>
+				<li>Máš ho jen ty, na svém zařízení</li>
+				<li>Podepisuješ jím přihlášení</li>
+				<li>Nikdy neopustí tvůj počítač</li>
+			</ul>
+		</div>
+	</div>
+
+	<p class="key-note"><strong>Na serveru není žádné heslo.</strong> Heslo, které si zvolíš, slouží jen k zašifrování tvého privátního klíče na tvém zařízení — jako PIN chrání SIM kartu. Server ho nikdy nevidí, neukládá, nepotřebuje. Ví o tobě jen to, že máš platný klíč.</p>
+</section>
+
+<!-- Jak funguje přihlášení -->
+<section id="auth">
+	<h2 class="section-title">Jak funguje přihlášení</h2>
+	<p class="section-desc">Žádné heslo nikam neputuje. Server ověří tvou identitu kryptografickým podpisem — a je to.</p>
+
+	<div class="key-grid" style="margin-bottom: 2rem;">
+		<div class="key-box" style="grid-column: 1 / -1;">
+			<h3>Analogie — pečetní prsten</h3>
+			<p class="analogy">Proč to funguje</p>
+			<p style="color: var(--text-dim); font-size: 0.95rem; line-height: 1.7;">Král má unikátní pečetní prsten <strong style="color: var(--text);">(privátní klíč)</strong>. Otisk prstenu ve vosku zná každý <strong style="color: var(--text);">(veřejný klíč)</strong>. Když přijde dopis s pečetí, každý může ověřit, že je pravá — ale nikdo ji nemůže vytvořit bez prstenu.</p>
+		</div>
+	</div>
+
+	<h3 style="font-size: 1.3rem; margin-bottom: 1.5rem;">Příklad: Petr se přihlašuje</h3>
+
+	<div class="flow-diagram"><span class="dim">Petr má:</span>
+<span class="dim">  Privátní klíč:</span> <span class="label">[tajné číslo které zná jen on]</span>
+<span class="dim">  Veřejný klíč:</span>  <span class="label">a1b2c3d4e5...</span> <span class="dim">[tohle zná server]</span>
+
+<span class="arrow">1.</span> <span class="label">Petr → Server:</span>
+<span class="dim">   "Ahoj, jsem</span> <span class="label">a1b2c3d4e5</span><span class="dim">, chci se přihlásit"</span>
+
+<span class="arrow">2.</span> <span class="label">Server → Petr:</span>
+<span class="dim">   "Dokaž to. Podepiš mi toto:</span> <span class="label">XKCD-9472-BLAF</span><span class="dim">"</span>
+<span class="dim">   (náhodný text který server právě vymyslel)</span>
+
+<span class="arrow">3.</span> <span class="label">Petr</span> <span class="dim">vezme</span> <span class="label">"XKCD-9472-BLAF"</span>
+<span class="dim">   + svůj privátní klíč</span>
+<span class="dim">   + prohodí to matematickou funkcí</span>
+<span class="dim">   = vznikne podpis:</span> <span class="label">7f3a8b2e...</span>
+
+<span class="arrow">4.</span> <span class="label">Petr → Server:</span>
+<span class="dim">   "Tady máš podpis:</span> <span class="label">7f3a8b2e...</span><span class="dim">"</span>
+
+<span class="arrow">5.</span> <span class="label">Server</span> <span class="dim">vezme:</span>
+<span class="dim">   - původní text:</span> <span class="label">XKCD-9472-BLAF</span>
+<span class="dim">   - Petrův veřejný klíč:</span> <span class="label">a1b2c3d4e5...</span>
+<span class="dim">   - podpis:</span> <span class="label">7f3a8b2e...</span>
+<span class="dim">   - prohodí to ověřovací funkcí</span>
+<span class="dim">   = výsledek:</span> <span class="label">✅ sedí!</span>
+
+<span class="dim">   Server ví, že to je Petr, protože</span> <span class="label">NIKDO JINÝ</span>
+<span class="dim">   nemohl vytvořit tento podpis bez privátního klíče.</span></div>
+
+	<h3 style="font-size: 1.3rem; margin-bottom: 1.5rem;">Proč to útočník nemůže podvrhnout</h3>
+
+	<div class="flow-diagram"><span class="label">Eva</span> <span class="dim">chce být Petr:</span>
+
+<span class="arrow">1.</span> <span class="label">Eva → Server:</span>
+<span class="dim">   "Ahoj, jsem</span> <span class="label">a1b2c3d4e5</span><span class="dim">" (Petrův veřejný klíč)</span>
+
+<span class="arrow">2.</span> <span class="label">Server → Eva:</span>
+<span class="dim">   "Dokaž to. Podepiš mi:</span> <span class="label">MZRT-1183-QQPX</span><span class="dim">"</span>
+
+<span class="arrow">3.</span> <span class="dim">Eva nemá Petrův privátní klíč</span>
+<span class="dim">   → nemůže vytvořit správný podpis</span>
+<span class="dim">   → cokoliv pošle, ověření selže</span>
+<span class="dim">   = </span><span class="label">❌ přístup zamítnut</span></div>
+
+	<div class="key-grid">
+		<div class="key-box">
+			<h3>Klíčový princip</h3>
+			<p class="analogy">Jednosměrná cesta</p>
+			<ul>
+				<li><strong style="color: var(--text);">Privátní klíč</strong> → může vytvořit podpis</li>
+				<li><strong style="color: var(--text);">Veřejný klíč</strong> → může ověřit podpis, ale NEMŮŽE ho vytvořit</li>
+				<li>Jako bys mohl ověřit otisk prstenu ve vosku, ale nemohl vyrobit prsten podle otisku</li>
+			</ul>
+		</div>
+		<div class="key-box">
+			<h3>Proč nový challenge pokaždé</h3>
+			<p class="analogy">Ochrana proti odposlechu</p>
+			<ul>
+				<li>Server pokaždé vymyslí JINÝ náhodný text</li>
+				<li>I kdyby někdo odposlouchal podpis z minula, je k ničemu</li>
+				<li>Příště bude jiný text, jiný podpis — starý je bezcenný</li>
+			</ul>
+		</div>
+	</div>
+</section>
+
+<!-- Přímé zprávy -->
+<section id="dm">
+	<h2 class="section-title">Přímé zprávy</h2>
+	<p class="section-desc">DMs v NORA fungují jinak než jinde. Server neví co si píšeš, neukládá historii a soubory jdou přímo mezi účastníky.</p>
+
+	<div class="key-grid">
+		<div class="key-box">
+			<h3>Šifrované end-to-end</h3>
+			<p class="analogy">Server nevidí obsah</p>
+			<ul>
+				<li>Zpráva se zašifruje na tvém zařízení tvým a kamarádovým klíčem</li>
+				<li>Server přepošle šifrovaný blob — nemůže ho přečíst</li>
+				<li>Dešifruje ho až kamarádův klient na jeho zařízení</li>
+				<li>I kdyby někdo získal přístup k serveru, zprávy jsou nečitelné</li>
+			</ul>
+		</div>
+		<div class="key-box">
+			<h3>Historie jen u tebe</h3>
+			<p class="analogy">Server nic neukládá</p>
+			<ul>
+				<li>Historie zpráv se ukládá jen na disky účastníků</li>
+				<li>Server zprávu přepošle a zapomene</li>
+				<li>Kdokoliv z účastníků může smazat historii na obou stranách</li>
+				<li>Žádná databáze konverzací na serveru k vyzrazení</li>
+			</ul>
+		</div>
+	</div>
+
+	<div class="flow-diagram"><span class="label">  Ty</span>                        <span class="label">Server</span>                    <span class="label">Kamarád</span>
+<span class="dim">  |                           |                         |</span>
+<span class="dim">  |</span>  <span class="arrow">--[zašifrováno]--------></span>  <span class="dim">|</span>  <span class="arrow">---[přeposláno]------></span>  <span class="dim">|</span>
+<span class="dim">  |                           |                         |</span>  <span class="dim">[dešifrováno]</span>
+<span class="dim">  |                           |                         |</span>
+<span class="dim">  tvůj klíč              nevidí obsah              jeho klíč</span>
+<span class="dim">                         neukládá nic</span></div>
+
+	<div class="key-grid" style="margin-top: 2rem;">
+		<div class="key-box" style="grid-column: 1 / -1;">
+			<h3>P2P sdílení souborů</h3>
+			<p class="analogy">Přímo mezi účastníky, bez serveru</p>
+			<ul>
+				<li>Soubory v DMs se posílají přímo mezi účastníky přes WebRTC — server se jich nedotýká</li>
+				<li>Žádný upload na server, žádný limit velikosti, žádné ukládání na cizí disk</li>
+				<li>Soubor putuje nejkratší cestou z tvého počítače ke kamarádovi</li>
+			</ul>
+		</div>
+	</div>
+</section>
+
+<!-- Soubory -->
+<section id="files">
+	<h2 class="section-title">Soubory</h2>
+	<p class="section-desc">Discord má limit 25 MB (500 MB za $10/měsíc). V NORA limit nastavuje admin serveru — nebo žádný není. A umíme víc než jen nahrát soubor.</p>
+
+	<div class="key-grid">
+		<div class="key-box">
+			<h3>Chunked upload s obnovou</h3>
+			<p class="analogy">Výpadek neznamená začít znovu</p>
+			<ul>
+				<li>Soubor se rozdělí na malé kousky (chunky) a posílá se po částech</li>
+				<li>Při výpadku připojení se přenos obnoví tam, kde skončil</li>
+				<li>Progress bar s rychlostí a odhadovaným časem</li>
+				<li>Pause a resume kdykoliv</li>
+			</ul>
+		</div>
+		<div class="key-box">
+			<h3>Komprese za běhu</h3>
+			<p class="analogy">Zip při uploadu, unzip při downloadu</p>
+			<ul>
+				<li>Při nahrávání se soubory automaticky zkomprimují</li>
+				<li>Při stahování se zase rozbalí — uživatel neřeší nic</li>
+				<li>Šetří místo na serveru i přenosovou kapacitu</li>
+			</ul>
+		</div>
+		<div class="key-box">
+			<h3>Sdílené adresáře</h3>
+			<p class="analogy">Jako síťový disk</p>
+			<ul>
+				<li>Sdílej celé složky s ostatními na serveru</li>
+				<li>Připoj sdílený adresář jako síťový disk ve svém systému</li>
+				<li>Procházej, stahuj a nahrávej soubory jako na lokálním disku</li>
+				<li>Oprávnění per uživatel — kdo co vidí a může upravovat</li>
+			</ul>
+		</div>
+		<div class="key-box">
+			<h3>P2P přenos v DMs</h3>
+			<p class="analogy">Přímo mezi počítači</p>
+			<ul>
+				<li>Soubory v přímých zprávách jdou přímo mezi účastníky</li>
+				<li>Server se přenosu nedotýká — žádný upload, žádné ukládání</li>
+				<li>Žádný limit velikosti</li>
+			</ul>
+		</div>
+	</div>
+</section>
+
+<!-- LAN Party -->
+<section id="lan">
+	<h2 class="section-title">LAN Party</h2>
+	<p class="section-desc">Hrajete spolu online a potřebujete LAN? NORA umí vytvořit virtuální síť mezi účastníky — bez složitého nastavování.</p>
+
+	<div class="key-grid">
+		<div class="key-box">
+			<h3>WireGuard VPN</h3>
+			<p class="analogy">Virtuální LAN přes internet</p>
+			<ul>
+				<li>Vytvoří WireGuard tunel mezi účastníky serveru</li>
+				<li>Každý dostane svoji IP adresu v privátní síti</li>
+				<li>Hry vidí ostatní jako by byli na stejné LAN</li>
+				<li>Šifrovaný tunel — nikdo po cestě nevidí provoz</li>
+			</ul>
+		</div>
+		<div class="key-box">
+			<h3>Jedním klikem</h3>
+			<p class="analogy">Žádná konfigurace</p>
+			<ul>
+				<li>Admin vytvoří LAN Party v NORA</li>
+				<li>Ostatní kliknou "Join" — klíče se vygenerují automaticky</li>
+				<li>Helper aplikace nastaví tunel na pozadí</li>
+				<li>Odpojení jedním klikem, smazání party uklidí vše</li>
+			</ul>
+		</div>
+	</div>
+</section>
+
+<!-- Game Servery -->
+<section id="gameservers">
+	<h2 class="section-title">Game Servery</h2>
+	<p class="section-desc">Spouštěj herní servery přímo z NORA. Minecraft, Valheim, Factorio — bez ručního nastavování Dockeru.</p>
+
+	<div class="key-grid">
+		<div class="key-box">
+			<h3>Jedním klikem</h3>
+			<p class="analogy">Vyber preset, pojmenuj, spusť</p>
+			<ul>
+				<li>Předpřipravené presety pro populární hry</li>
+				<li>Server se spustí v Docker kontejneru na pozadí</li>
+				<li>Start, stop, restart přímo z NORA klienta</li>
+				<li>Konzole pro příkazy (rcon) v reálném čase</li>
+			</ul>
+		</div>
+		<div class="key-box">
+			<h3>File explorer + editor</h3>
+			<p class="analogy">Plná kontrola nad configem</p>
+			<ul>
+				<li>Procházej soubory herního serveru přímo v NORA</li>
+				<li>Vestavěný textový editor pro úpravu configů</li>
+				<li>Nahrávej mody a pluginy přes file upload</li>
+				<li>Vše řízeno přes server.toml — žádné hardcoded hodnoty</li>
+			</ul>
+		</div>
+	</div>
+</section>
+
+<!-- Stav projektu -->
+<div class="manifesto" id="status">
+	<h2 class="manifesto-title">Stav projektu</h2>
+
+	<p>NORA není hotový produkt. Je to funkční kostra — důkaz, že to jde udělat jinak.</p>
+
+	<p>Všechno, co je na této stránce zmíněné, <strong>funguje</strong>. Textové kanály, voice, šifrované DMs, soubory, LAN Party, game servery — to všechno si můžeš stáhnout a vyzkoušet. Ale pořád zbývají drobnosti k dodělání, hrany k zabroušení, detaily k vyladění.</p>
+
+	<p>Cílem v tuhle chvíli není konkurovat Discordu feature po feature. Jde o to ukázat, že chat pro partu kamarádů <strong>nepotřebuje korporátní infrastrukturu, sledování a prodej dat</strong>. Že to samé se dá postavit jinak — otevřeně, jednoduše, bez kompromisů na soukromí.</p>
+
+	<p>Tohle je prezentace té kostry. Pokud tě to zaujalo, stáhni si klienta, rozjeď si server a vyzkoušej to.</p>
+</div>
+
+<footer>
+	<div class="footer-links">
+		<a href="/api/source" target="_blank">Zdrojový kód serveru</a>
+		<a href="/api/health" target="_blank">Status</a>
+	</div>
+	<p>NORA &mdash; No-Oversight Realtime Alternative. Open source, self-hosted, svobodný chat.</p>
+</footer>
+
+</body>
+</html>

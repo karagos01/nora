@@ -1,0 +1,72 @@
+# Go binaries
+server/nora
+server/nora-client
+server/nora-native
+*.exe
+*.dll
+*.so
+*.dylib
+
+# Dependencies
+vendor/
+
+# Build
+dist/
+build/
+client/build/
+
+# Rust / Tauri
+client/src-tauri/target/
+
+# Data
+data/
+*.db
+*.db-journal
+*.db-wal
+*.db-shm
+uploads/
+
+# Config (user-specific)
+nora.toml
+!nora.example.toml
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Node
+client/node_modules/
+client/.svelte-kit/
+
+# Environment
+.env
+.env.*
+
+# Test
+coverage/
+*.cover
+*.out
+
+# Old code
+old/
+
+# Binaries / archives
+*.zip
+NORA-windows/
+client-native/nora-native
+wg-helper/nora-lan
+wg-helper/nora-native
+
+# Claude / AI prompts
+nora-*-prompt.md
+codex.md
+audit.md
+bugs.md
+AGENTS.md
