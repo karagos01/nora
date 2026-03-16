@@ -85,6 +85,7 @@ func setupDeps(t *testing.T) *handlers.Deps {
 		FileStorage:         &queries.FileStorageQueries{DB: db.DB},
 		Shares:              &queries.ShareQueries{DB: db.DB},
 		Whiteboards:         &queries.WhiteboardQueries{DB: db.DB},
+		LiveWBQ:             &queries.LiveWBQueries{DB: db.DB},
 		LAN:                 &queries.LANQueries{DB: db.DB},
 		GameServerQ:         &queries.GameServerQueries{DB: db.DB},
 		SwarmSeeds:          &queries.SwarmQueries{DB: db.DB},

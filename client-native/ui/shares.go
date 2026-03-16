@@ -90,6 +90,11 @@ type SharesView struct {
 	swarmBtns    []widget.Clickable
 	swarmCounts  map[string]int // fileID → seeder count
 
+	// Shared file explorer widget
+	fileWidget    *FileExplorerWidget
+	deleteSelBtn  widget.Clickable
+	clearSelBtn   widget.Clickable
+	sortedFiles   []FileExplorerEntry
 	// State
 	ActiveShareID string
 	BrowsePath    string // current path in browsed directory
@@ -105,6 +110,7 @@ func NewSharesView(a *App) *SharesView {
 	v.permList.Axis = layout.Vertical
 	v.BrowsePath = "/"
 	v.editPermIdx = -1
+	v.fileWidget = NewFileExplorerWidget(a)
 	return v
 }
 
@@ -464,30 +470,127 @@ func (v *SharesView) LayoutMain(gtx layout.Context) layout.Dimensions {
 		} else if v.ShowPerms {
 			v.loadPermissions()
 		} else {
+			v.fileWidget.ClearSelection()
 			v.loadFiles()
 		}
 	}
 
+	// FileExplorerWidget event handling
+	fw := v.fileWidget
+	fw.HandleColumnClick(gtx)
+	fw.HandleRenameEvents(gtx)
+
+	// Handle rename completion
+	canWrite := isOwner || activeShare.CanWrite
+	if fw.RenameOK && canWrite {
+		fw.RenameOK = false
+		newName := fw.RenameName
+		oldName := fw.RenameOrigName
+		if oldName != "" && newName != oldName {
+			shareID := v.ActiveShareID
+			browsePath := v.BrowsePath
+			go func() {
+				if c := v.app.Conn(); c != nil {
+					if err := c.Client.RenameShareFile(shareID, browsePath, oldName, newName); err != nil {
+						log.Printf("RenameShareFile error: %v", err)
+					}
+					v.loadFiles()
+					v.app.Window.Invalidate()
+				}
+			}()
+		}
+	}
+
+	// Handle batch delete selected
+	if v.deleteSelBtn.Clicked(gtx) && canWrite {
+		count := fw.SelectedCount()
+		if count > 0 {
+			indices := fw.SelectedIndices()
+			type delItem struct {
+				relPath  string
+				fileName string
+			}
+			var items []delItem
+			for _, idx := range indices {
+				if idx < len(v.sortedFiles) {
+					items = append(items, delItem{relPath: v.BrowsePath, fileName: v.sortedFiles[idx].Name})
+				}
+			}
+			v.app.ConfirmDlg.Show("Delete Selected", fmt.Sprintf("Delete %d items?", count), func() {
+				shareID := v.ActiveShareID
+				go func() {
+					if c := v.app.Conn(); c != nil {
+						for _, item := range items {
+							if err := c.Client.DeleteShareFile(shareID, item.relPath, item.fileName); err != nil {
+								log.Printf("DeleteShareFile error: %v", err)
+							}
+						}
+						fw.ClearSelection()
+						v.loadFiles()
+						v.app.Window.Invalidate()
+					}
+				}()
+			})
+		}
+	}
+	if v.clearSelBtn.Clicked(gtx) {
+		fw.ClearSelection()
+	}
+
+	// Convert Files → sortedFiles
+	v.sortedFiles = make([]FileExplorerEntry, len(v.Files))
 	for i, f := range v.Files {
+		var modTime time.Time
+		if f.ModifiedAt != nil {
+			modTime = *f.ModifiedAt
+		}
+		v.sortedFiles[i] = FileExplorerEntry{
+			Name:    f.FileName,
+			IsDir:   f.IsDir,
+			Size:    f.FileSize,
+			ModTime: modTime,
+			ID:      f.ID,
+		}
+	}
+	fw.SortEntries(v.sortedFiles)
+
+	// Handle sorted file clicks
+	if len(v.fileBtns) < len(v.sortedFiles)+1 {
+		v.fileBtns = make([]widget.Clickable, len(v.sortedFiles)+10)
+	}
+	if len(v.downloadBtns) < len(v.sortedFiles)+1 {
+		v.downloadBtns = make([]widget.Clickable, len(v.sortedFiles)+10)
+	}
+	if len(v.swarmBtns) < len(v.sortedFiles)+1 {
+		v.swarmBtns = make([]widget.Clickable, len(v.sortedFiles)+10)
+	}
+
+	for i, se := range v.sortedFiles {
+		// Find the original api.SharedFileEntry by ID
 		if i < len(v.fileBtns) && v.fileBtns[i].Clicked(gtx) {
-			if f.IsDir {
-				// Validation: skip dangerous names
-				if strings.Contains(f.FileName, "..") || strings.ContainsAny(f.FileName, "/\\") {
+			if se.IsDir {
+				if strings.Contains(se.Name, "..") || strings.ContainsAny(se.Name, "/\\") {
 					continue
 				}
 				if v.BrowsePath == "/" {
-					v.BrowsePath = "/" + f.FileName
+					v.BrowsePath = "/" + se.Name
 				} else {
-					v.BrowsePath = v.BrowsePath + "/" + f.FileName
+					v.BrowsePath = v.BrowsePath + "/" + se.Name
 				}
+				fw.ClearSelection()
+				fw.CancelRename()
 				v.loadFiles()
 			}
 		}
-		if i < len(v.downloadBtns) && v.downloadBtns[i].Clicked(gtx) && !f.IsDir {
-			v.requestDownload(f)
+		if i < len(v.downloadBtns) && v.downloadBtns[i].Clicked(gtx) && !se.IsDir {
+			if origFile := v.findOrigFileByID(se.ID); origFile != nil {
+				v.requestDownload(*origFile)
+			}
 		}
-		if i < len(v.swarmBtns) && v.swarmBtns[i].Clicked(gtx) && !f.IsDir {
-			v.requestSwarmDownload(f)
+		if i < len(v.swarmBtns) && v.swarmBtns[i].Clicked(gtx) && !se.IsDir {
+			if origFile := v.findOrigFileByID(se.ID); origFile != nil {
+				v.requestSwarmDownload(*origFile)
+			}
 		}
 	}
 
@@ -523,6 +626,10 @@ func (v *SharesView) LayoutMain(gtx layout.Context) layout.Dimensions {
 					}),
 				)
 			})
+		}),
+		// Selection bar
+		layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+			return fw.LayoutDeleteSelectedBar(gtx, &v.deleteSelBtn, &v.clearSelBtn)
 		}),
 		// File list or Permission editor or Limits editor
 		layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
@@ -736,7 +843,7 @@ func (v *SharesView) layoutLimits(gtx layout.Context, share *api.SharedDirectory
 				sz := v.shareStatSize
 				fc := v.shareStatFiles
 				v.app.mu.RUnlock()
-				text := fmt.Sprintf("Current usage: %d files, %s", fc, formatFileSize(sz))
+				text := fmt.Sprintf("Current usage: %d files, %s", fc, FormatBytes(sz))
 				return layout.Inset{Bottom: unit.Dp(12)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
 					lbl := material.Body2(v.app.Theme.Material, text)
 					lbl.Color = ColorAccent
@@ -1317,119 +1424,80 @@ func (v *SharesView) layoutMemberPickerRow(gtx layout.Context, btn *widget.Click
 }
 
 func (v *SharesView) layoutFileList(gtx layout.Context) layout.Dimensions {
-	files := v.Files
+	fw := v.fileWidget
+	sorted := v.sortedFiles
 
-	if len(v.fileBtns) < len(files)+1 {
-		v.fileBtns = make([]widget.Clickable, len(files)+10)
-	}
-	if len(v.downloadBtns) < len(files)+1 {
-		v.downloadBtns = make([]widget.Clickable, len(files)+10)
-	}
-	if len(v.swarmBtns) < len(files)+1 {
-		v.swarmBtns = make([]widget.Clickable, len(files)+10)
-	}
-
-	if len(files) == 0 {
+	if len(sorted) == 0 {
 		return layoutCentered(gtx, v.app.Theme, "No files in this folder", ColorTextDim)
 	}
 
-	// Zkontrolovat swarm enabled
 	conn := v.app.Conn()
 	swarmEnabled := conn != nil && conn.SwarmSharingEnabled
 
-	return material.List(v.app.Theme.Material, &v.mainList).Layout(gtx, len(files), func(gtx layout.Context, i int) layout.Dimensions {
-		f := files[i]
-		var swarmBtn *widget.Clickable
-		seedCount := 0
-		if swarmEnabled && !f.IsDir && i < len(v.swarmBtns) {
-			swarmBtn = &v.swarmBtns[i]
-			if v.swarmCounts != nil {
-				seedCount = v.swarmCounts[f.ID]
-			}
-		}
-		return v.layoutFileItem(gtx, &v.fileBtns[i], &v.downloadBtns[i], swarmBtn, seedCount, f)
-	})
-}
+	return layout.Flex{Axis: layout.Vertical}.Layout(gtx,
+		// Column headers
+		layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+			return fw.LayoutColumnHeaders(gtx)
+		}),
+		// File list
+		layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
+			return material.List(v.app.Theme.Material, &v.mainList).Layout(gtx, len(sorted), func(gtx layout.Context, i int) layout.Dimensions {
+				entry := sorted[i]
+				selected := fw.Selected[i]
+				hovered := i < len(v.fileBtns) && v.fileBtns[i].Hovered()
 
-func (v *SharesView) layoutFileItem(gtx layout.Context, clickable, downloadBtn *widget.Clickable, swarmBtn *widget.Clickable, seedCount int, f api.SharedFileEntry) layout.Dimensions {
-	bg := ColorBg
-	if clickable.Hovered() {
-		bg = ColorHover
-	}
+				// Build extra widgets: swarm badge, swarm button, download button
+				var extras []layout.Widget
 
-	return clickable.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-		paint.FillShape(gtx.Ops, bg, clip.Rect{Max: image.Pt(gtx.Constraints.Max.X, gtx.Dp(44))}.Op())
-
-		return layout.Inset{Top: unit.Dp(8), Bottom: unit.Dp(8), Left: unit.Dp(16), Right: unit.Dp(12)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-			return layout.Flex{Alignment: layout.Middle}.Layout(gtx,
-				// Ikona
-				layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-					icon := IconFile
-					if f.IsDir {
-						icon = IconFolder
-					}
-					clr := ColorTextDim
-					if f.IsDir {
-						clr = ColorAccent
-					}
-					return layoutIcon(gtx, icon, 20, clr)
-				}),
-				// Name
-				layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
-					return layout.Inset{Left: unit.Dp(8)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-						lbl := material.Body2(v.app.Theme.Material, f.FileName)
-						lbl.Color = ColorText
-						lbl.MaxLines = 1
-						return lbl.Layout(gtx)
-					})
-				}),
 				// Seed count badge
-				layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-					if f.IsDir || seedCount <= 0 {
-						return layout.Dimensions{}
-					}
-					return layout.Inset{Right: unit.Dp(4)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-						lbl := material.Caption(v.app.Theme.Material, fmt.Sprintf("%d seeds", seedCount))
+				seedCount := 0
+				if swarmEnabled && !entry.IsDir && v.swarmCounts != nil {
+					seedCount = v.swarmCounts[entry.ID]
+				}
+				if seedCount > 0 {
+					count := seedCount
+					extras = append(extras, func(gtx layout.Context) layout.Dimensions {
+						lbl := material.Caption(v.app.Theme.Material, fmt.Sprintf("%d seeds", count))
 						lbl.Color = ColorOnline
 						return lbl.Layout(gtx)
 					})
-				}),
-				// Size (files only)
-				layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-					if f.IsDir {
-						return layout.Dimensions{}
+					// Swarm button
+					if i < len(v.swarmBtns) {
+						btn := &v.swarmBtns[i]
+						extras = append(extras, func(gtx layout.Context) layout.Dimensions {
+							return btn.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+								return layoutSmallButton(gtx, v.app.Theme, "Swarm", ColorOnline, btn.Hovered())
+							})
+						})
 					}
-					return layout.Inset{Right: unit.Dp(8)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-						lbl := material.Caption(v.app.Theme.Material, formatFileSize(f.FileSize))
-						lbl.Color = ColorTextDim
-						return lbl.Layout(gtx)
-					})
-				}),
-				// Swarm download button (only if swarmEnabled and seeders > 0)
-				layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-					if f.IsDir || swarmBtn == nil || seedCount <= 0 {
-						return layout.Dimensions{}
-					}
-					return layout.Inset{Right: unit.Dp(4)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-						return swarmBtn.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-							lbl := material.Caption(v.app.Theme.Material, "Swarm")
-							lbl.Color = ColorOnline
-							return lbl.Layout(gtx)
+				}
+
+				// Download button (files only)
+				if !entry.IsDir && i < len(v.downloadBtns) {
+					btn := &v.downloadBtns[i]
+					extras = append(extras, func(gtx layout.Context) layout.Dimensions {
+						return btn.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+							return layoutIcon(gtx, IconDownload, 16, ColorAccent)
 						})
 					})
-				}),
-				// Download button (files only)
-				layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-					if f.IsDir {
-						return layout.Dimensions{}
-					}
-					return downloadBtn.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-						return layoutIcon(gtx, IconDownload, 18, ColorAccent)
-					})
-				}),
-			)
-		})
-	})
+				}
+
+				return v.fileBtns[i].Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+					return fw.LayoutEntryRow(gtx, entry, i, selected, hovered, extras...)
+				})
+			})
+		}),
+	)
+}
+
+// findOrigFileByID looks up the original SharedFileEntry by ID.
+func (v *SharesView) findOrigFileByID(id string) *api.SharedFileEntry {
+	for i := range v.Files {
+		if v.Files[i].ID == id {
+			return &v.Files[i]
+		}
+	}
+	return nil
 }
 
 func (v *SharesView) layoutShareItem(gtx layout.Context, btn *widget.Clickable, name, owner string, online, active bool) layout.Dimensions {
@@ -1615,7 +1683,7 @@ func (v *SharesView) layoutP2PFileItem(gtx layout.Context, stopBtn *widget.Click
 								return lbl.Layout(gtx)
 							}),
 							layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-								lbl := material.Caption(v.app.Theme.Material, formatFileSize(f.FileSize))
+								lbl := material.Caption(v.app.Theme.Material, FormatBytes(f.FileSize))
 								lbl.Color = ColorTextDim
 								return lbl.Layout(gtx)
 							}),
@@ -2019,17 +2087,3 @@ func (v *SharesView) persistMountedShares(conn *ServerConnection) {
 	store.UpdateMountedShares(v.app.PublicKey, conn.URL, mounted)
 }
 
-// --- Helpers ---
-
-func formatFileSize(bytes int64) string {
-	if bytes < 1024 {
-		return fmt.Sprintf("%d B", bytes)
-	}
-	if bytes < 1024*1024 {
-		return fmt.Sprintf("%.1f KB", float64(bytes)/1024)
-	}
-	if bytes < 1024*1024*1024 {
-		return fmt.Sprintf("%.1f MB", float64(bytes)/(1024*1024))
-	}
-	return fmt.Sprintf("%.1f GB", float64(bytes)/(1024*1024*1024))
-}

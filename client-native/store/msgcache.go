@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sort"
 	"sync"
 	"time"
 )
@@ -83,13 +84,16 @@ func (mc *MessageCache) Save() {
 	mc.dirty = false
 }
 
-// GetMessages returns cached messages for a channel.
+// GetMessages returns cached messages for a channel, sorted by time.
 func (mc *MessageCache) GetMessages(channelID string) []CachedMessage {
 	mc.mu.Lock()
 	defer mc.mu.Unlock()
 	msgs := mc.messages[channelID]
 	result := make([]CachedMessage, len(msgs))
 	copy(result, msgs)
+	sort.Slice(result, func(i, j int) bool {
+		return result[i].CreatedAt.Before(result[j].CreatedAt)
+	})
 	return result
 }
 

@@ -115,3 +115,59 @@ func DecryptDM(mySecretHex, theirPubHex, encryptedHex string) (string, error) {
 
 	return string(plaintext), nil
 }
+
+// DeriveStorageKey derives a 32-byte AES key from the ed25519 seed for local file encryption.
+// Uses HKDF-SHA256 with info="nora-local-storage" (different from DM key derivation).
+func DeriveStorageKey(seedHex string) ([]byte, error) {
+	seed, err := hex.DecodeString(seedHex)
+	if err != nil || len(seed) != 32 {
+		return nil, errors.New("invalid seed")
+	}
+	defer ClearBytes(seed)
+
+	hkdfReader := hkdf.New(sha256.New, seed, []byte{}, []byte("nora-local-storage"))
+	key := make([]byte, 32)
+	if _, err := io.ReadFull(hkdfReader, key); err != nil {
+		return nil, err
+	}
+	return key, nil
+}
+
+// EncryptLocal encrypts data with AES-256-GCM using the storage key.
+// Returns nonce(12) + ciphertext+tag.
+func EncryptLocal(key, plaintext []byte) ([]byte, error) {
+	block, err := aes.NewCipher(key)
+	if err != nil {
+		return nil, err
+	}
+	aesGCM, err := cipher.NewGCM(block)
+	if err != nil {
+		return nil, err
+	}
+	nonce := make([]byte, 12)
+	if _, err := rand.Read(nonce); err != nil {
+		return nil, err
+	}
+	ciphertext := aesGCM.Seal(nil, nonce, plaintext, nil)
+	result := make([]byte, 12+len(ciphertext))
+	copy(result[:12], nonce)
+	copy(result[12:], ciphertext)
+	return result, nil
+}
+
+// DecryptLocal decrypts data encrypted by EncryptLocal.
+// Input: nonce(12) + ciphertext+tag.
+func DecryptLocal(key, data []byte) ([]byte, error) {
+	if len(data) < 28 {
+		return nil, errors.New("data too short")
+	}
+	block, err := aes.NewCipher(key)
+	if err != nil {
+		return nil, err
+	}
+	aesGCM, err := cipher.NewGCM(block)
+	if err != nil {
+		return nil, err
+	}
+	return aesGCM.Open(nil, data[:12], data[12:], nil)
+}

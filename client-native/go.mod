@@ -14,7 +14,6 @@ require (
 	github.com/hanwen/go-fuse/v2 v2.9.0
 	github.com/kazzmir/opus-go v1.3.0
 	github.com/kbinani/screenshot v0.0.0-20250624051815-089614a94018
-	github.com/kkdai/youtube/v2 v2.10.5
 	github.com/pion/webrtc/v4 v4.2.9
 	github.com/skip2/go-qrcode v0.0.0-20200617195104-da1b6568686e
 	golang.org/x/crypto v0.48.0
@@ -26,15 +25,11 @@ require (
 
 require (
 	gioui.org/shader v1.0.8 // indirect
-	github.com/bitly/go-simplejson v0.5.1 // indirect
 	github.com/dlclark/regexp2 v1.11.5 // indirect
-	github.com/dop251/goja v0.0.0-20250125213203-5ef83b82af17 // indirect
 	github.com/dustin/go-humanize v1.0.1 // indirect
 	github.com/gen2brain/shm v0.1.0 // indirect
-	github.com/go-sourcemap/sourcemap v2.1.4+incompatible // indirect
 	github.com/go-text/typesetting v0.3.0 // indirect
 	github.com/godbus/dbus/v5 v5.1.0 // indirect
-	github.com/google/pprof v0.0.0-20250317173921-a4b03ec1a45e // indirect
 	github.com/jezek/xgb v1.1.1 // indirect
 	github.com/lxn/win v0.0.0-20210218163916-a377121e959e // indirect
 	github.com/mattn/go-isatty v0.0.20 // indirect

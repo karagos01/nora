@@ -2,10 +2,14 @@ package store
 
 import (
 	"encoding/json"
+	"log/slog"
 	"os"
 	"path/filepath"
+	"sort"
 	"sync"
 	"time"
+
+	"nora-client/crypto"
 )
 
 // StoredDMMessage is a decrypted DM message stored locally.
@@ -20,16 +24,24 @@ type StoredDMMessage struct {
 
 // DMHistory manages local DM message persistence per identity.
 type DMHistory struct {
-	mu        sync.Mutex
-	publicKey string
-	messages  map[string][]StoredDMMessage // convID → messages (sorted by time)
-	dirty     bool
+	mu         sync.Mutex
+	publicKey  string
+	secretKey  string // ed25519 seed hex — for storage encryption
+	storageKey []byte // derived AES key (cached)
+	messages   map[string][]StoredDMMessage // convID → messages (sorted by time)
+	dirty      bool
 }
 
-func NewDMHistory(publicKey string) *DMHistory {
+func NewDMHistory(publicKey, secretKey string) *DMHistory {
 	h := &DMHistory{
 		publicKey: publicKey,
+		secretKey: secretKey,
 		messages:  make(map[string][]StoredDMMessage),
+	}
+	if secretKey != "" {
+		if key, err := crypto.DeriveStorageKey(secretKey); err == nil {
+			h.storageKey = key
+		}
 	}
 	h.load()
 	return h
@@ -49,7 +61,20 @@ func (h *DMHistory) load() {
 	if err != nil {
 		return
 	}
-	json.Unmarshal(data, &h.messages)
+
+	// Try decrypting first (encrypted format)
+	if h.storageKey != nil && len(data) >= 28 {
+		if plain, err := crypto.DecryptLocal(h.storageKey, data); err == nil {
+			json.Unmarshal(plain, &h.messages)
+			return
+		}
+	}
+
+	// Fallback: plaintext JSON (migration from old format)
+	if json.Unmarshal(data, &h.messages) == nil && h.storageKey != nil {
+		h.dirty = true // re-save encrypted
+		slog.Info("dm history: migrating to encrypted format", "key", h.publicKey[:16])
+	}
 }
 
 func (h *DMHistory) Save() {
@@ -62,6 +87,12 @@ func (h *DMHistory) Save() {
 	data, err := json.Marshal(h.messages)
 	if err != nil {
 		return
+	}
+	// Encrypt if we have a storage key
+	if h.storageKey != nil {
+		if enc, err := crypto.EncryptLocal(h.storageKey, data); err == nil {
+			data = enc
+		}
 	}
 	os.WriteFile(h.historyPath(), data, 0600)
 	h.dirty = false
@@ -131,6 +162,9 @@ func (h *DMHistory) GetMessages(convID string) []StoredDMMessage {
 	msgs := h.messages[convID]
 	result := make([]StoredDMMessage, len(msgs))
 	copy(result, msgs)
+	sort.Slice(result, func(i, j int) bool {
+		return result[i].CreatedAt.Before(result[j].CreatedAt)
+	})
 	return result
 }
 

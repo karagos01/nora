@@ -99,6 +99,7 @@ type App struct {
 	LobbyJoinDlg   *LobbyJoinDialog
 	ThreadView     *ThreadView
 	WhiteboardView *WhiteboardView
+	LiveWB         *LiveWhiteboardView
 	KanbanView     *KanbanView
 	KanbanDlg      *CardEditDialog
 	CalendarView   *CalendarView
@@ -113,6 +114,7 @@ type App struct {
 	// File drop (OS drag-and-drop → upload)
 	DroppedFiles        chan []string
 	fileDropInitialized bool
+	fileDropHWND        uintptr // Windows only: deferred HWND for file drop setup
 	useTransferDrop     bool
 	showDropOverlay     bool // visual indication during drag-over (Wayland)
 
@@ -216,6 +218,7 @@ func NewApp(w *app.Window, version string) *App {
 	a.LobbyJoinDlg = NewLobbyJoinDialog(a)
 	a.ThreadView = NewThreadView(a)
 	a.WhiteboardView = NewWhiteboardView(a)
+	a.LiveWB = NewLiveWhiteboardView(a)
 	a.KanbanView = NewKanbanView(a)
 	a.KanbanDlg = NewCardEditDialog(a)
 	a.CalendarView = NewCalendarView(a)
@@ -320,7 +323,7 @@ doneFileDrop:
 		if conn := a.Conn(); conn != nil && conn.Call != nil && conn.Call.IsActive() && a.Mode != ViewDM {
 			hasCallOverlay = true
 		}
-		if a.ShowAddServer || a.UserPopup.Visible || a.ConfirmDlg.Visible || a.TimeoutDlg.Visible || a.BanDlg.Visible || a.CreateDlg.Visible || a.CreateGroupDlg.Visible || a.ChannelEditDlg.Visible || a.CatEditDlg.Visible || a.UploadDlg.Visible || a.SaveDlg.Visible || a.ZipUploadDlg.Visible || a.ZipExtractDlg.Visible || a.P2POfferDlg.Visible || a.ContextMenu.Visible || a.LinkFileDlg.Visible || a.LobbyJoinDlg.visible || a.QRDlg.Visible || a.KanbanDlg.Visible || a.CalendarDlg.Visible || hasCallOverlay {
+		if a.ShowAddServer || a.UserPopup.Visible || a.ConfirmDlg.Visible || a.TimeoutDlg.Visible || a.BanDlg.Visible || a.CreateDlg.Visible || a.CreateGroupDlg.Visible || a.ChannelEditDlg.Visible || a.CatEditDlg.Visible || a.UploadDlg.Visible || a.SaveDlg.Visible || a.ZipUploadDlg.Visible || a.ZipExtractDlg.Visible || a.P2POfferDlg.Visible || a.ContextMenu.Visible || a.LinkFileDlg.Visible || a.LobbyJoinDlg.visible || a.QRDlg.Visible || a.KanbanDlg.Visible || a.CalendarDlg.Visible || a.InputDlg.Visible || hasCallOverlay {
 			dims = a.layoutWithOverlay(gtx)
 		} else {
 			dims = a.layoutMain(gtx)
@@ -534,6 +537,10 @@ func (a *App) layoutMain(gtx layout.Context) layout.Dimensions {
 				}),
 				// Main area (messages / settings / group / stream viewer / whiteboard)
 				layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
+					// Live whiteboard overlay
+					if a.LiveWB != nil && a.LiveWB.Visible {
+						return a.LiveWB.Layout(gtx)
+					}
 					// Whiteboard overlay
 					if a.WhiteboardView != nil && a.WhiteboardView.Visible {
 						return a.WhiteboardView.Layout(gtx)
@@ -740,6 +747,12 @@ func (a *App) SwitchToServer(idx int) {
 	a.mu.Lock()
 	defer a.mu.Unlock()
 	if idx >= 0 && idx < len(a.Servers) {
+		// Clear DM viewed state so notifications work
+		if a.ActiveServer >= 0 && a.ActiveServer < len(a.Servers) {
+			old := a.Servers[a.ActiveServer]
+			old.ActiveDMID = ""
+			old.ActiveDMPeerKey = ""
+		}
 		a.ActiveServer = idx
 		a.Mode = ViewChannels
 	}
@@ -944,6 +957,8 @@ func (a *App) handleEscapeKey() {
 		a.VideoPlayer.Close()
 	case a.StreamViewer != nil && a.StreamViewer.Visible:
 		a.StreamViewer.Visible = false
+	case a.LiveWB != nil && a.LiveWB.Visible:
+		a.LiveWB.Close()
 	case a.WhiteboardView != nil && a.WhiteboardView.Visible:
 		a.WhiteboardView.Visible = false
 	case a.ThreadView != nil && a.ThreadView.Visible:

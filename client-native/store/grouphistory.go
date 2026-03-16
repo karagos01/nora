@@ -2,10 +2,14 @@ package store
 
 import (
 	"encoding/json"
+	"log/slog"
 	"os"
 	"path/filepath"
+	"sort"
 	"sync"
 	"time"
+
+	"nora-client/crypto"
 )
 
 // StoredGroupAttachment is an attachment stored in the local history.
@@ -32,6 +36,8 @@ const keyRotationThreshold = 500 // key rotation after N sent messages
 type GroupHistory struct {
 	mu         sync.Mutex
 	publicKey  string
+	secretKey  string // ed25519 seed hex — for storage encryption
+	storageKey []byte // derived AES key (cached)
 	messages   map[string][]StoredGroupMessage // groupID → messages
 	keys       map[string]string               // groupID → current group key (hex)
 	oldKeys    map[string][]string             // groupID → old keys (for decrypting history)
@@ -46,13 +52,19 @@ type groupHistoryData struct {
 	MsgCount map[string]int                  `json:"msg_count,omitempty"`
 }
 
-func NewGroupHistory(publicKey string) *GroupHistory {
+func NewGroupHistory(publicKey, secretKey string) *GroupHistory {
 	h := &GroupHistory{
 		publicKey: publicKey,
+		secretKey: secretKey,
 		messages:  make(map[string][]StoredGroupMessage),
 		keys:      make(map[string]string),
 		oldKeys:   make(map[string][]string),
 		msgCount:  make(map[string]int),
+	}
+	if secretKey != "" {
+		if key, err := crypto.DeriveStorageKey(secretKey); err == nil {
+			h.storageKey = key
+		}
 	}
 	h.load()
 	return h
@@ -71,6 +83,16 @@ func (h *GroupHistory) load() {
 	if err != nil {
 		return
 	}
+
+	decrypted := false
+	// Try decrypting first (encrypted format)
+	if h.storageKey != nil && len(data) >= 28 {
+		if plain, err := crypto.DecryptLocal(h.storageKey, data); err == nil {
+			data = plain
+			decrypted = true
+		}
+	}
+
 	var d groupHistoryData
 	if json.Unmarshal(data, &d) == nil {
 		if d.Messages != nil {
@@ -84,6 +106,11 @@ func (h *GroupHistory) load() {
 		}
 		if d.MsgCount != nil {
 			h.msgCount = d.MsgCount
+		}
+		// Plaintext file with encryption key available — migrate
+		if !decrypted && h.storageKey != nil {
+			h.dirty = true
+			slog.Info("group history: migrating to encrypted format", "key", h.publicKey[:16])
 		}
 	}
 }
@@ -103,6 +130,12 @@ func (h *GroupHistory) Save() {
 	})
 	if err != nil {
 		return
+	}
+	// Encrypt if we have a storage key
+	if h.storageKey != nil {
+		if enc, err := crypto.EncryptLocal(h.storageKey, data); err == nil {
+			data = enc
+		}
 	}
 	os.WriteFile(h.historyPath(), data, 0600)
 	h.dirty = false
@@ -132,6 +165,9 @@ func (h *GroupHistory) GetMessages(groupID string) []StoredGroupMessage {
 	msgs := h.messages[groupID]
 	result := make([]StoredGroupMessage, len(msgs))
 	copy(result, msgs)
+	sort.Slice(result, func(i, j int) bool {
+		return result[i].CreatedAt.Before(result[j].CreatedAt)
+	})
 	return result
 }
 

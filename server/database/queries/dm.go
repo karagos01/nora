@@ -143,6 +143,17 @@ func (q *DMQueries) ListPending(conversationID string) ([]models.DMPendingMessag
 	return messages, rows.Err()
 }
 
+// PendingCount returns the number of pending messages in a conversation for a given recipient
+// (messages sent by someone else that the recipient hasn't fetched yet).
+func (q *DMQueries) PendingCount(conversationID, recipientID string) int {
+	var count int
+	q.DB.QueryRow(
+		`SELECT COUNT(*) FROM dm_pending WHERE conversation_id = ? AND sender_id != ?`,
+		conversationID, recipientID,
+	).Scan(&count)
+	return count
+}
+
 func (q *DMQueries) DeletePending(conversationID, recipientID string) error {
 	// Delete pending messages in conversation that were not sent by the recipient (= those the recipient received)
 	_, err := q.DB.Exec(

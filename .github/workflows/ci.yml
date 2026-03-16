@@ -16,6 +16,10 @@ jobs:
           go-version: '1.24'
       - name: Vet
         run: cd server && go vet ./...
+      - name: Vulncheck
+        run: |
+          go install golang.org/x/vuln/cmd/govulncheck@latest
+          cd server && govulncheck ./...
       - name: Test
         run: cd server && go test ./...
       - name: Build
@@ -34,6 +38,10 @@ jobs:
           sudo apt-get install -y libasound2-dev libgl-dev libxkbcommon-dev libxkbcommon-x11-dev libx11-dev libxcursor-dev libxfixes-dev libvulkan-dev
       - name: Vet
         run: cd client-native && go vet ./...
+      - name: Vulncheck
+        run: |
+          go install golang.org/x/vuln/cmd/govulncheck@latest
+          cd client-native && govulncheck ./...
       - name: Test
         run: cd client-native && go test ./...
       - name: Build

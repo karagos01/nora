@@ -119,18 +119,25 @@ func playBeep(freqHz float64, duration time.Duration, volume ...float64) {
 
 	switch runtime.GOOS {
 	case "linux":
-		// Try paplay (PulseAudio/PipeWire), fallback to aplay (ALSA)
-		cmd := exec.Command("paplay", "--raw", "--rate=44100", "--channels=1", "--format=s16le")
-		// Strip WAV header for raw mode
-		if len(wav) > 44 {
-			cmd.Stdin = bytes.NewReader(wav[44:])
-		}
-		if err := cmd.Run(); err != nil {
-			cmd2 := exec.Command("aplay", "-q", "-f", "S16_LE", "-r", "44100", "-c", "1")
-			if len(wav) > 44 {
-				cmd2.Stdin = bytes.NewReader(wav[44:])
+		// Try pw-play (PipeWire), paplay (PulseAudio), aplay (ALSA)
+		played := false
+		for _, player := range []string{"pw-play", "paplay"} {
+			if _, err := exec.LookPath(player); err != nil {
+				continue
 			}
-			cmd2.Run()
+			cmd := exec.Command(player, "-")
+			cmd.Stdin = bytes.NewReader(wav)
+			if cmd.Run() == nil {
+				played = true
+				break
+			}
+		}
+		if !played {
+			cmd := exec.Command("aplay", "-q", "-f", "S16_LE", "-r", "44100", "-c", "1")
+			if len(wav) > 44 {
+				cmd.Stdin = bytes.NewReader(wav[44:])
+			}
+			cmd.Run()
 		}
 	case "windows":
 		// Write WAV to temp and play via PowerShell
@@ -358,22 +365,25 @@ func PlayCallEndSound() {
 }
 
 // ShouldNotify decides whether to play a notification sound.
-// Hierarchie: channel override → server override → global default.
-// channelID == "" → DM/group (jen server + global).
+// Channel messages: channel override → server override → global default.
+// DMs/groups (channelID == ""): always notify (personal messages ignore server muting).
 func (a *App) ShouldNotify(conn *ServerConnection, channelID, content string) bool {
 	if conn == nil {
 		return true
 	}
 
-	// Resolve level: channel > server > global
+	// DMs and groups always notify — they are personal messages
+	if channelID == "" {
+		return true
+	}
+
+	// Channel messages: resolve level: channel > server > global
 	level := a.GlobalNotifyLevel
 	if conn.NotifyLevel != nil {
 		level = *conn.NotifyLevel
 	}
-	if channelID != "" {
-		if chLevel, ok := conn.ChannelNotify[channelID]; ok {
-			level = chLevel
-		}
+	if chLevel, ok := conn.ChannelNotify[channelID]; ok {
+		level = chLevel
 	}
 
 	switch level {

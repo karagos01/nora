@@ -333,6 +333,25 @@ CREATE TABLE IF NOT EXISTS whiteboard_strokes (
 );
 CREATE INDEX IF NOT EXISTS idx_wb_strokes_board ON whiteboard_strokes(whiteboard_id, created_at);
 
+CREATE TABLE IF NOT EXISTS live_whiteboards (
+	channel_id TEXT PRIMARY KEY REFERENCES channels(id) ON DELETE CASCADE,
+	starter_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+	created_at DATETIME NOT NULL DEFAULT (datetime('now'))
+);
+
+CREATE TABLE IF NOT EXISTS live_wb_strokes (
+	id TEXT PRIMARY KEY,
+	channel_id TEXT NOT NULL REFERENCES live_whiteboards(channel_id) ON DELETE CASCADE,
+	user_id TEXT NOT NULL,
+	path_data TEXT NOT NULL,
+	color TEXT NOT NULL DEFAULT '#ffffff',
+	width INTEGER NOT NULL DEFAULT 2,
+	tool TEXT NOT NULL DEFAULT 'pen',
+	username TEXT NOT NULL DEFAULT '',
+	created_at DATETIME NOT NULL DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_live_wb_strokes_channel ON live_wb_strokes(channel_id, created_at);
+
 CREATE TABLE IF NOT EXISTS link_previews (
 	id TEXT PRIMARY KEY,
 	message_id TEXT NOT NULL UNIQUE REFERENCES messages(id) ON DELETE CASCADE,

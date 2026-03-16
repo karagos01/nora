@@ -244,6 +244,7 @@ func main() {
 		WG:             wgManager,
 		LAN:            &queries.LANQueries{DB: db.DB},
 		Whiteboards:        &queries.WhiteboardQueries{DB: db.DB},
+		LiveWBQ:            &queries.LiveWBQueries{DB: db.DB},
 		GameServersEnabled: gsEnabled,
 		GameServerQ:        &queries.GameServerQueries{DB: db.DB},
 		GameServerMgr:      gsManager,
@@ -324,6 +325,52 @@ func main() {
 			return deps.Channels.Update(ch)
 		},
 	)
+
+	// Live whiteboard DB persistence callbacks
+	liveWBQ := deps.LiveWBQ
+	hub.SetLiveWBCallbacks(
+		func(channelID, starterID string) error {
+			return liveWBQ.CreateSession(channelID, starterID)
+		},
+		func(channelID string) error {
+			return liveWBQ.DeleteSession(channelID)
+		},
+		func(stroke ws.LiveWhiteboardStroke, channelID string) error {
+			return liveWBQ.AddStroke(&queries.LiveWBStroke{
+				ID: stroke.ID, ChannelID: channelID, UserID: stroke.UserID,
+				PathData: stroke.PathData, Color: stroke.Color, Width: stroke.Width,
+				Tool: stroke.Tool, Username: stroke.Username,
+				CreatedAt: time.Now().UTC(),
+			})
+		},
+		func(strokeID string) error {
+			return liveWBQ.DeleteStroke(strokeID)
+		},
+		func(channelID string) error {
+			return liveWBQ.ClearStrokes(channelID)
+		},
+	)
+
+	// Load live whiteboards from DB into Hub memory
+	if sessions, err := liveWBQ.GetAllSessions(); err == nil && len(sessions) > 0 {
+		for _, sess := range sessions {
+			strokes, _ := liveWBQ.GetStrokes(sess.ChannelID)
+			var hubStrokes []ws.LiveWhiteboardStroke
+			for _, s := range strokes {
+				hubStrokes = append(hubStrokes, ws.LiveWhiteboardStroke{
+					ID: s.ID, UserID: s.UserID, PathData: s.PathData,
+					Color: s.Color, Width: s.Width, Tool: s.Tool, Username: s.Username,
+				})
+			}
+			hub.LoadLiveWB(sess.ChannelID, sess.StarterID, hubStrokes)
+		}
+		slog.Info("livewb: loaded sessions from DB", "count", len(sessions))
+	}
+
+	// Auto-delete stale live whiteboard sessions (older than 24h)
+	if deleted, err := liveWBQ.DeleteStaleSessions(24 * time.Hour); err == nil && deleted > 0 {
+		slog.Info("livewb: cleaned up stale sessions", "count", deleted)
+	}
 
 	// WireGuard startup — create interface and add all peers from all active parties
 	if wgManager != nil && wgManager.PublicKey() != "" {

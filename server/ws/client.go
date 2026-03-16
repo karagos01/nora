@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/coder/websocket"
+	"github.com/google/uuid"
 )
 
 const (
@@ -157,6 +158,19 @@ func (c *Client) handleEvent(event IncomingEvent) {
 	case EventScreenShare:
 		c.handleScreenShare(event)
 
+	case EventLiveWBStart:
+		c.handleLiveWBStart(event)
+	case EventLiveWBStop:
+		c.handleLiveWBStop(event)
+	case EventLiveWBStroke:
+		c.handleLiveWBStroke(event)
+	case EventLiveWBUndo:
+		c.handleLiveWBUndo(event)
+	case EventLiveWBClear:
+		c.handleLiveWBClear(event)
+	case EventLiveWBJoin:
+		c.handleLiveWBJoin(event)
+
 	case EventLobbyRename:
 		c.handleLobbyRename(event)
 	case EventLobbyPassword:
@@ -211,6 +225,19 @@ func (c *Client) handleVoiceJoin(event IncomingEvent) {
 		"joined":     c.UserID,
 	})
 	c.hub.Broadcast(msg)
+
+	// Send live whiteboard state to the joining client (late joiner)
+	if starterID, strokes, ok := c.hub.LiveWBSnapshot(targetChannelID); ok {
+		stateMsg, _ := NewEvent(EventLiveWBState, map[string]any{
+			"channel_id": targetChannelID,
+			"starter_id": starterID,
+			"strokes":    strokes,
+		})
+		select {
+		case c.send <- stateMsg:
+		default:
+		}
+	}
 }
 
 func (c *Client) handleVoiceLeave() {
@@ -227,6 +254,9 @@ func (c *Client) handleVoiceLeave() {
 
 	// Cleanup dynamic lobby sub-channel if empty
 	c.hub.checkDynamicCleanup(channelID)
+
+	// Cleanup live whiteboard if voice channel is now empty
+	c.hub.checkLiveWBCleanup(channelID)
 }
 
 func (c *Client) handleLobbyRename(event IncomingEvent) {
@@ -357,6 +387,148 @@ func (c *Client) handleScreenShare(event IncomingEvent) {
 		"sharing":    payload.Sharing,
 	})
 	c.hub.Broadcast(msg)
+}
+
+func (c *Client) handleLiveWBStart(event IncomingEvent) {
+	var payload struct {
+		ChannelID string `json:"channel_id"`
+	}
+	if err := json.Unmarshal(event.Payload, &payload); err != nil || payload.ChannelID == "" {
+		return
+	}
+	if c.hub.VoiceChannelOf(c.UserID) != payload.ChannelID {
+		c.sendError("livewb.error", "Not in this voice channel")
+		return
+	}
+	if !c.hub.LiveWBStart(payload.ChannelID, c.UserID) {
+		c.sendError("livewb.error", "Whiteboard already active")
+		return
+	}
+	msg, _ := NewEvent(EventLiveWBStart, map[string]any{
+		"channel_id": payload.ChannelID,
+		"starter_id": c.UserID,
+	})
+	c.hub.Broadcast(msg)
+}
+
+func (c *Client) handleLiveWBStop(event IncomingEvent) {
+	var payload struct {
+		ChannelID string `json:"channel_id"`
+	}
+	if err := json.Unmarshal(event.Payload, &payload); err != nil || payload.ChannelID == "" {
+		return
+	}
+	if !c.hub.LiveWBStop(payload.ChannelID, c.UserID) {
+		return
+	}
+	msg, _ := NewEvent(EventLiveWBStop, map[string]string{
+		"channel_id": payload.ChannelID,
+	})
+	c.hub.Broadcast(msg)
+}
+
+func (c *Client) handleLiveWBStroke(event IncomingEvent) {
+	var payload struct {
+		ChannelID string `json:"channel_id"`
+		ID        string `json:"id"`
+		PathData  string `json:"path_data"`
+		Color     string `json:"color"`
+		Width     int    `json:"width"`
+		Tool      string `json:"tool"`
+		Username  string `json:"username"`
+	}
+	if err := json.Unmarshal(event.Payload, &payload); err != nil || payload.ChannelID == "" {
+		return
+	}
+	if c.hub.VoiceChannelOf(c.UserID) != payload.ChannelID {
+		return
+	}
+	strokeID := payload.ID
+	if strokeID == "" {
+		strokeID = uuid.New().String()
+	}
+	stroke := LiveWhiteboardStroke{
+		ID:       strokeID,
+		UserID:   c.UserID,
+		PathData: payload.PathData,
+		Color:    payload.Color,
+		Width:    payload.Width,
+		Tool:     payload.Tool,
+		Username: payload.Username,
+	}
+	if !c.hub.LiveWBAddStroke(payload.ChannelID, stroke) {
+		return
+	}
+	msg, _ := NewEvent(EventLiveWBStroke, map[string]any{
+		"channel_id": payload.ChannelID,
+		"stroke":     stroke,
+	})
+	c.hub.BroadcastExcluding(msg, map[string]bool{c.UserID: true})
+}
+
+func (c *Client) handleLiveWBUndo(event IncomingEvent) {
+	var payload struct {
+		ChannelID string `json:"channel_id"`
+	}
+	if err := json.Unmarshal(event.Payload, &payload); err != nil || payload.ChannelID == "" {
+		return
+	}
+	if c.hub.VoiceChannelOf(c.UserID) != payload.ChannelID {
+		return
+	}
+	strokeID := c.hub.LiveWBUndo(payload.ChannelID, c.UserID)
+	if strokeID == "" {
+		return
+	}
+	msg, _ := NewEvent(EventLiveWBUndo, map[string]any{
+		"channel_id": payload.ChannelID,
+		"stroke_id":  strokeID,
+	})
+	c.hub.Broadcast(msg)
+}
+
+func (c *Client) handleLiveWBClear(event IncomingEvent) {
+	var payload struct {
+		ChannelID string `json:"channel_id"`
+	}
+	if err := json.Unmarshal(event.Payload, &payload); err != nil || payload.ChannelID == "" {
+		return
+	}
+	if c.hub.VoiceChannelOf(c.UserID) != payload.ChannelID {
+		return
+	}
+	if !c.hub.LiveWBClear(payload.ChannelID) {
+		return
+	}
+	msg, _ := NewEvent(EventLiveWBClear, map[string]any{
+		"channel_id": payload.ChannelID,
+	})
+	c.hub.Broadcast(msg)
+}
+
+func (c *Client) handleLiveWBJoin(event IncomingEvent) {
+	var payload struct {
+		ChannelID string `json:"channel_id"`
+	}
+	if err := json.Unmarshal(event.Payload, &payload); err != nil || payload.ChannelID == "" {
+		return
+	}
+	if c.hub.VoiceChannelOf(c.UserID) != payload.ChannelID {
+		return
+	}
+	starterID, strokes, ok := c.hub.LiveWBSnapshot(payload.ChannelID)
+	if !ok {
+		return
+	}
+	msg, _ := NewEvent(EventLiveWBState, map[string]any{
+		"channel_id": payload.ChannelID,
+		"starter_id": starterID,
+		"strokes":    strokes,
+	})
+	select {
+	case c.send <- msg:
+	default:
+	}
 }
 
 func (c *Client) relayGroupEvent(event IncomingEvent) {

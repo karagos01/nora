@@ -48,10 +48,16 @@ type FileExplorerState struct {
 	unmountBtn widget.Clickable
 
 	// Mkdir dialog
-	showMkdir     bool
-	mkdirEd       widget.Editor
-	mkdirOkBtn    widget.Clickable
+	showMkdir      bool
+	mkdirEd        widget.Editor
+	mkdirOkBtn     widget.Clickable
 	mkdirCancelBtn widget.Clickable
+
+	// Shared file explorer widget
+	fileWidget      *FileExplorerWidget
+	deleteSelBtn    widget.Clickable
+	clearSelBtn     widget.Clickable
+	sortedEntries   []FileExplorerEntry
 }
 
 type TextEditorState struct {
@@ -148,6 +154,7 @@ func NewGameServersView(a *App) *GameServersView {
 	v.createNameEd.Submit = true
 	v.fileExplorer.list.Axis = layout.Vertical
 	v.fileExplorer.mkdirEd.SingleLine = true
+	v.fileExplorer.fileWidget = NewFileExplorerWidget(a)
 	v.textEditor.editor.SingleLine = false
 	v.textEditor.editor.Submit = false
 	v.textEditor.viewList.Axis = layout.Vertical
@@ -1112,10 +1119,36 @@ func (v *GameServersView) loadFileExplorerEntries(conn *ServerConnection) {
 
 func (v *GameServersView) layoutFileExplorer(gtx layout.Context, conn *ServerConnection) layout.Dimensions {
 	fe := v.fileExplorer
+	fw := fe.fileWidget
+
+	// Handle column header clicks + rename events
+	fw.HandleColumnClick(gtx)
+	fw.HandleRenameEvents(gtx)
+
+	// Handle rename completion
+	if fw.RenameOK {
+		fw.RenameOK = false
+		newName := fw.RenameName
+		oldName := fw.RenameOrigName
+		if oldName != "" && newName != oldName {
+			path := oldName
+			if fe.CurrentPath != "" {
+				path = fe.CurrentPath + "/" + oldName
+			}
+			go func() {
+				if err := conn.Client.RenameGameServerFile(fe.ServerID, path, newName); err != nil {
+					log.Printf("Rename error: %v", err)
+				}
+				v.loadFileExplorerEntries(conn)
+			}()
+		}
+	}
 
 	// Handle close
 	if fe.closeBtn.Clicked(gtx) {
 		fe.Visible = false
+		fw.ClearSelection()
+		fw.CancelRename()
 		return layout.Dimensions{}
 	}
 
@@ -1126,16 +1159,19 @@ func (v *GameServersView) layoutFileExplorer(gtx layout.Context, conn *ServerCon
 			fe.CurrentPath = ""
 		}
 		fe.Loading = true
+		fw.ClearSelection()
+		fw.CancelRename()
 		go v.loadFileExplorerEntries(conn)
 	}
 
 	// Handle refresh
 	if fe.refreshBtn.Clicked(gtx) {
 		fe.Loading = true
+		fw.ClearSelection()
 		go v.loadFileExplorerEntries(conn)
 	}
 
-	// Handle link directory — recursively load files and send as attachments
+	// Handle link directory
 	if fe.linkDirBtn.Clicked(gtx) {
 		serverID := fe.ServerID
 		currentPath := fe.CurrentPath
@@ -1158,7 +1194,6 @@ func (v *GameServersView) layoutFileExplorer(gtx layout.Context, conn *ServerCon
 					Size:     e.Size,
 				})
 			}
-			// Send directly to active channel without upload dialog
 			v.app.mu.Lock()
 			v.app.Mode = ViewChannels
 			v.app.mu.Unlock()
@@ -1250,14 +1285,58 @@ func (v *GameServersView) layoutFileExplorer(gtx layout.Context, conn *ServerCon
 		}()
 	}
 
+	// Handle batch delete selected
+	if fe.deleteSelBtn.Clicked(gtx) {
+		count := fw.SelectedCount()
+		if count > 0 {
+			indices := fw.SelectedIndices()
+			var names []string
+			for _, idx := range indices {
+				if idx < len(fe.sortedEntries) {
+					names = append(names, fe.sortedEntries[idx].Name)
+				}
+			}
+			v.app.ConfirmDlg.Show("Delete Selected", fmt.Sprintf("Delete %d items?", count), func() {
+				go func() {
+					for _, name := range names {
+						path := name
+						if fe.CurrentPath != "" {
+							path = fe.CurrentPath + "/" + name
+						}
+						if err := conn.Client.DeleteGameServerFile(fe.ServerID, path); err != nil {
+							log.Printf("Delete error: %v", err)
+						}
+					}
+					fw.ClearSelection()
+					v.loadFileExplorerEntries(conn)
+				}()
+			})
+		}
+	}
+	if fe.clearSelBtn.Clicked(gtx) {
+		fw.ClearSelection()
+	}
+
+	// Convert API entries → FileExplorerEntry and sort
+	fe.sortedEntries = make([]FileExplorerEntry, len(fe.Entries))
+	for i, e := range fe.Entries {
+		fe.sortedEntries[i] = FileExplorerEntry{
+			Name:    e.Name,
+			IsDir:   e.IsDir,
+			Size:    e.Size,
+			ModTime: e.ModTime,
+		}
+	}
+	fw.SortEntries(fe.sortedEntries)
+
 	// Ensure entry button slices
-	for len(fe.entryBtns) < len(fe.Entries) {
+	for len(fe.entryBtns) < len(fe.sortedEntries) {
 		fe.entryBtns = append(fe.entryBtns, widget.Clickable{})
 		fe.deleteBtns = append(fe.deleteBtns, widget.Clickable{})
 	}
 
 	// Handle entry clicks
-	for i, entry := range fe.Entries {
+	for i, entry := range fe.sortedEntries {
 		if i < len(fe.deleteBtns) && fe.deleteBtns[i].Clicked(gtx) {
 			entryName := entry.Name
 			path := entryName
@@ -1275,16 +1354,16 @@ func (v *GameServersView) layoutFileExplorer(gtx layout.Context, conn *ServerCon
 		}
 		if i < len(fe.entryBtns) && fe.entryBtns[i].Clicked(gtx) {
 			if entry.IsDir {
-				// Navigate into directory
 				if fe.CurrentPath == "" {
 					fe.CurrentPath = entry.Name
 				} else {
 					fe.CurrentPath = fe.CurrentPath + "/" + entry.Name
 				}
 				fe.Loading = true
+				fw.ClearSelection()
+				fw.CancelRename()
 				go v.loadFileExplorerEntries(conn)
 			} else if isTextFile(entry.Name) {
-				// Open in text editor
 				path := entry.Name
 				if fe.CurrentPath != "" {
 					path = fe.CurrentPath + "/" + entry.Name
@@ -1308,7 +1387,6 @@ func (v *GameServersView) layoutFileExplorer(gtx layout.Context, conn *ServerCon
 						return layout.Flex{Alignment: layout.Middle, Spacing: layout.SpaceBetween}.Layout(gtx,
 							layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
 								return layout.Flex{Alignment: layout.Middle}.Layout(gtx,
-									// Back button
 									layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 										if fe.CurrentPath == "" {
 											return layout.Dimensions{}
@@ -1319,7 +1397,6 @@ func (v *GameServersView) layoutFileExplorer(gtx layout.Context, conn *ServerCon
 											})
 										})
 									}),
-									// Breadcrumb
 									layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 										path := fe.ServerName
 										if fe.CurrentPath != "" {
@@ -1332,7 +1409,6 @@ func (v *GameServersView) layoutFileExplorer(gtx layout.Context, conn *ServerCon
 									}),
 								)
 							}),
-							// Action buttons
 							layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 								return layout.Flex{Alignment: layout.Middle}.Layout(gtx,
 									layout.Rigid(func(gtx layout.Context) layout.Dimensions {
@@ -1354,7 +1430,6 @@ func (v *GameServersView) layoutFileExplorer(gtx layout.Context, conn *ServerCon
 											})
 										})
 									}),
-									// Mount / Unmount
 									layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 										mounted := conn.Mounts.IsMounted("gs-" + fe.ServerID)
 										if mounted {
@@ -1462,6 +1537,10 @@ func (v *GameServersView) layoutFileExplorer(gtx layout.Context, conn *ServerCon
 						)
 					})
 				}),
+				// Selection bar
+				layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+					return fw.LayoutDeleteSelectedBar(gtx, &fe.deleteSelBtn, &fe.clearSelBtn)
+				}),
 				// Error
 				layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 					if fe.Error == "" {
@@ -1474,94 +1553,46 @@ func (v *GameServersView) layoutFileExplorer(gtx layout.Context, conn *ServerCon
 						return lbl.Layout(gtx)
 					})
 				}),
+				// Column headers
+				layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+					if fe.Loading || len(fe.sortedEntries) == 0 {
+						return layout.Dimensions{}
+					}
+					return fw.LayoutColumnHeaders(gtx)
+				}),
 				// File list
 				layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
 					if fe.Loading {
 						return layoutCentered(gtx, v.app.Theme, "Loading...", ColorTextDim)
 					}
-					if len(fe.Entries) == 0 {
+					if len(fe.sortedEntries) == 0 {
 						msg := fmt.Sprintf("Empty directory (server=%s, path=%q)", fe.ServerID, fe.CurrentPath)
 						return layoutCentered(gtx, v.app.Theme, msg, ColorTextDim)
 					}
-					return layout.Inset{Top: unit.Dp(4), Left: unit.Dp(8), Right: unit.Dp(8)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-						return material.List(v.app.Theme.Material, &fe.list).Layout(gtx, len(fe.Entries), func(gtx layout.Context, i int) layout.Dimensions {
-							entry := fe.Entries[i]
-							return v.layoutFileEntry(gtx, entry, i)
+					return layout.Inset{Top: unit.Dp(2), Left: unit.Dp(8), Right: unit.Dp(8)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+						return material.List(v.app.Theme.Material, &fe.list).Layout(gtx, len(fe.sortedEntries), func(gtx layout.Context, i int) layout.Dimensions {
+							entry := fe.sortedEntries[i]
+							selected := fw.Selected[i]
+							hovered := i < len(fe.entryBtns) && fe.entryBtns[i].Hovered()
+
+							deleteWidget := func(gtx layout.Context) layout.Dimensions {
+								if i >= len(fe.deleteBtns) {
+									return layout.Dimensions{}
+								}
+								return fe.deleteBtns[i].Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+									return layoutIcon(gtx, IconDelete, 14, ColorDanger)
+								})
+							}
+
+							return fe.entryBtns[i].Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+								return fw.LayoutEntryRow(gtx, entry, i, selected, hovered, deleteWidget)
+							})
 						})
 					})
 				}),
 			)
 		},
 	)
-}
-
-func (v *GameServersView) layoutFileEntry(gtx layout.Context, entry api.GameServerFileEntry, idx int) layout.Dimensions {
-	fe := v.fileExplorer
-	hovered := fe.entryBtns[idx].Hovered()
-
-	return fe.entryBtns[idx].Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-		// Measure content via op.Record, then draw background + content
-		macro := op.Record(gtx.Ops)
-		dims := layout.Inset{Top: unit.Dp(4), Bottom: unit.Dp(4), Left: unit.Dp(8), Right: unit.Dp(8)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-			return layout.Flex{Alignment: layout.Middle, Spacing: layout.SpaceBetween}.Layout(gtx,
-				// Icon + name
-				layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
-					return layout.Flex{Alignment: layout.Middle}.Layout(gtx,
-						layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-							icon := IconFile
-							clr := ColorTextDim
-							if entry.IsDir {
-								icon = IconFolder
-								clr = ColorAccent
-							}
-							return layoutIcon(gtx, icon, 16, clr)
-						}),
-						layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-							return layout.Inset{Left: unit.Dp(6)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-								lbl := material.Body2(v.app.Theme.Material, entry.Name)
-								lbl.Color = ColorText
-								lbl.TextSize = unit.Sp(13)
-								return lbl.Layout(gtx)
-							})
-						}),
-					)
-				}),
-				// Size + delete
-				layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-					return layout.Flex{Alignment: layout.Middle}.Layout(gtx,
-						layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-							if entry.IsDir {
-								return layout.Dimensions{}
-							}
-							lbl := material.Body2(v.app.Theme.Material, formatFileSize(entry.Size))
-							lbl.Color = ColorTextDim
-							lbl.TextSize = unit.Sp(11)
-							return lbl.Layout(gtx)
-						}),
-						layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-							return layout.Inset{Left: unit.Dp(8)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-								return fe.deleteBtns[idx].Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-									return layoutIcon(gtx, IconDelete, 14, ColorDanger)
-								})
-							})
-						}),
-					)
-				}),
-			)
-		})
-		call := macro.Stop()
-
-		// Draw background (hover)
-		if hovered {
-			rr := gtx.Dp(4)
-			paint.FillShape(gtx.Ops, ColorHover, clip.RRect{
-				Rect: image.Rect(0, 0, dims.Size.X, dims.Size.Y),
-				NE:   rr, NW: rr, SE: rr, SW: rr,
-			}.Op(gtx.Ops))
-		}
-		call.Add(gtx.Ops)
-		return dims
-	})
 }
 
 // --- Text Editor ---

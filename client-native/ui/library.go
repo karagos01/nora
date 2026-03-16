@@ -671,7 +671,7 @@ func (v *LibraryView) LayoutMain(gtx layout.Context) layout.Dimensions {
 				} else {
 					text = fmt.Sprintf("%d files", len(filtered))
 					if totalSize > 0 {
-						text += " \u00b7 " + formatFileSize(totalSize)
+						text += " \u00b7 " + FormatBytes(totalSize)
 					}
 				}
 				lbl := material.Caption(v.app.Theme.Material, text)
@@ -747,7 +747,7 @@ func (v *LibraryView) layoutFileItem(gtx layout.Context, idx int, item LibraryIt
 							// Size
 							layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 								return layout.Inset{Left: unit.Dp(8)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-									lbl := material.Caption(v.app.Theme.Material, formatFileSize(item.FileSize))
+									lbl := material.Caption(v.app.Theme.Material, FormatBytes(item.FileSize))
 									lbl.Color = ColorTextDim
 									return lbl.Layout(gtx)
 								})

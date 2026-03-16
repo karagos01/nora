@@ -4,6 +4,7 @@ import (
 	"image"
 	"image/color"
 
+	"gioui.org/io/key"
 	"gioui.org/layout"
 	"gioui.org/op/clip"
 	"gioui.org/op/paint"
@@ -22,11 +23,12 @@ type InputDialog struct {
 	confirmTx string
 	onConfirm func(string)
 
-	editor     widget.Editor
-	confirmBtn widget.Clickable
-	cancelBtn  widget.Clickable
-	overlayBtn widget.Clickable
-	cardBtn    widget.Clickable
+	editor      widget.Editor
+	needFocus   bool
+	confirmBtn  widget.Clickable
+	cancelBtn   widget.Clickable
+	overlayBtn  widget.Clickable
+	cardBtn     widget.Clickable
 }
 
 func NewInputDialog(a *App) *InputDialog {
@@ -37,6 +39,7 @@ func NewInputDialog(a *App) *InputDialog {
 
 func (d *InputDialog) Show(title, hint, confirmText, initialValue string, onConfirm func(string)) {
 	d.Visible = true
+	d.needFocus = true
 	d.title = title
 	d.hint = hint
 	d.confirmTx = confirmText
@@ -51,6 +54,12 @@ func (d *InputDialog) Hide() {
 func (d *InputDialog) Layout(gtx layout.Context) layout.Dimensions {
 	if !d.Visible {
 		return layout.Dimensions{}
+	}
+
+	// Auto-focus editor when dialog is first shown
+	if d.needFocus {
+		d.needFocus = false
+		gtx.Execute(key.FocusCmd{Tag: &d.editor})
 	}
 
 	if d.overlayBtn.Clicked(gtx) {

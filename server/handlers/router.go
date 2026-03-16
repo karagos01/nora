@@ -68,6 +68,7 @@ type Deps struct {
 	Shares      *queries.ShareQueries
 
 	Whiteboards *queries.WhiteboardQueries
+	LiveWBQ     *queries.LiveWBQueries
 
 	WG  *wg.Manager
 	LAN *queries.LANQueries
@@ -316,6 +317,7 @@ func NewRouter(d *Deps) http.Handler {
 	protected.HandleFunc("POST /api/shares/{id}/transfer/request", d.TransferRequest)
 	protected.HandleFunc("POST /api/shares/{id}/upload/request", d.UploadRequest)
 	protected.HandleFunc("DELETE /api/shares/{id}/files", d.DeleteShareFile)
+	protected.HandleFunc("POST /api/shares/{id}/files/rename", d.RenameShareFile)
 
 	// Swarm P2P sharing
 	protected.HandleFunc("POST /api/shares/{id}/swarm/seed", d.SwarmAddSeed)
@@ -339,6 +341,7 @@ func NewRouter(d *Deps) http.Handler {
 	protected.HandleFunc("POST /api/gameservers/{id}/files/upload", d.GameServerFileUpload)
 	protected.HandleFunc("DELETE /api/gameservers/{id}/files", d.GameServerFileDelete)
 	protected.HandleFunc("POST /api/gameservers/{id}/files/mkdir", d.GameServerMkdir)
+	protected.HandleFunc("POST /api/gameservers/{id}/files/rename", d.GameServerFileRename)
 	protected.HandleFunc("GET /api/gameservers/{id}/files/download", d.GameServerFileDownload)
 	protected.HandleFunc("GET /api/gameservers/{id}/files/recursive", d.GameServerListRecursive)
 	protected.HandleFunc("POST /api/gameservers/{id}/join", d.JoinGameServer)

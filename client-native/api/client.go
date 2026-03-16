@@ -2,7 +2,9 @@ package api
 
 import (
 	"bytes"
+	"crypto/sha256"
 	"crypto/tls"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -760,23 +762,41 @@ func (c *Client) DeleteEmoji(id string) error {
 
 // UploadResult is the upload result (matches server response).
 type UploadResult struct {
-	Filename    string `json:"filename"`
-	Original    string `json:"original"`
-	URL         string `json:"url"`
-	MimeType    string `json:"mime_type"`
-	Size        int64  `json:"size"`
-	ContentHash string `json:"content_hash"`
+	Filename     string `json:"filename"`
+	Original     string `json:"original"`
+	URL          string `json:"url"`
+	MimeType     string `json:"mime_type"`
+	Size         int64  `json:"size"`
+	ContentHash  string `json:"content_hash"`
+	Deduplicated bool   `json:"deduplicated,omitempty"`
 }
 
 // InitChunkedUpload initiates a chunked upload session.
-func (c *Client) InitChunkedUpload(filename string, size int64) (uploadID string, chunkSize int, err error) {
+// If contentHash is provided and the file already exists on server, returns a result directly (no upload needed).
+func (c *Client) InitChunkedUpload(filename string, size int64, contentHash string) (uploadID string, chunkSize int, dedup *UploadResult, err error) {
 	body := map[string]interface{}{"filename": filename, "size": size}
+	if contentHash != "" {
+		body["content_hash"] = contentHash
+	}
+	// Server returns either {upload_id, chunk_size} or {filename, url, deduplicated: true}
+	var raw json.RawMessage
+	err = c.doJSON("POST", "/api/upload/init", body, &raw)
+	if err != nil {
+		return "", 0, nil, err
+	}
+	// Check if deduplicated
+	var dedupResp UploadResult
+	if json.Unmarshal(raw, &dedupResp) == nil && dedupResp.Deduplicated {
+		return "", 0, &dedupResp, nil
+	}
 	var resp struct {
 		UploadID  string `json:"upload_id"`
 		ChunkSize int    `json:"chunk_size"`
 	}
-	err = c.doJSON("POST", "/api/upload/init", body, &resp)
-	return resp.UploadID, resp.ChunkSize, err
+	if err := json.Unmarshal(raw, &resp); err != nil {
+		return "", 0, nil, err
+	}
+	return resp.UploadID, resp.ChunkSize, nil, nil
 }
 
 // UploadChunk sends a single chunk; returns new offset and, if completed, UploadResult.
@@ -818,12 +838,24 @@ func (c *Client) UploadChunk(uploadID string, offset int64, data []byte) (newOff
 }
 
 // UploadFileChunked — high-level wrapper: init + chunk loop + progress callback.
+// Computes SHA-256 before upload for server-side deduplication.
 func (c *Client) UploadFileChunked(filename string, data []byte, onProgress func(sent, total int64)) (*UploadResult, error) {
 	size := int64(len(data))
 
-	uploadID, chunkSize, err := c.InitChunkedUpload(filename, size)
+	// Compute SHA-256 for dedup check
+	h := sha256.Sum256(data)
+	contentHash := hex.EncodeToString(h[:])
+
+	uploadID, chunkSize, dedup, err := c.InitChunkedUpload(filename, size, contentHash)
 	if err != nil {
 		return nil, fmt.Errorf("init upload: %w", err)
+	}
+	// Server found existing file with same hash — no upload needed
+	if dedup != nil {
+		if onProgress != nil {
+			onProgress(size, size)
+		}
+		return dedup, nil
 	}
 	if chunkSize <= 0 {
 		chunkSize = 256 * 1024
@@ -1056,8 +1088,9 @@ func (c *Client) ListStorageFiles(folderID *string) ([]StorageFile, error) {
 // Voice
 
 type VoiceStateResponse struct {
-	Channels      map[string][]string `json:"channels"`
-	ScreenSharers map[string]string   `json:"screen_sharers"`
+	Channels        map[string][]string `json:"channels"`
+	ScreenSharers   map[string]string   `json:"screen_sharers"`
+	LiveWhiteboards map[string]string   `json:"live_whiteboards,omitempty"`
 }
 
 func (c *Client) GetVoiceState() (*VoiceStateResponse, error) {
@@ -1169,6 +1202,15 @@ func (c *Client) DeleteShareFile(shareID, relativePath, fileName string) error {
 		"file_name":     fileName,
 	}
 	return c.doJSON("DELETE", fmt.Sprintf("/api/shares/%s/files", shareID), body, nil)
+}
+
+func (c *Client) RenameShareFile(shareID, relativePath, oldName, newName string) error {
+	body := map[string]string{
+		"relative_path": relativePath,
+		"old_name":      oldName,
+		"new_name":      newName,
+	}
+	return c.doJSON("POST", fmt.Sprintf("/api/shares/%s/files/rename", shareID), body, nil)
 }
 
 func (c *Client) RequestTransfer(shareID, fileID string) (map[string]interface{}, error) {
@@ -1289,6 +1331,11 @@ func (c *Client) DeleteGameServerFile(id, path string) error {
 func (c *Client) MkdirGameServer(id, path string) error {
 	body := map[string]string{"path": path}
 	return c.doJSON("POST", fmt.Sprintf("/api/gameservers/%s/files/mkdir", id), body, nil)
+}
+
+func (c *Client) RenameGameServerFile(gsID, path, newName string) error {
+	body := map[string]string{"path": path, "new_name": newName}
+	return c.doJSON("POST", fmt.Sprintf("/api/gameservers/%s/files/rename", gsID), body, nil)
 }
 
 func (c *Client) ListGameServerFilesRecursive(id, path string) ([]GameServerRecursiveEntry, error) {

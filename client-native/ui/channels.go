@@ -43,6 +43,7 @@ type ChannelView struct {
 	chanDrags    []gesture.Drag
 	chanRightTags []bool // pointer event tags for right-click on channel
 	streamBtns      map[string]*widget.Clickable // per-user stream watch button
+	liveWBBtns      map[string]*widget.Clickable // per-user live WB button (pen icon)
 	voiceUserBtns   map[string]*widget.Clickable // per-user click → UserPopup
 	subChannelBtns  map[string]*widget.Clickable // per sub-channel click → voice join
 	createBtn      widget.Clickable
@@ -139,6 +140,7 @@ func NewChannelView(a *App) *ChannelView {
 	v.catDragTargetIdx = -1
 	v.catDragFromIdx = -1
 	v.streamBtns = make(map[string]*widget.Clickable)
+	v.liveWBBtns = make(map[string]*widget.Clickable)
 	v.voiceUserBtns = make(map[string]*widget.Clickable)
 	v.subChannelBtns = make(map[string]*widget.Clickable)
 	v.voiceDrags = make(map[string]*gesture.Drag)
@@ -2226,6 +2228,17 @@ func (v *ChannelView) layoutChannelItem(gtx layout.Context, idx int, ch api.Chan
 						_ = streamClicked
 					}
 
+					// Live WB pen icon click handler
+					isLiveWBStarter := conn != nil && conn.LiveWhiteboards[ch.ID] == userID
+					if isLiveWBStarter {
+						wbBtn := v.getLiveWBBtn(userID)
+						if wbBtn.Clicked(gtx) {
+							if v.app.LiveWB != nil {
+								v.app.LiveWB.Open(ch.ID, userID)
+							}
+						}
+					}
+
 					dims := layout.Flex{Alignment: layout.Middle}.Layout(gtx,
 						// User (clickable → UserPopup)
 						layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
@@ -2305,18 +2318,33 @@ func (v *ChannelView) layoutChannelItem(gtx layout.Context, idx int, ch api.Chan
 								})
 							})
 						}),
+						// Live whiteboard pen icon on the starter
+						layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+							if !isLiveWBStarter {
+								return layout.Dimensions{}
+							}
+							wbBtn := v.getLiveWBBtn(userID)
+							return layout.Inset{Left: unit.Dp(4)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+								return wbBtn.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+									return layoutIcon(gtx, IconEdit, 14, ColorAccent)
+								})
+							})
+						}),
 					)
 
 					// Drag gesture overlay for voice user (only with PermKick, not self)
+					// PassOp lets clicks through to icons (stream, WB) while still capturing drags
 					if canDragVoice && conn != nil && userID != conn.UserID {
 						drag := v.getVoiceDrag(userID)
 						areaStack := clip.Rect{Max: dims.Size}.Push(gtx.Ops)
+						passStack := pointer.PassOp{}.Push(gtx.Ops)
 						drag.Add(gtx.Ops)
 						if drag.Dragging() {
 							pointer.CursorGrabbing.Add(gtx.Ops)
 						} else {
 							pointer.CursorGrab.Add(gtx.Ops)
 						}
+						passStack.Pop()
 						areaStack.Pop()
 					}
 
@@ -2432,6 +2460,15 @@ func (v *ChannelView) getStreamBtn(userID string) *widget.Clickable {
 	if !ok {
 		btn = &widget.Clickable{}
 		v.streamBtns[userID] = btn
+	}
+	return btn
+}
+
+func (v *ChannelView) getLiveWBBtn(userID string) *widget.Clickable {
+	btn, ok := v.liveWBBtns[userID]
+	if !ok {
+		btn = &widget.Clickable{}
+		v.liveWBBtns[userID] = btn
 	}
 	return btn
 }
@@ -2630,6 +2667,17 @@ func (v *ChannelView) layoutLobbySubChannel(gtx layout.Context, idx int, ch api.
 						}
 					}
 
+					// Live WB pen icon for sub-channel
+					isSubLiveWBStarter := conn.LiveWhiteboards[ch.ID] == userID
+					if isSubLiveWBStarter {
+						wbBtn := v.getLiveWBBtn(userID)
+						if wbBtn.Clicked(gtx) {
+							if v.app.LiveWB != nil {
+								v.app.LiveWB.Open(ch.ID, userID)
+							}
+						}
+					}
+
 					return layout.Flex{Alignment: layout.Middle}.Layout(gtx,
 						layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
 							return vuBtn.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
@@ -2672,6 +2720,18 @@ func (v *ChannelView) layoutLobbySubChannel(gtx layout.Context, idx int, ch api.
 										iconColor = ColorSuccess
 									}
 									return layoutIcon(gtx, IconMonitor, 14, iconColor)
+								})
+							})
+						}),
+						// Live WB pen icon on sub-channel starter
+						layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+							if !isSubLiveWBStarter {
+								return layout.Dimensions{}
+							}
+							wbBtn := v.getLiveWBBtn(userID)
+							return layout.Inset{Left: unit.Dp(4)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+								return wbBtn.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+									return layoutIcon(gtx, IconEdit, 14, ColorAccent)
 								})
 							})
 						}),

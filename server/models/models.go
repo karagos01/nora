@@ -54,6 +54,7 @@ type Message struct {
 	UserID           string       `json:"user_id"`
 	Content          string       `json:"content"`
 	ReplyToID        *string      `json:"reply_to_id,omitempty"`
+	IdempotencyKey   string       `json:"-"`
 	CreatedAt        time.Time    `json:"created_at"`
 	UpdatedAt        *time.Time   `json:"updated_at,omitempty"`
 	Author           *User        `json:"author,omitempty"`

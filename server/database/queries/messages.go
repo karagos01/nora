@@ -24,10 +24,23 @@ type MessageQueries struct {
 
 func (q *MessageQueries) Create(msg *models.Message) error {
 	_, err := q.DB.Exec(
-		`INSERT INTO messages (id, channel_id, user_id, content, reply_to_id) VALUES (?, ?, ?, ?, ?)`,
-		msg.ID, msg.ChannelID, msg.UserID, msg.Content, msg.ReplyToID,
+		`INSERT INTO messages (id, channel_id, user_id, content, reply_to_id, idempotency_key) VALUES (?, ?, ?, ?, ?, ?)`,
+		msg.ID, msg.ChannelID, msg.UserID, msg.Content, msg.ReplyToID, msg.IdempotencyKey,
 	)
 	return err
+}
+
+// FindByIdempotencyKey returns a message ID if one already exists for this user+key combo.
+func (q *MessageQueries) FindByIdempotencyKey(userID, key string) (string, error) {
+	var id string
+	err := q.DB.QueryRow(
+		`SELECT id FROM messages WHERE user_id = ? AND idempotency_key = ?`,
+		userID, key,
+	).Scan(&id)
+	if err != nil {
+		return "", err
+	}
+	return id, nil
 }
 
 func (q *MessageQueries) GetByID(id string) (*models.Message, error) {
@@ -239,10 +252,20 @@ func (q *MessageQueries) Search(channelID, query string, limit, offset, callerPo
 	conditions = append(conditions, "(m.is_hidden = 0 OR ? < m.hidden_by_position)")
 	args = append(args, callerPosition)
 
-	// Text search (if text remains after parsing filters)
+	// Text search — use FTS5 if available, fallback to LIKE
+	useFTS := false
 	if query != "" {
-		conditions = append(conditions, "m.content LIKE '%' || ? || '%'")
-		args = append(args, query)
+		// Check if FTS5 table exists
+		var ftsExists int
+		if err := q.DB.QueryRow("SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='messages_fts'").Scan(&ftsExists); err == nil && ftsExists > 0 {
+			conditions = append(conditions, "m.rowid IN (SELECT rowid FROM messages_fts WHERE messages_fts MATCH ?)")
+			args = append(args, query)
+			useFTS = true
+		} else {
+			conditions = append(conditions, "m.content LIKE '%' || ? || '%'")
+			args = append(args, query)
+		}
+		_ = useFTS
 	}
 
 	// Extended filters

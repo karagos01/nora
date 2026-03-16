@@ -39,6 +39,9 @@ func (a *App) SetupFileDrop(e app.ViewEvent) {
 	}
 }
 
+// FinishFileDropSetup is a no-op on Linux (setup done in SetupFileDrop).
+func (a *App) FinishFileDropSetup() {}
+
 func setFrameXdndAware(gioDpy *C.Display, gioWin C.Window) {
 	runtime.LockOSThread()
 

@@ -26,6 +26,7 @@ type VoiceControls struct {
 	muteBtn   widget.Clickable
 	deafenBtn widget.Clickable
 	streamBtn widget.Clickable
+	liveWBBtn widget.Clickable
 	volumeBtn widget.Clickable
 
 	// Call controls (DM call)
@@ -131,6 +132,20 @@ func (vc *VoiceControls) Layout(gtx layout.Context) layout.Dimensions {
 					"channel_id": chID,
 					"sharing":    true,
 				})
+			}
+		}
+	}
+	if vc.liveWBBtn.Clicked(gtx) {
+		if conn.Voice != nil {
+			chID, _, _ := conn.Voice.GetState()
+			if chID != "" && vc.app.LiveWB != nil {
+				if conn.LiveWhiteboards[chID] != "" {
+					// Active WB exists — just open it
+					vc.app.LiveWB.Open(chID, conn.LiveWhiteboards[chID])
+				} else {
+					// No active WB — start one
+					vc.app.LiveWB.Start(chID)
+				}
 			}
 		}
 	}
@@ -283,7 +298,7 @@ func (vc *VoiceControls) Layout(gtx layout.Context) layout.Dimensions {
 							})
 						}),
 
-						// Row 2: Stream | StreamCfg | Volume
+						// Row 2: Stream | WB | StreamCfg | Volume
 						layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 							return layout.Inset{Top: unit.Dp(4)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
 								return layout.Flex{Spacing: layout.SpaceEvenly}.Layout(gtx,
@@ -298,6 +313,19 @@ func (vc *VoiceControls) Layout(gtx layout.Context) layout.Dimensions {
 											label = "Live"
 										}
 										return vc.layoutControlIconLabelBtn(gtx, &vc.streamBtn, IconMonitor, label, bg, fg)
+									}),
+									// Live whiteboard
+									layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
+										return layout.Inset{Left: unit.Dp(4)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+											bg := ColorInput
+											fg := ColorTextDim
+											chID, _, _ := conn.Voice.GetState()
+											if conn.LiveWhiteboards[chID] != "" {
+												bg = withAlpha(ColorAccent, 60)
+												fg = ColorAccent
+											}
+											return vc.layoutControlIconLabelBtn(gtx, &vc.liveWBBtn, IconEdit, "WB", bg, fg)
+										})
 									}),
 									// Stream settings
 									layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {

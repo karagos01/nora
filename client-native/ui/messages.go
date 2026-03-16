@@ -1574,11 +1574,13 @@ func (v *MessageView) layoutMessageCompact(gtx layout.Context, msg api.Message, 
 							emojis := v.getEmojis()
 							dims := layoutMessageContent(gtx, v.app.Theme, content, emojis, &v.actions[idx].links, &v.actions[idx].mentions, usernameToID, usernames, &v.actions[idx].textSels, v.app, serverURL)
 							if msg.UpdatedAt != nil {
+								off := op.Offset(image.Pt(0, dims.Size.Y)).Push(gtx.Ops)
 								editDims := v.layoutEditedLabel(gtx, idx)
-								dims.Size.X += editDims.Size.X
-								if editDims.Size.Y > dims.Size.Y {
-									dims.Size.Y = editDims.Size.Y
+								off.Pop()
+								if editDims.Size.X > dims.Size.X {
+									dims.Size.X = editDims.Size.X
 								}
+								dims.Size.Y += editDims.Size.Y
 							}
 							return dims
 						})
@@ -1761,11 +1763,13 @@ func (v *MessageView) layoutMessage(gtx layout.Context, msg api.Message, grouped
 											emojis := v.getEmojis()
 											dims := layoutMessageContent(gtx, v.app.Theme, content, emojis, &v.actions[idx].links, &v.actions[idx].mentions, usernameToID, usernames, &v.actions[idx].textSels, v.app, serverURL)
 											if msg.UpdatedAt != nil {
+												off := op.Offset(image.Pt(0, dims.Size.Y)).Push(gtx.Ops)
 												editDims := v.layoutEditedLabel(gtx, idx)
-												dims.Size.X += editDims.Size.X
-												if editDims.Size.Y > dims.Size.Y {
-													dims.Size.Y = editDims.Size.Y
+												off.Pop()
+												if editDims.Size.X > dims.Size.X {
+													dims.Size.X = editDims.Size.X
 												}
+												dims.Size.Y += editDims.Size.Y
 											}
 											return dims
 										}),
@@ -1881,11 +1885,13 @@ func (v *MessageView) layoutMessage(gtx layout.Context, msg api.Message, grouped
 										emojis := v.getEmojis()
 										dims := layoutMessageContent(gtx, v.app.Theme, content, emojis, &v.actions[idx].links, &v.actions[idx].mentions, usernameToID, usernames, &v.actions[idx].textSels, v.app, serverURL)
 										if msg.UpdatedAt != nil {
+											off := op.Offset(image.Pt(0, dims.Size.Y)).Push(gtx.Ops)
 											editDims := v.layoutEditedLabel(gtx, idx)
-											dims.Size.X += editDims.Size.X
-											if editDims.Size.Y > dims.Size.Y {
-												dims.Size.Y = editDims.Size.Y
+											off.Pop()
+											if editDims.Size.X > dims.Size.X {
+												dims.Size.X = editDims.Size.X
 											}
+											dims.Size.Y += editDims.Size.Y
 										}
 										return dims
 									})

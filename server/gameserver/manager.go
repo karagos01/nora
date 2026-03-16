@@ -449,6 +449,50 @@ func (m *Manager) DeleteFile(gsID, relPath string) error {
 	return os.RemoveAll(path)
 }
 
+// RenameFile renames a file or directory within a game server volume.
+func (m *Manager) RenameFile(gsID, relPath, newName string) error {
+	if relPath == "" || relPath == "." || relPath == "/" {
+		return fmt.Errorf("cannot rename root directory")
+	}
+	if newName == "" || newName == "." || newName == ".." {
+		return fmt.Errorf("invalid new name")
+	}
+	if strings.ContainsAny(newName, "/\\") {
+		return fmt.Errorf("new name must not contain path separators")
+	}
+	if len(newName) > 255 {
+		return fmt.Errorf("new name too long")
+	}
+	oldPath, err := m.SafePath(gsID, relPath)
+	if err != nil {
+		return err
+	}
+	// Resolve symlinks on the parent directory to prevent escape via symlinked dirs
+	parentDir, err := filepath.EvalSymlinks(filepath.Dir(oldPath))
+	if err != nil {
+		return fmt.Errorf("invalid parent path")
+	}
+	newPath := filepath.Join(parentDir, newName)
+	// Validate the new path stays inside game server directory
+	absNew, err := filepath.Abs(newPath)
+	if err != nil {
+		return fmt.Errorf("invalid path")
+	}
+	absBase, err := filepath.Abs(filepath.Join(m.DataDir, gsID))
+	if err != nil {
+		return fmt.Errorf("invalid base path")
+	}
+	// Also resolve symlinks on the base to compare real paths
+	realBase, err := filepath.EvalSymlinks(absBase)
+	if err != nil {
+		realBase = absBase
+	}
+	if absNew != realBase && !strings.HasPrefix(absNew, realBase+string(filepath.Separator)) {
+		return fmt.Errorf("path traversal denied")
+	}
+	return os.Rename(oldPath, newPath)
+}
+
 // Mkdir creates a directory
 func (m *Manager) Mkdir(gsID, relPath string) error {
 	path, err := m.SafePath(gsID, relPath)

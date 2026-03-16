@@ -6,3 +6,6 @@ import "gioui.org/app"
 
 // SetupFileDrop is a no-op on unsupported platforms.
 func (a *App) SetupFileDrop(e app.ViewEvent) {}
+
+// FinishFileDropSetup is a no-op on unsupported platforms.
+func (a *App) FinishFileDropSetup() {}

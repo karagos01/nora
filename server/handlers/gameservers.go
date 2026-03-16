@@ -769,6 +769,51 @@ func (d *Deps) GameServerFileDelete(w http.ResponseWriter, r *http.Request) {
 	util.JSON(w, http.StatusOK, map[string]string{"status": "ok"})
 }
 
+// GameServerFileRename renames a file or directory
+func (d *Deps) GameServerFileRename(w http.ResponseWriter, r *http.Request) {
+	user := auth.GetUser(r)
+	if err := d.requirePermission(user, models.PermAdmin); err != nil {
+		util.Error(w, http.StatusForbidden, "admin permission required")
+		return
+	}
+
+	if !d.GameServersEnabled {
+		util.Error(w, http.StatusServiceUnavailable, "game servers are not enabled")
+		return
+	}
+
+	id := r.PathValue("id")
+	if _, err := d.GameServerQ.GetByID(id); err != nil {
+		util.Error(w, http.StatusNotFound, "game server not found")
+		return
+	}
+
+	var req struct {
+		Path    string `json:"path"`
+		NewName string `json:"new_name"`
+	}
+	if err := util.DecodeJSON(r, &req); err != nil {
+		util.Error(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+
+	if req.Path == "" || req.NewName == "" {
+		util.Error(w, http.StatusBadRequest, "path and new_name required")
+		return
+	}
+	if !isValidFileName(req.NewName) {
+		util.Error(w, http.StatusBadRequest, "invalid new_name")
+		return
+	}
+
+	if err := d.GameServerMgr.RenameFile(id, req.Path, req.NewName); err != nil {
+		util.Error(w, http.StatusBadRequest, err.Error())
+		return
+	}
+
+	util.JSON(w, http.StatusOK, map[string]string{"status": "ok"})
+}
+
 // GameServerMkdir creates a directory
 func (d *Deps) GameServerMkdir(w http.ResponseWriter, r *http.Request) {
 	user := auth.GetUser(r)

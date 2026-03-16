@@ -52,9 +52,9 @@ func main() {
 				}
 				os.Exit(0)
 			case app.ViewEvent:
-				log.Printf("main: ViewEvent received: %T valid=%v", e, e.Valid())
 				a.SetupFileDrop(e)
 			case app.FrameEvent:
+				a.FinishFileDropSetup()
 				// Process all dragged files from OS that are waiting in the queue.
 				for {
 					select {

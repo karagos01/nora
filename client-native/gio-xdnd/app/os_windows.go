@@ -80,6 +80,12 @@ var resources struct {
 	cursor syscall.Handle
 }
 
+// cursorCache caches loaded cursor handles to avoid calling LoadCursorW every frame.
+var cursorCache struct {
+	mu      sync.Mutex
+	handles map[pointer.Cursor]syscall.Handle
+}
+
 func osMain() {
 	select {}
 }
@@ -814,9 +820,7 @@ func (w *window) SetCursor(cursor pointer.Cursor) {
 		c = resources.cursor
 	}
 	w.cursor = c
-	if w.cursorIn {
-		windows.SetCursor(w.cursor)
-	}
+	windows.SetCursor(w.cursor)
 }
 
 // windowsCursor contains mapping from pointer.Cursor to an IDC.
@@ -856,7 +860,23 @@ func loadCursor(cursor pointer.Cursor) (syscall.Handle, error) {
 	case pointer.CursorNone:
 		return 0, nil
 	default:
-		return windows.LoadCursor(windowsCursor[cursor])
+		cursorCache.mu.Lock()
+		if h, ok := cursorCache.handles[cursor]; ok {
+			cursorCache.mu.Unlock()
+			return h, nil
+		}
+		cursorCache.mu.Unlock()
+		h, err := windows.LoadCursor(windowsCursor[cursor])
+		if err != nil {
+			return 0, err
+		}
+		cursorCache.mu.Lock()
+		if cursorCache.handles == nil {
+			cursorCache.handles = make(map[pointer.Cursor]syscall.Handle)
+		}
+		cursorCache.handles[cursor] = h
+		cursorCache.mu.Unlock()
+		return h, nil
 	}
 }
 

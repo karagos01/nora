@@ -4,18 +4,16 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"io"
 	"log"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"regexp"
+	"runtime"
 	"sort"
 	"strconv"
 	"strings"
 	"time"
-
-	"github.com/kkdai/youtube/v2"
 )
 
 var ytRegex = regexp.MustCompile(`(?:youtube\.com/watch\?v=|youtu\.be/|youtube\.com/shorts/)([a-zA-Z0-9_-]{11})`)
@@ -27,7 +25,7 @@ type YouTubeFormat struct {
 	Height int
 	ItagNo int
 	Muxed  bool   // true = has audio+video, false = video-only (needs separate audio)
-	URL    string // direct stream URL (from yt-dlp, empty if kkdai fallback)
+	URL    string // direct stream URL from yt-dlp
 }
 
 // YouTubeInfo holds metadata about a YouTube video.
@@ -68,17 +66,25 @@ func checkYtDlp() string {
 	return path
 }
 
-// FetchYouTubeInfo fetches video metadata and available formats.
-// Tries yt-dlp first (more reliable), falls back to kkdai/youtube library.
-func FetchYouTubeInfo(videoID string) (*YouTubeInfo, error) {
-	if ytdlp := checkYtDlp(); ytdlp != "" {
-		info, err := fetchInfoYtDlp(ytdlp, videoID)
-		if err == nil {
-			return info, nil
-		}
-		log.Printf("video: yt-dlp info failed: %v, trying kkdai", err)
+// YtDlpInstallHint returns a platform-specific installation hint for yt-dlp.
+func YtDlpInstallHint() string {
+	switch runtime.GOOS {
+	case "windows":
+		return "yt-dlp is required for YouTube playback.\nInstall: winget install yt-dlp"
+	case "darwin":
+		return "yt-dlp is required for YouTube playback.\nInstall: brew install yt-dlp"
+	default:
+		return "yt-dlp is required for YouTube playback.\nInstall: sudo apt install yt-dlp"
 	}
-	return fetchInfoKkdai(videoID)
+}
+
+// FetchYouTubeInfo fetches video metadata and available formats via yt-dlp.
+func FetchYouTubeInfo(videoID string) (*YouTubeInfo, error) {
+	ytdlp := checkYtDlp()
+	if ytdlp == "" {
+		return nil, fmt.Errorf("%s", YtDlpInstallHint())
+	}
+	return fetchInfoYtDlp(ytdlp, videoID)
 }
 
 // GetYouTubeStreamURLs uses yt-dlp to extract direct stream URLs (no download).
@@ -87,7 +93,7 @@ func FetchYouTubeInfo(videoID string) (*YouTubeInfo, error) {
 func GetYouTubeStreamURLs(videoID string, videoItag, audioItag int) (videoURL, audioURL string, err error) {
 	ytdlp := checkYtDlp()
 	if ytdlp == "" {
-		return "", "", fmt.Errorf("yt-dlp not found")
+		return "", "", fmt.Errorf("%s", YtDlpInstallHint())
 	}
 
 	ytURL := "https://www.youtube.com/watch?v=" + videoID
@@ -125,17 +131,13 @@ func GetYouTubeStreamURLs(videoID string, videoItag, audioItag int) (videoURL, a
 }
 
 // DownloadYouTubeStreams downloads video (and optionally audio) to temp files.
-// Fallback for when stream URL extraction fails.
 // Returns file paths + cleanup function. Caller must call cleanup to remove temp files.
 func DownloadYouTubeStreams(videoID string, videoItag, audioItag int) (videoPath, audioPath string, cleanup func(), err error) {
-	if ytdlp := checkYtDlp(); ytdlp != "" {
-		vp, ap, cl, err := downloadYtDlp(ytdlp, videoID, videoItag, audioItag)
-		if err == nil {
-			return vp, ap, cl, nil
-		}
-		log.Printf("video: yt-dlp download failed: %v, trying kkdai", err)
+	ytdlp := checkYtDlp()
+	if ytdlp == "" {
+		return "", "", nil, fmt.Errorf("%s", YtDlpInstallHint())
 	}
-	return downloadKkdai(videoID, videoItag, audioItag)
+	return downloadYtDlp(ytdlp, videoID, videoItag, audioItag)
 }
 
 // --- yt-dlp backend ---
@@ -335,196 +337,3 @@ func downloadYtDlp(ytdlpPath, videoID string, videoItag, audioItag int) (string,
 	return videoPath, audioPath, cleanupFn, nil
 }
 
-// --- kkdai/youtube fallback backend ---
-
-func fetchInfoKkdai(videoID string) (*YouTubeInfo, error) {
-	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
-	defer cancel()
-
-	client := youtube.Client{}
-	vid, err := client.GetVideoContext(ctx, videoID)
-	if err != nil {
-		return nil, fmt.Errorf("youtube get video: %w", err)
-	}
-
-	info := &YouTubeInfo{
-		Title:     vid.Title,
-		Thumbnail: YouTubeThumbnailURL(videoID),
-		Duration:  vid.Duration,
-		VideoID:   videoID,
-	}
-
-	var muxed, adaptive youtube.FormatList
-	var bestAudio youtube.Format
-	bestAudioBitrate := 0
-	for _, f := range vid.Formats {
-		if f.AudioChannels > 0 && f.Width > 0 {
-			muxed = append(muxed, f)
-		} else if f.Width > 0 && f.AudioChannels == 0 {
-			adaptive = append(adaptive, f)
-		} else if f.AudioChannels > 0 && f.Width == 0 {
-			if f.Bitrate > bestAudioBitrate {
-				bestAudio = f
-				bestAudioBitrate = f.Bitrate
-			}
-		}
-	}
-
-	if len(muxed) == 0 && len(adaptive) == 0 {
-		return nil, fmt.Errorf("no video formats available")
-	}
-
-	bestByHeight := make(map[int]youtube.Format)
-	for _, f := range muxed {
-		if existing, ok := bestByHeight[f.Height]; !ok || f.Bitrate > existing.Bitrate {
-			bestByHeight[f.Height] = f
-		}
-	}
-
-	adaptiveByHeight := make(map[int]youtube.Format)
-	for _, f := range adaptive {
-		if _, hasMuxed := bestByHeight[f.Height]; hasMuxed {
-			continue
-		}
-		if existing, ok := adaptiveByHeight[f.Height]; !ok || f.Bitrate > existing.Bitrate {
-			adaptiveByHeight[f.Height] = f
-		}
-	}
-
-	type qualityEntry struct {
-		format youtube.Format
-		muxed  bool
-	}
-	var all []qualityEntry
-	for _, f := range bestByHeight {
-		all = append(all, qualityEntry{f, true})
-	}
-	for _, f := range adaptiveByHeight {
-		all = append(all, qualityEntry{f, false})
-	}
-
-	sort.Slice(all, func(i, j int) bool {
-		wi, wj := all[i].format.Width, all[j].format.Width
-		if wi <= 1280 && wj <= 1280 {
-			return wi > wj
-		}
-		if wi <= 1280 {
-			return true
-		}
-		if wj <= 1280 {
-			return false
-		}
-		return wi < wj
-	})
-
-	for _, e := range all {
-		label := fmt.Sprintf("%dp", e.format.Height)
-		if e.format.QualityLabel != "" {
-			label = e.format.QualityLabel
-		}
-		info.Formats = append(info.Formats, YouTubeFormat{
-			Label:  label,
-			Width:  e.format.Width,
-			Height: e.format.Height,
-			ItagNo: e.format.ItagNo,
-			Muxed:  e.muxed,
-		})
-	}
-
-	if len(all) == 0 {
-		return nil, fmt.Errorf("no video formats available")
-	}
-
-	if bestAudioBitrate > 0 {
-		info.BestAudioTag = bestAudio.ItagNo
-	}
-
-	return info, nil
-}
-
-func downloadKkdai(videoID string, videoItag, audioItag int) (string, string, func(), error) {
-	client := youtube.Client{}
-	vid, err := client.GetVideo(videoID)
-	if err != nil {
-		return "", "", nil, fmt.Errorf("youtube get video: %w", err)
-	}
-
-	var videoFormat, audioFormat *youtube.Format
-	for i := range vid.Formats {
-		if vid.Formats[i].ItagNo == videoItag {
-			videoFormat = &vid.Formats[i]
-		}
-		if audioItag > 0 && vid.Formats[i].ItagNo == audioItag {
-			audioFormat = &vid.Formats[i]
-		}
-	}
-	if videoFormat == nil {
-		return "", "", nil, fmt.Errorf("video format itag %d not found", videoItag)
-	}
-
-	var files []string
-	cleanupFn := func() {
-		for _, f := range files {
-			os.Remove(f)
-		}
-	}
-
-	type result struct {
-		path string
-		err  error
-	}
-	videoCh := make(chan result, 1)
-	audioCh := make(chan result, 1)
-
-	download := func(f *youtube.Format, prefix string) (string, error) {
-		stream, _, err := client.GetStream(vid, f)
-		if err != nil {
-			return "", fmt.Errorf("get stream: %w", err)
-		}
-		defer stream.Close()
-
-		tmp, err := os.CreateTemp("", "nora-yt-"+prefix+"-*.mp4")
-		if err != nil {
-			return "", err
-		}
-		n, err := io.Copy(tmp, stream)
-		tmp.Close()
-		if err != nil {
-			os.Remove(tmp.Name())
-			return "", fmt.Errorf("download: %w", err)
-		}
-		log.Printf("video: kkdai downloaded %s %d bytes to %s", prefix, n, tmp.Name())
-		return tmp.Name(), nil
-	}
-
-	go func() {
-		path, err := download(videoFormat, "video")
-		videoCh <- result{path, err}
-	}()
-
-	if audioFormat != nil {
-		go func() {
-			path, err := download(audioFormat, "audio")
-			audioCh <- result{path, err}
-		}()
-	} else {
-		audioCh <- result{}
-	}
-
-	vr := <-videoCh
-	ar := <-audioCh
-
-	if vr.err != nil {
-		if ar.path != "" {
-			os.Remove(ar.path)
-		}
-		return "", "", nil, fmt.Errorf("video download: %w", vr.err)
-	}
-
-	files = append(files, vr.path)
-	if ar.path != "" {
-		files = append(files, ar.path)
-	}
-
-	return vr.path, ar.path, cleanupFn, nil
-}

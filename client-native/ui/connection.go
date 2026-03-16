@@ -86,6 +86,9 @@ type ServerConnection struct {
 	// Screen sharing: userID → channelID
 	ScreenSharers map[string]string
 
+	// Live whiteboards: channelID → starterID
+	LiveWhiteboards map[string]string
+
 	// File sharing
 	MyShares     []api.SharedDirectory
 	SharedWithMe []api.SharedDirectory
@@ -178,8 +181,8 @@ func (a *App) Unlock(username, password string) error {
 			a.Theme.ApplyFontScale(float32(fs))
 			a.Theme.CompactMode = id.CompactMode
 
-			a.DMHistory = store.NewDMHistory(id.PublicKey)
-			a.GroupHistory = store.NewGroupHistory(id.PublicKey)
+			a.DMHistory = store.NewDMHistory(id.PublicKey, secret)
+			a.GroupHistory = store.NewGroupHistory(id.PublicKey, secret)
 			a.Bookmarks = store.NewBookmarkStore(id.PublicKey)
 
 			if cdb, err := store.OpenContacts(id.PublicKey); err == nil {
@@ -249,8 +252,8 @@ func (a *App) createIdentity(username, password string) error {
 	a.SecretKey = kp.SecretKey
 	a.Username = username
 	a.Mode = ViewHome
-	a.DMHistory = store.NewDMHistory(kp.PublicKey)
-	a.GroupHistory = store.NewGroupHistory(kp.PublicKey)
+	a.DMHistory = store.NewDMHistory(kp.PublicKey, kp.SecretKey)
+	a.GroupHistory = store.NewGroupHistory(kp.PublicKey, kp.SecretKey)
 	a.Bookmarks = store.NewBookmarkStore(kp.PublicKey)
 	if cdb, err := store.OpenContacts(kp.PublicKey); err == nil {
 		a.Contacts = cdb
@@ -362,8 +365,9 @@ func (a *App) setupServerConnection(serverURL, name, description, iconURL, stunU
 		UnreadGroups:  make(map[string]bool),
 		VoiceState:     make(map[string][]string),
 		LANMembers:     make(map[string][]api.LANPartyMember),
-		ScreenSharers: make(map[string]string),
-		SharePaths:    make(map[string]string),
+		ScreenSharers:   make(map[string]string),
+		LiveWhiteboards: make(map[string]string),
+		SharePaths:      make(map[string]string),
 	}
 
 	// Load persisted SharePaths from identity
@@ -751,6 +755,26 @@ func (a *App) loadServerData(conn *ServerConnection) {
 	convs, err := conn.Client.GetDMConversations()
 	if err == nil {
 		conn.DMConversations = convs
+		// Set unread indicators for conversations with pending messages
+		totalPending := 0
+		for _, c := range convs {
+			if c.PendingCount > 0 {
+				conn.UnreadDMCount[c.ID] = c.PendingCount
+				totalPending += c.PendingCount
+			}
+		}
+		// Notify about pending DMs received while offline
+		if totalPending > 0 {
+			msg := fmt.Sprintf("You have %d unread message(s)", totalPending)
+			a.Toasts.Info(msg)
+			go func() {
+				PlayDMSound()
+				if a.NotifMgr != nil {
+					title := conn.Name + " - Direct Messages"
+					a.NotifMgr.NotifyForced(title, msg)
+				}
+			}()
+		}
 	}
 
 	friends, err := conn.Client.GetFriends()
@@ -832,6 +856,9 @@ func (a *App) loadServerData(conn *ServerConnection) {
 		conn.VoiceState = voiceResp.Channels
 		if voiceResp.ScreenSharers != nil {
 			conn.ScreenSharers = voiceResp.ScreenSharers
+		}
+		if voiceResp.LiveWhiteboards != nil {
+			conn.LiveWhiteboards = voiceResp.LiveWhiteboards
 		}
 	}
 
@@ -992,6 +1019,9 @@ func (a *App) SelectChannel(id, name string) {
 	conn.ActiveChannelID = id
 	conn.ActiveChannelName = name
 	delete(conn.UnreadCount, id)
+	// Clear DM viewed state so notifications work
+	conn.ActiveDMID = ""
+	conn.ActiveDMPeerKey = ""
 	a.Mode = ViewChannels
 
 	// Load from local cache for instant display
@@ -1045,6 +1075,9 @@ func (a *App) SelectGroup(groupID, groupName string) {
 
 	a.mu.Lock()
 	conn.ActiveGroupID = groupID
+	// Clear DM viewed state so notifications work
+	conn.ActiveDMID = ""
+	conn.ActiveDMPeerKey = ""
 	a.Mode = ViewGroup
 	delete(conn.UnreadGroups, groupID)
 	a.mu.Unlock()

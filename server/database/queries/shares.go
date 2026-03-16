@@ -353,6 +353,21 @@ func (q *ShareQueries) DeleteFileEntry(directoryID, relativePath, fileName strin
 	return nil
 }
 
+func (q *ShareQueries) RenameFileEntry(directoryID, relativePath, oldName, newName string) error {
+	res, err := q.DB.Exec(
+		`UPDATE shared_file_cache SET file_name = ? WHERE directory_id = ? AND relative_path = ? AND file_name = ?`,
+		newName, directoryID, relativePath, oldName,
+	)
+	if err != nil {
+		return err
+	}
+	n, _ := res.RowsAffected()
+	if n == 0 {
+		return sql.ErrNoRows
+	}
+	return nil
+}
+
 func (q *ShareQueries) ClearFileCache(directoryID string) error {
 	_, err := q.DB.Exec("DELETE FROM shared_file_cache WHERE directory_id = ?", directoryID)
 	return err

@@ -35,6 +35,7 @@ func (d *Deps) ListDMConversations(w http.ResponseWriter, r *http.Request) {
 	type convWithParticipants struct {
 		models.DMConversation
 		Participants []models.DMParticipant `json:"participants"`
+		PendingCount int                    `json:"pending_count"`
 	}
 
 	var result []convWithParticipants
@@ -43,6 +44,7 @@ func (d *Deps) ListDMConversations(w http.ResponseWriter, r *http.Request) {
 		result = append(result, convWithParticipants{
 			DMConversation: c,
 			Participants:   parts,
+			PendingCount:   d.DMs.PendingCount(c.ID, user.ID),
 		})
 	}
 

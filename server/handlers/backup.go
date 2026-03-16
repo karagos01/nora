@@ -222,6 +222,7 @@ func (d *Deps) reopenDB() error {
 	d.Shares.DB = sqlDB
 	d.LAN.DB = sqlDB
 	d.Whiteboards.DB = sqlDB
+	d.LiveWBQ.DB = sqlDB
 	d.GameServerQ.DB = sqlDB
 	d.SwarmSeeds.DB = sqlDB
 	d.Scheduled.DB = sqlDB

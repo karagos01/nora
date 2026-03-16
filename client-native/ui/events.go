@@ -34,19 +34,21 @@ func (a *App) processWSEvent(conn *ServerConnection, ev api.WSEvent) {
 				return
 			}
 			a.mu.Lock()
+			var notifyChannel bool
+			var notifSender, notifChName, notifContent string
+			var notifChID string
+			viewing := msg.ChannelID == conn.ActiveChannelID && a.Mode == ViewChannels
 			if msg.ChannelID == conn.ActiveChannelID {
 				conn.Messages = append(conn.Messages, msg)
-			} else {
-				// Unread for other channels
+			}
+			if !viewing {
 				conn.UnreadCount[msg.ChannelID]++
-				// Play notification sound for messages not by me
-				if msg.UserID != conn.UserID && a.ShouldNotify(conn, msg.ChannelID, msg.Content) {
-					PlayNotificationSound()
-					senderName := a.ResolveNameByID(conn, msg.UserID)
-					chName := findChannelName(conn, msg.ChannelID)
-					if a.NotifMgr != nil {
-						a.NotifMgr.NotifyMessage(conn.Name, "#"+chName, msg.Content, senderName)
-					}
+				if msg.UserID != conn.UserID {
+					notifyChannel = true
+					notifSender = a.ResolveNameByID(conn, msg.UserID)
+					notifChName = findChannelName(conn, msg.ChannelID)
+					notifContent = msg.Content
+					notifChID = msg.ChannelID
 				}
 			}
 			// Clear typing for this user in the given channel
@@ -68,6 +70,14 @@ func (a *App) processWSEvent(conn *ServerConnection, ev api.WSEvent) {
 				}
 			}
 			a.mu.Unlock()
+
+			// Notify outside lock to avoid deadlock (ShouldNotify may RLock a.mu)
+			if notifyChannel && a.ShouldNotify(conn, notifChID, notifContent) {
+				PlayNotificationSound()
+				if a.NotifMgr != nil {
+					a.NotifMgr.NotifyMessage(conn.Name, "#"+notifChName, notifContent, notifSender)
+				}
+			}
 
 			// Save to message cache
 			if conn.MsgCache != nil {
@@ -410,19 +420,27 @@ func (a *App) processWSEvent(conn *ServerConnection, ev api.WSEvent) {
 			}
 
 			a.mu.Lock()
+			var notifyDM bool
+			var dmSender, dmContent string
+			viewingDM := msg.ConversationID == conn.ActiveDMID && a.Mode == ViewDM
 			if msg.ConversationID == conn.ActiveDMID {
 				conn.DMMessages = append(conn.DMMessages, msg)
-			} else {
+			}
+			if !viewingDM {
 				conn.UnreadDMCount[msg.ConversationID]++
-				if a.ShouldNotify(conn, "", "") {
-					PlayDMSound()
-					senderName := a.ResolveNameByID(conn, msg.SenderID)
-					if a.NotifMgr != nil {
-						a.NotifMgr.NotifyMessage(conn.Name, "DM from "+senderName, msg.DecryptedContent, senderName)
-					}
-				}
+				notifyDM = true
+				dmSender = a.ResolveNameByID(conn, msg.SenderID)
+				dmContent = msg.DecryptedContent
 			}
 			a.mu.Unlock()
+
+			// Notify outside lock to avoid deadlock (ShouldNotify may RLock a.mu)
+			if notifyDM && a.ShouldNotify(conn, "", "") {
+				PlayDMSound()
+				if a.NotifMgr != nil {
+					a.NotifMgr.NotifyMessage(conn.Name, "DM from "+dmSender, dmContent, dmSender)
+				}
+			}
 		}
 
 	case "channel.typing":
@@ -736,20 +754,28 @@ func (a *App) processWSEvent(conn *ServerConnection, ev api.WSEvent) {
 			}
 
 			a.mu.Lock()
+			var notifyGroup bool
+			var grpSender, grpName, grpContent string
+			viewingGroup := msg.GroupID == conn.ActiveGroupID && a.Mode == ViewGroup
 			if msg.GroupID == conn.ActiveGroupID {
 				conn.GroupMessages = append(conn.GroupMessages, msg)
-			} else {
+			}
+			if !viewingGroup {
 				conn.UnreadGroups[msg.GroupID] = true
-				if a.ShouldNotify(conn, "", msg.DecryptedContent) {
-					PlayNotificationSound()
-					senderName := a.ResolveNameByID(conn, msg.SenderID)
-					groupName := findGroupName(conn, msg.GroupID)
-					if a.NotifMgr != nil {
-						a.NotifMgr.NotifyMessage(conn.Name, groupName, msg.DecryptedContent, senderName)
-					}
-				}
+				notifyGroup = true
+				grpSender = a.ResolveNameByID(conn, msg.SenderID)
+				grpName = findGroupName(conn, msg.GroupID)
+				grpContent = msg.DecryptedContent
 			}
 			a.mu.Unlock()
+
+			// Notify outside lock to avoid deadlock (ShouldNotify may RLock a.mu)
+			if notifyGroup && a.ShouldNotify(conn, "", grpContent) {
+				PlayNotificationSound()
+				if a.NotifMgr != nil {
+					a.NotifMgr.NotifyMessage(conn.Name, grpName, grpContent, grpSender)
+				}
+			}
 		}
 
 	case "group.key":
@@ -1805,6 +1831,104 @@ func (a *App) processWSEvent(conn *ServerConnection, ev api.WSEvent) {
 				}
 			}
 			a.mu.Unlock()
+		}
+
+	case "livewb.start":
+		var payload struct {
+			ChannelID string `json:"channel_id"`
+			StarterID string `json:"starter_id"`
+		}
+		if json.Unmarshal(ev.Payload, &payload) == nil {
+			a.mu.Lock()
+			conn.LiveWhiteboards[payload.ChannelID] = payload.StarterID
+			a.mu.Unlock()
+		}
+
+	case "livewb.stop":
+		var payload struct {
+			ChannelID string `json:"channel_id"`
+		}
+		if json.Unmarshal(ev.Payload, &payload) == nil {
+			a.mu.Lock()
+			delete(conn.LiveWhiteboards, payload.ChannelID)
+			a.mu.Unlock()
+			// Auto-close live WB view if open for this channel
+			if a.LiveWB != nil && a.LiveWB.Visible && a.LiveWB.ChannelID == payload.ChannelID {
+				a.LiveWB.Visible = false
+				a.LiveWB.ChannelID = ""
+				a.LiveWB.StarterID = ""
+				a.LiveWB.strokes = nil
+			}
+		}
+
+	case "livewb.stroke":
+		var stroke struct {
+			ChannelID string              `json:"channel_id"`
+			Stroke    api.WhiteboardStroke `json:"stroke"`
+		}
+		if json.Unmarshal(ev.Payload, &stroke) == nil {
+			if a.LiveWB != nil && a.LiveWB.Visible && a.LiveWB.ChannelID == stroke.ChannelID {
+				// Deduplicate: skip if stroke already added locally (optimistic update)
+				a.mu.Lock()
+				dup := false
+				for _, s := range a.LiveWB.strokes {
+					if s.ID == stroke.Stroke.ID {
+						dup = true
+						break
+					}
+				}
+				if !dup {
+					a.LiveWB.strokes = append(a.LiveWB.strokes, stroke.Stroke)
+				}
+				a.mu.Unlock()
+			}
+		}
+
+	case "livewb.undo":
+		var payload struct {
+			ChannelID string `json:"channel_id"`
+			StrokeID  string `json:"stroke_id"`
+		}
+		if json.Unmarshal(ev.Payload, &payload) == nil {
+			if a.LiveWB != nil && a.LiveWB.Visible && a.LiveWB.ChannelID == payload.ChannelID {
+				a.mu.Lock()
+				for i, s := range a.LiveWB.strokes {
+					if s.ID == payload.StrokeID {
+						a.LiveWB.strokes = append(a.LiveWB.strokes[:i], a.LiveWB.strokes[i+1:]...)
+						break
+					}
+				}
+				a.mu.Unlock()
+			}
+		}
+
+	case "livewb.clear":
+		var payload struct {
+			ChannelID string `json:"channel_id"`
+		}
+		if json.Unmarshal(ev.Payload, &payload) == nil {
+			if a.LiveWB != nil && a.LiveWB.Visible && a.LiveWB.ChannelID == payload.ChannelID {
+				a.mu.Lock()
+				a.LiveWB.strokes = nil
+				a.mu.Unlock()
+			}
+		}
+
+	case "livewb.state":
+		var payload struct {
+			ChannelID string               `json:"channel_id"`
+			StarterID string               `json:"starter_id"`
+			Strokes   []api.WhiteboardStroke `json:"strokes"`
+		}
+		if json.Unmarshal(ev.Payload, &payload) == nil {
+			a.mu.Lock()
+			conn.LiveWhiteboards[payload.ChannelID] = payload.StarterID
+			a.mu.Unlock()
+			if a.LiveWB != nil && a.LiveWB.Visible && a.LiveWB.ChannelID == payload.ChannelID {
+				a.mu.Lock()
+				a.LiveWB.strokes = payload.Strokes
+				a.mu.Unlock()
+			}
 		}
 
 	case "whiteboard.stroke":

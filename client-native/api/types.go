@@ -102,6 +102,7 @@ type DMConversation struct {
 	ID           string          `json:"id"`
 	Participants []DMParticipant `json:"participants,omitempty"`
 	CreatedAt    time.Time       `json:"created_at"`
+	PendingCount int             `json:"pending_count"`
 }
 
 type DMParticipant struct {

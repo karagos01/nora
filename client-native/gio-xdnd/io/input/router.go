@@ -734,7 +734,7 @@ func (q *Router) ClipboardRequested() bool {
 
 // Cursor returns the last cursor set.
 func (q *Router) Cursor() pointer.Cursor {
-	return q.state().cursor
+	return q.lastState().cursor
 }
 
 // SemanticAt returns the first semantic description under pos, if any.

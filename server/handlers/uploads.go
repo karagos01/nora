@@ -221,8 +221,9 @@ func (d *Deps) InitUpload(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var body struct {
-		Filename string `json:"filename"`
-		Size     int64  `json:"size"`
+		Filename    string `json:"filename"`
+		Size        int64  `json:"size"`
+		ContentHash string `json:"content_hash,omitempty"`
 	}
 	if err := util.DecodeJSON(r, &body); err != nil || body.Filename == "" || body.Size <= 0 {
 		util.Error(w, http.StatusBadRequest, "filename and size required")
@@ -232,6 +233,22 @@ func (d *Deps) InitUpload(w http.ResponseWriter, r *http.Request) {
 	if body.Size > d.MaxUploadSize {
 		util.Error(w, http.StatusBadRequest, fmt.Sprintf("file too large (max %d bytes)", d.MaxUploadSize))
 		return
+	}
+
+	// Early dedup check — if client provides SHA-256 and file already exists, skip upload
+	if body.ContentHash != "" && len(body.ContentHash) == 64 {
+		if existing, err := d.Attachments.FindByContentHash(body.ContentHash); err == nil && existing != "" {
+			slog.Debug("upload dedup: skipped (hash match)", "hash", body.ContentHash[:12], "existing", existing)
+			util.JSON(w, http.StatusOK, map[string]any{
+				"filename":     existing,
+				"original":     body.Filename,
+				"url":          "/api/uploads/" + existing,
+				"size":         body.Size,
+				"content_hash": body.ContentHash,
+				"deduplicated": true,
+			})
+			return
+		}
 	}
 
 	id, _ := uuid.NewV7()

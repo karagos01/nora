@@ -84,8 +84,24 @@ func (nm *NotifManager) NotifyMessage(serverName, channelOrUser, content, sender
 	if serverName != "" {
 		title = serverName + " - " + channelOrUser
 	}
-	body := senderName + ": " + truncateMsg(content, 150)
+	body := content
+	if senderName != "" {
+		body = senderName + ": " + truncateMsg(content, 150)
+	}
 
+	go func() {
+		if err := sendDesktopNotification(title, body, ""); err != nil {
+			log.Printf("desktop notif error: %v", err)
+		}
+	}()
+}
+
+// NotifyForced sends a desktop notification bypassing the window-active check.
+// Used for login-time pending message notifications where the window is always active.
+func (nm *NotifManager) NotifyForced(title, body string) {
+	if !nm.enabled {
+		return
+	}
 	go func() {
 		if err := sendDesktopNotification(title, body, ""); err != nil {
 			log.Printf("desktop notif error: %v", err)

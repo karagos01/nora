@@ -1,6 +1,9 @@
 package store
 
 import (
+	"encoding/json"
+	"os"
+	"path/filepath"
 	"testing"
 	"time"
 )
@@ -210,6 +213,94 @@ func TestGetAllKeysWithHistory(t *testing.T) {
 	// Order: current, then old (newest first)
 	if keys[0] != "key3" || keys[1] != "key2" || keys[2] != "key1" {
 		t.Errorf("wrong key order: %v", keys)
+	}
+}
+
+// --- Encryption ---
+
+func TestEncryptedSaveLoad(t *testing.T) {
+	origHome := os.Getenv("HOME")
+	tmp := t.TempDir()
+	os.Setenv("HOME", tmp)
+	defer os.Setenv("HOME", origHome)
+
+	// Use a real ed25519 seed (32 bytes hex = 64 hex chars)
+	seedHex := "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+	pubKey := "test-enc-key-0123456789abcdef"
+
+	// Create and populate encrypted history
+	h := NewGroupHistory(pubKey, seedHex)
+	h.AddMessage(StoredGroupMessage{ID: "m1", GroupID: "g1", Content: "secret message", CreatedAt: time.Now()})
+	h.SetKey("g1", "groupkey123")
+	h.Save()
+
+	// Verify file on disk is NOT valid JSON (it's encrypted binary)
+	data, err := os.ReadFile(h.historyPath())
+	if err != nil {
+		t.Fatal(err)
+	}
+	var test map[string]any
+	if json.Unmarshal(data, &test) == nil {
+		t.Error("encrypted file should not be valid JSON")
+	}
+
+	// Load into a new history instance — should decrypt
+	h2 := NewGroupHistory(pubKey, seedHex)
+	msgs := h2.GetMessages("g1")
+	if len(msgs) != 1 || msgs[0].Content != "secret message" {
+		t.Errorf("decrypted messages: got %v", msgs)
+	}
+	if h2.GetKey("g1") != "groupkey123" {
+		t.Errorf("decrypted key: got %q", h2.GetKey("g1"))
+	}
+}
+
+func TestPlaintextMigration(t *testing.T) {
+	origHome := os.Getenv("HOME")
+	tmp := t.TempDir()
+	os.Setenv("HOME", tmp)
+	defer os.Setenv("HOME", origHome)
+
+	seedHex := "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+	pubKey := "test-mig-key-0123456789abcdef"
+
+	// Write a plaintext JSON file manually
+	noraPath := filepath.Join(tmp, ".nora")
+	os.MkdirAll(noraPath, 0700)
+
+	plainData := groupHistoryData{
+		Messages: map[string][]StoredGroupMessage{
+			"g1": {{ID: "m1", GroupID: "g1", Content: "old plain"}},
+		},
+		Keys:    map[string]string{"g1": "oldkey"},
+		OldKeys: map[string][]string{},
+	}
+	data, _ := json.Marshal(plainData)
+	short := pubKey[:16]
+	os.WriteFile(filepath.Join(noraPath, "group_history_"+short+".json"), data, 0600)
+
+	// Load with encryption key — should read plaintext and mark dirty
+	h := NewGroupHistory(pubKey, seedHex)
+	msgs := h.GetMessages("g1")
+	if len(msgs) != 1 || msgs[0].Content != "old plain" {
+		t.Errorf("migration failed: got %v", msgs)
+	}
+
+	// Save — should write encrypted
+	h.Save()
+
+	// Verify file is now encrypted (not JSON)
+	encData, _ := os.ReadFile(h.historyPath())
+	var test map[string]any
+	if json.Unmarshal(encData, &test) == nil {
+		t.Error("migrated file should be encrypted, not JSON")
+	}
+
+	// Reload — should still work
+	h2 := NewGroupHistory(pubKey, seedHex)
+	msgs2 := h2.GetMessages("g1")
+	if len(msgs2) != 1 || msgs2[0].Content != "old plain" {
+		t.Errorf("post-migration load failed: got %v", msgs2)
 	}
 }
 

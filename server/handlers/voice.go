@@ -15,10 +15,14 @@ func (d *Deps) VoiceState(w http.ResponseWriter, r *http.Request) {
 		state = make(map[string][]string)
 	}
 	sharers := d.Hub.ScreenSharers()
-	util.JSON(w, http.StatusOK, map[string]any{
+	resp := map[string]any{
 		"channels":       state,
 		"screen_sharers": sharers,
-	})
+	}
+	if lwb := d.Hub.LiveWBState(); lwb != nil {
+		resp["live_whiteboards"] = lwb
+	}
+	util.JSON(w, http.StatusOK, resp)
 }
 
 // VoiceMove moves a user to another voice channel (requires KICK permission + hierarchy check)

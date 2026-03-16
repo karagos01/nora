@@ -823,6 +823,65 @@ func (d *Deps) DeleteShareFile(w http.ResponseWriter, r *http.Request) {
 	util.JSON(w, http.StatusOK, map[string]string{"status": "ok"})
 }
 
+// RenameShareFile renames a file entry in the shared file cache
+func (d *Deps) RenameShareFile(w http.ResponseWriter, r *http.Request) {
+	user := auth.GetUser(r)
+	shareID := r.PathValue("id")
+
+	dir, err := d.Shares.GetDirectory(shareID)
+	if err != nil {
+		util.Error(w, http.StatusNotFound, "share not found")
+		return
+	}
+
+	// Verify write permission (owner always has access)
+	if dir.OwnerID != user.ID {
+		perm, err := d.Shares.GetEffectivePermission(shareID, user.ID)
+		if err != nil || !perm.CanWrite || perm.IsBlocked {
+			util.Error(w, http.StatusForbidden, "no write access")
+			return
+		}
+	}
+
+	var req struct {
+		RelativePath string `json:"relative_path"`
+		OldName      string `json:"old_name"`
+		NewName      string `json:"new_name"`
+	}
+	if err := util.DecodeJSON(r, &req); err != nil || req.OldName == "" || req.NewName == "" {
+		util.Error(w, http.StatusBadRequest, "old_name and new_name are required")
+		return
+	}
+	if !isValidFileName(req.OldName) || !isValidFileName(req.NewName) {
+		util.Error(w, http.StatusBadRequest, "invalid file name")
+		return
+	}
+	if req.RelativePath == "" {
+		req.RelativePath = "/"
+	}
+	if !isValidSharePath(req.RelativePath) {
+		util.Error(w, http.StatusBadRequest, "invalid relative_path")
+		return
+	}
+
+	if err := d.Shares.RenameFileEntry(shareID, req.RelativePath, req.OldName, req.NewName); err != nil {
+		util.Error(w, http.StatusNotFound, "file not found in cache")
+		return
+	}
+
+	// Notify owner via WS — so they can rename the file on disk
+	event, _ := ws.NewEvent(ws.EventFileRenamed, map[string]any{
+		"directory_id":  shareID,
+		"relative_path": req.RelativePath,
+		"old_name":      req.OldName,
+		"new_name":      req.NewName,
+		"renamed_by":    user.ID,
+	})
+	d.Hub.BroadcastToUser(dir.OwnerID, event)
+
+	util.JSON(w, http.StatusOK, map[string]string{"status": "ok"})
+}
+
 // GetShareStats — returns total size and file count (owner only)
 func (d *Deps) GetShareStats(w http.ResponseWriter, r *http.Request) {
 	user := auth.GetUser(r)

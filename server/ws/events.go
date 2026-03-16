@@ -110,6 +110,7 @@ const (
 	EventShareFilesChanged     EventType = "share.files_changed"
 	EventSharePermissionChanged EventType = "share.permission_changed"
 	EventFileDeleted           EventType = "file.deleted"
+	EventFileRenamed           EventType = "file.renamed"
 	EventUploadRequest         EventType = "upload.request"
 	EventTransferRequest       EventType = "transfer.request"
 	EventTransferReady         EventType = "transfer.ready"
@@ -145,6 +146,15 @@ const (
 	EventWhiteboardStroke EventType = "whiteboard.stroke"
 	EventWhiteboardUndo   EventType = "whiteboard.undo"
 	EventWhiteboardClear  EventType = "whiteboard.clear"
+
+	// Live whiteboard (ephemeral, voice channel)
+	EventLiveWBStart  EventType = "livewb.start"
+	EventLiveWBStop   EventType = "livewb.stop"
+	EventLiveWBStroke EventType = "livewb.stroke"
+	EventLiveWBUndo   EventType = "livewb.undo"
+	EventLiveWBClear  EventType = "livewb.clear"
+	EventLiveWBState  EventType = "livewb.state"
+	EventLiveWBJoin   EventType = "livewb.join"
 
 	// Swarm P2P
 	EventSwarmPieceRequest  EventType = "swarm.piece_request"

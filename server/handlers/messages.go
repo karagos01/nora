@@ -39,10 +39,11 @@ type pollRequest struct {
 }
 
 type createMessageRequest struct {
-	Content     string              `json:"content"`
-	Attachments []attachmentRequest `json:"attachments,omitempty"`
-	ReplyToID   string              `json:"reply_to_id,omitempty"`
-	Poll        *pollRequest        `json:"poll,omitempty"`
+	Content        string              `json:"content"`
+	Attachments    []attachmentRequest `json:"attachments,omitempty"`
+	ReplyToID      string              `json:"reply_to_id,omitempty"`
+	Poll           *pollRequest        `json:"poll,omitempty"`
+	IdempotencyKey string              `json:"idempotency_key,omitempty"`
 }
 
 type updateMessageRequest struct {
@@ -185,6 +186,17 @@ func (d *Deps) CreateMessage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Idempotency check — return existing message if already created
+	if req.IdempotencyKey != "" {
+		if existingID, err := d.Messages.FindByIdempotencyKey(user.ID, req.IdempotencyKey); err == nil && existingID != "" {
+			existing, err := d.Messages.GetByID(existingID)
+			if err == nil {
+				util.JSON(w, http.StatusOK, existing)
+				return
+			}
+		}
+	}
+
 	// Empty content is OK if there are attachments or a poll
 	if len(req.Attachments) == 0 && req.Poll == nil {
 		if msg := util.ValidateMessageContent(req.Content); msg != "" {
@@ -255,11 +267,12 @@ func (d *Deps) CreateMessage(w http.ResponseWriter, r *http.Request) {
 
 	id, _ := uuid.NewV7()
 	msg := &models.Message{
-		ID:        id.String(),
-		ChannelID: channelID,
-		UserID:    user.ID,
-		Content:   req.Content,
-		CreatedAt: time.Now().UTC(),
+		ID:             id.String(),
+		ChannelID:      channelID,
+		UserID:         user.ID,
+		Content:        req.Content,
+		IdempotencyKey: req.IdempotencyKey,
+		CreatedAt:      time.Now().UTC(),
 	}
 
 	// Reply validation

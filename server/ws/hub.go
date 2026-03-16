@@ -16,6 +16,24 @@ type DynamicChannelInfo struct {
 	Name      string // sub-channel name
 }
 
+// LiveWhiteboard holds ephemeral whiteboard state for a voice channel (not persisted)
+type LiveWhiteboard struct {
+	StarterID string
+	ChannelID string
+	Strokes   []LiveWhiteboardStroke
+}
+
+// LiveWhiteboardStroke represents a single stroke in a live whiteboard
+type LiveWhiteboardStroke struct {
+	ID       string `json:"id"`
+	UserID   string `json:"user_id"`
+	PathData string `json:"path_data"`
+	Color    string `json:"color"`
+	Width    int    `json:"width"`
+	Tool     string `json:"tool"`
+	Username string `json:"username"`
+}
+
 type Hub struct {
 	mu         sync.RWMutex
 	clients    map[*Client]bool
@@ -34,6 +52,16 @@ type Hub struct {
 	// Lobby voice channels: dynamic sub-channels
 	dynamicChannels map[string]*DynamicChannelInfo // channelID -> info
 	lobbyCounters   map[string]int                 // lobbyID -> next room number
+
+	// Live whiteboards: channelID -> whiteboard (in-memory cache, persisted to DB)
+	liveWhiteboards map[string]*LiveWhiteboard
+
+	// Live whiteboard DB callbacks (set from main.go)
+	liveWBCreateFn func(channelID, starterID string) error
+	liveWBDeleteFn func(channelID string) error
+	liveWBStrokeFn func(stroke LiveWhiteboardStroke, channelID string) error
+	liveWBUndoFn   func(strokeID string) error
+	liveWBClearFn  func(channelID string) error
 
 	// Lobby callbacks (set from main.go)
 	lobbyCreateFn func(lobbyID, name string) (channelID string, err error)
@@ -65,6 +93,7 @@ func NewHub() *Hub {
 		screenSharers:   make(map[string]string),
 		dynamicChannels: make(map[string]*DynamicChannelInfo),
 		lobbyCounters:   make(map[string]int),
+		liveWhiteboards: make(map[string]*LiveWhiteboard),
 		lanKickTimers:   make(map[string]*time.Timer),
 	}
 }
@@ -187,6 +216,9 @@ func (h *Hub) Run() {
 
 				// Cleanup dynamic lobby sub-channel if empty
 				h.checkDynamicCleanup(voiceLeftChannel)
+
+				// Cleanup live whiteboard if voice channel is now empty
+				h.checkLiveWBCleanup(voiceLeftChannel)
 			}
 
 			// Broadcast presence offline if this was the last session
@@ -560,4 +592,186 @@ func (h *Hub) checkDynamicCleanup(channelID string) {
 	if h.lobbyDeleteFn != nil {
 		h.lobbyDeleteFn(channelID)
 	}
+}
+
+// checkLiveWBCleanup removes the live whiteboard if the voice channel is empty and broadcasts stop.
+func (h *Hub) checkLiveWBCleanup(channelID string) {
+	h.mu.RLock()
+	wb := h.liveWhiteboards[channelID]
+	if wb == nil {
+		h.mu.RUnlock()
+		return
+	}
+	users := h.voiceState[channelID]
+	if len(users) > 0 {
+		h.mu.RUnlock()
+		return
+	}
+	h.mu.RUnlock()
+
+	// Voice channel is empty — delete WB (with DB cleanup)
+	h.LiveWBDelete(channelID)
+
+	slog.Info("livewb: cleanup (voice channel empty)", "channel_id", channelID)
+	msg, _ := NewEvent(EventLiveWBStop, map[string]string{
+		"channel_id": channelID,
+	})
+	h.Broadcast(msg)
+}
+
+// SetLiveWBCallbacks sets the DB persistence callbacks for live whiteboards.
+func (h *Hub) SetLiveWBCallbacks(
+	createFn func(channelID, starterID string) error,
+	deleteFn func(channelID string) error,
+	strokeFn func(stroke LiveWhiteboardStroke, channelID string) error,
+	undoFn func(strokeID string) error,
+	clearFn func(channelID string) error,
+) {
+	h.liveWBCreateFn = createFn
+	h.liveWBDeleteFn = deleteFn
+	h.liveWBStrokeFn = strokeFn
+	h.liveWBUndoFn = undoFn
+	h.liveWBClearFn = clearFn
+}
+
+// LoadLiveWB loads a live whiteboard session into memory (called on server startup).
+func (h *Hub) LoadLiveWB(channelID, starterID string, strokes []LiveWhiteboardStroke) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	h.liveWhiteboards[channelID] = &LiveWhiteboard{
+		StarterID: starterID,
+		ChannelID: channelID,
+		Strokes:   strokes,
+	}
+}
+
+// LiveWBStart creates a new live whiteboard for a voice channel.
+func (h *Hub) LiveWBStart(channelID, userID string) bool {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	if h.liveWhiteboards[channelID] != nil {
+		return false // already active
+	}
+	h.liveWhiteboards[channelID] = &LiveWhiteboard{
+		StarterID: userID,
+		ChannelID: channelID,
+	}
+	if h.liveWBCreateFn != nil {
+		go h.liveWBCreateFn(channelID, userID)
+	}
+	return true
+}
+
+// LiveWBStop removes the live whiteboard (starter only). Returns true if stopped.
+func (h *Hub) LiveWBStop(channelID, userID string) bool {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	wb := h.liveWhiteboards[channelID]
+	if wb == nil {
+		return false
+	}
+	if wb.StarterID != userID {
+		return false
+	}
+	delete(h.liveWhiteboards, channelID)
+	if h.liveWBDeleteFn != nil {
+		go h.liveWBDeleteFn(channelID)
+	}
+	return true
+}
+
+// LiveWBGet returns the live whiteboard for a channel (nil if none).
+func (h *Hub) LiveWBGet(channelID string) *LiveWhiteboard {
+	h.mu.RLock()
+	defer h.mu.RUnlock()
+	return h.liveWhiteboards[channelID]
+}
+
+// LiveWBAddStroke adds a stroke to the live whiteboard. Returns false if no active WB.
+func (h *Hub) LiveWBAddStroke(channelID string, stroke LiveWhiteboardStroke) bool {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	wb := h.liveWhiteboards[channelID]
+	if wb == nil {
+		return false
+	}
+	wb.Strokes = append(wb.Strokes, stroke)
+	if h.liveWBStrokeFn != nil {
+		s := stroke // copy for goroutine
+		go h.liveWBStrokeFn(s, channelID)
+	}
+	return true
+}
+
+// LiveWBUndo removes the last stroke by the given user. Returns the stroke ID or "".
+func (h *Hub) LiveWBUndo(channelID, userID string) string {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	wb := h.liveWhiteboards[channelID]
+	if wb == nil {
+		return ""
+	}
+	for i := len(wb.Strokes) - 1; i >= 0; i-- {
+		if wb.Strokes[i].UserID == userID {
+			id := wb.Strokes[i].ID
+			wb.Strokes = append(wb.Strokes[:i], wb.Strokes[i+1:]...)
+			if h.liveWBUndoFn != nil {
+				go h.liveWBUndoFn(id)
+			}
+			return id
+		}
+	}
+	return ""
+}
+
+// LiveWBClear removes all strokes from the live whiteboard.
+func (h *Hub) LiveWBClear(channelID string) bool {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	wb := h.liveWhiteboards[channelID]
+	if wb == nil {
+		return false
+	}
+	wb.Strokes = nil
+	if h.liveWBClearFn != nil {
+		go h.liveWBClearFn(channelID)
+	}
+	return true
+}
+
+// LiveWBDelete removes a live whiteboard (no starter check — used for cleanup).
+func (h *Hub) LiveWBDelete(channelID string) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	delete(h.liveWhiteboards, channelID)
+	if h.liveWBDeleteFn != nil {
+		go h.liveWBDeleteFn(channelID)
+	}
+}
+
+// LiveWBSnapshot returns a copy of the starter ID and all strokes for a live whiteboard.
+func (h *Hub) LiveWBSnapshot(channelID string) (string, []LiveWhiteboardStroke, bool) {
+	h.mu.RLock()
+	defer h.mu.RUnlock()
+	wb := h.liveWhiteboards[channelID]
+	if wb == nil {
+		return "", nil, false
+	}
+	strokes := make([]LiveWhiteboardStroke, len(wb.Strokes))
+	copy(strokes, wb.Strokes)
+	return wb.StarterID, strokes, true
+}
+
+// LiveWBState returns a map of channelID -> starterID for all active live whiteboards.
+func (h *Hub) LiveWBState() map[string]string {
+	h.mu.RLock()
+	defer h.mu.RUnlock()
+	if len(h.liveWhiteboards) == 0 {
+		return nil
+	}
+	result := make(map[string]string, len(h.liveWhiteboards))
+	for chID, wb := range h.liveWhiteboards {
+		result[chID] = wb.StarterID
+	}
+	return result
 }
