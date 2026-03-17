@@ -11,6 +11,7 @@ import (
 
 	"gioui.org/font"
 	"gioui.org/layout"
+	"gioui.org/text"
 	"gioui.org/op/clip"
 	"gioui.org/op/paint"
 	"gioui.org/unit"
@@ -35,14 +36,18 @@ type LFGBoardView struct {
 	submitBtn  widget.Clickable
 	cancelBtn  widget.Clickable
 
-	// Per-listing delete buttons
+	// Per-listing buttons
 	deleteBtns map[string]*widget.Clickable
+	authorBtns map[string]*widget.Clickable
+	dmBtns     map[string]*widget.Clickable
 }
 
 func NewLFGBoardView(a *App) *LFGBoardView {
 	v := &LFGBoardView{
 		app:        a,
 		deleteBtns: make(map[string]*widget.Clickable),
+		authorBtns: make(map[string]*widget.Clickable),
+		dmBtns:     make(map[string]*widget.Clickable),
 	}
 	v.listWidget.Axis = layout.Vertical
 	v.gameNameEd.SingleLine = true
@@ -249,9 +254,25 @@ func (v *LFGBoardView) layoutListingCard(gtx layout.Context, th *Theme, listing 
 	conn := v.app.Conn()
 	isOwn := conn != nil && listing.UserID == conn.UserID
 
-	// Ensure delete button exists
+	// Ensure per-listing buttons exist
 	if _, ok := v.deleteBtns[listing.ID]; !ok {
 		v.deleteBtns[listing.ID] = &widget.Clickable{}
+	}
+	if _, ok := v.authorBtns[listing.ID]; !ok {
+		v.authorBtns[listing.ID] = &widget.Clickable{}
+	}
+	if _, ok := v.dmBtns[listing.ID]; !ok {
+		v.dmBtns[listing.ID] = &widget.Clickable{}
+	}
+
+	// Handle author click — show user popup
+	if v.authorBtns[listing.ID].Clicked(gtx) && listing.Author != nil {
+		authorName := v.app.ResolveUserName(listing.Author)
+		v.app.UserPopup.Show(listing.UserID, authorName)
+	}
+	// Handle DM click
+	if v.dmBtns[listing.ID].Clicked(gtx) && listing.Author != nil && !isOwn {
+		v.app.UserPopup.openDMFor(listing.UserID)
 	}
 
 	accentColor := lfgGameColor(listing.GameName)
@@ -301,22 +322,53 @@ func (v *LFGBoardView) layoutListingCard(gtx layout.Context, th *Theme, listing 
 								return lbl.Layout(gtx)
 							})
 						}),
-						// Footer: author + expiry
+						// Footer: clickable author + DM button + expiry
 						layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-							return layout.Flex{Alignment: layout.Middle, Spacing: layout.SpaceBetween}.Layout(gtx,
-								layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
+							return layout.Flex{Alignment: layout.Middle}.Layout(gtx,
+								// Clickable author name
+								layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 									authorName := "Unknown"
 									if listing.Author != nil {
-										authorName = listing.Author.Username
-										if listing.Author.DisplayName != "" {
-											authorName = listing.Author.DisplayName
-										}
+										authorName = v.app.ResolveUserName(listing.Author)
 									}
-									lbl := material.Label(th.Material, unit.Sp(11), authorName+" · "+lfgTimeAgo(listing.CreatedAt))
+									return v.authorBtns[listing.ID].Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+										nameColor := UserColor(authorName)
+										if conn != nil {
+											nameColor = v.app.GetUserRoleColor(conn, listing.UserID, authorName)
+										}
+										if v.authorBtns[listing.ID].Hovered() {
+											nameColor.A = 200
+										}
+										lbl := material.Label(th.Material, unit.Sp(11), authorName)
+										lbl.Color = nameColor
+										return lbl.Layout(gtx)
+									})
+								}),
+								// Timestamp
+								layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+									lbl := material.Label(th.Material, unit.Sp(11), " \u00b7 "+lfgTimeAgo(listing.CreatedAt))
 									lbl.Color = ColorTextDim
 									return lbl.Layout(gtx)
 								}),
+								// DM button (only for other users' listings)
 								layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+									if isOwn || listing.Author == nil {
+										return layout.Dimensions{}
+									}
+									return layout.Inset{Left: unit.Dp(8)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+										return v.dmBtns[listing.ID].Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+											clr := ColorAccent
+											if v.dmBtns[listing.ID].Hovered() {
+												clr.A = 200
+											}
+											lbl := material.Label(th.Material, unit.Sp(11), "Message")
+											lbl.Color = clr
+											return lbl.Layout(gtx)
+										})
+									})
+								}),
+								// Expiry (right-aligned via Flexed)
+								layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
 									remaining := time.Until(listing.ExpiresAt)
 									var expText string
 									if remaining <= 0 {
@@ -336,6 +388,7 @@ func (v *LFGBoardView) layoutListingCard(gtx layout.Context, th *Theme, listing 
 									}
 									lbl := material.Label(th.Material, unit.Sp(11), expText)
 									lbl.Color = ColorTextDim
+									lbl.Alignment = text.End
 									return lbl.Layout(gtx)
 								}),
 							)

@@ -45,10 +45,7 @@ func (v *MemberView) Layout(gtx layout.Context) layout.Dimensions {
 	}
 	members := make([]memberInfo, len(conn.Members))
 	for i, m := range conn.Members {
-		displayName := m.DisplayName
-		if displayName == "" {
-			displayName = m.Username
-		}
+		displayName := v.app.ResolveUserName(&conn.Members[i])
 		members[i] = memberInfo{
 			id:         m.ID,
 			username:   displayName,
