@@ -210,7 +210,7 @@ func (c *Client) Challenge(publicKey, username, inviteCode, deviceID, hardwareHa
 	}
 	path := "/api/auth/challenge"
 	if inviteCode != "" {
-		path += "?invite=" + inviteCode
+		path += "?invite=" + url.QueryEscape(inviteCode)
 	}
 	var resp ChallengeResponse
 	err := c.doJSON("POST", path, body, &resp)
@@ -660,6 +660,10 @@ func (c *Client) GetGroupInvites(groupID string) ([]GroupInvite, error) {
 	var invites []GroupInvite
 	err := c.doJSON("GET", fmt.Sprintf("/api/groups/%s/invites", groupID), nil, &invites)
 	return invites, err
+}
+
+func (c *Client) DeleteGroupInvite(groupID, inviteID string) error {
+	return c.doJSON("DELETE", fmt.Sprintf("/api/groups/%s/invites/%s", groupID, inviteID), nil, nil)
 }
 
 // Emojis
@@ -1776,6 +1780,25 @@ func (c *Client) SetEventReminder(eventID string, minutesBefore int) error {
 
 func (c *Client) RemoveEventReminder(eventID string) error {
 	return c.doJSON("DELETE", fmt.Sprintf("/api/events/%s/remind", eventID), nil, nil)
+}
+
+// LFG (Looking For Group)
+
+func (c *Client) ListLFGListings(channelID string) ([]LFGListing, error) {
+	var listings []LFGListing
+	err := c.doJSON("GET", fmt.Sprintf("/api/channels/%s/lfg", channelID), nil, &listings)
+	return listings, err
+}
+
+func (c *Client) CreateLFGListing(channelID, gameName, content string) (*LFGListing, error) {
+	body := map[string]string{"game_name": gameName, "content": content}
+	var listing LFGListing
+	err := c.doJSON("POST", fmt.Sprintf("/api/channels/%s/lfg", channelID), body, &listing)
+	return &listing, err
+}
+
+func (c *Client) DeleteLFGListing(channelID, listingID string) error {
+	return c.doJSON("DELETE", fmt.Sprintf("/api/channels/%s/lfg/%s", channelID, listingID), nil, nil)
 }
 
 // Channel permission overrides

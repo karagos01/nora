@@ -1630,22 +1630,26 @@ func (v *GameServersView) layoutTextEditor(gtx layout.Context, conn *ServerConne
 
 	// Detect modification (only in edit mode)
 	if te.editMode {
+		textChanged := false
 		for {
-			_, ok := te.editor.Update(gtx)
+			ev, ok := te.editor.Update(gtx)
 			if !ok {
 				break
 			}
+			if _, isChange := ev.(widget.ChangeEvent); isChange {
+				textChanged = true
+			}
+		}
+		if textChanged {
 			te.Modified = te.editor.Text() != te.origText
+			te.buildHighlight()
 		}
 	}
 
 	// Handle edit/view toggle
 	if te.editBtn.Clicked(gtx) {
 		te.editMode = !te.editMode
-		if !te.editMode {
-			// Switch to view mode — rebuild highlight from current text
-			te.buildHighlight()
-		}
+		te.buildHighlight()
 	}
 
 	// Handle save
@@ -1775,13 +1779,16 @@ func (v *GameServersView) layoutTextEditor(gtx layout.Context, conn *ServerConne
 				// Editor / View
 				layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
 					if te.editMode {
-						return layout.Inset{Top: unit.Dp(8), Bottom: unit.Dp(8), Left: unit.Dp(12), Right: unit.Dp(12)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-							e := material.Editor(v.app.Theme.Material, &te.editor, "")
-							e.Color = ColorText
-							e.HintColor = ColorTextDim
-							e.TextSize = unit.Sp(13)
-							return e.Layout(gtx)
-						})
+						return layout.Background{}.Layout(gtx,
+							func(gtx layout.Context) layout.Dimensions {
+								bounds := image.Rect(0, 0, gtx.Constraints.Max.X, gtx.Constraints.Min.Y)
+								paint.FillShape(gtx.Ops, ColorInput, clip.Rect{Max: bounds.Max}.Op())
+								return layout.Dimensions{Size: bounds.Max}
+							},
+							func(gtx layout.Context) layout.Dimensions {
+								return v.layoutTextEditorEdit(gtx)
+							},
+						)
 					}
 					// View mode — syntax highlighted with line numbers
 					return v.layoutTextEditorView(gtx)
@@ -1903,6 +1910,118 @@ func splitTokensIntoLines(tokens []coloredToken) [][]coloredToken {
 	}
 	lines = append(lines, current)
 	return lines
+}
+
+// layoutTextEditorEdit renders the editor with syntax highlighting overlay and line numbers.
+func (v *GameServersView) layoutTextEditorEdit(gtx layout.Context) layout.Dimensions {
+	te := v.textEditor
+	txt := te.editor.Text()
+	numLines := strings.Count(txt, "\n") + 1
+	numDigits := len(fmt.Sprint(numLines))
+	lines := te.highlightedLines
+
+	return layout.Inset{Top: unit.Dp(4), Bottom: unit.Dp(4)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+		return layout.Flex{}.Layout(gtx,
+			// Line numbers gutter
+			layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+				scrollOff := te.editor.ScrollOff()
+				availH := gtx.Constraints.Max.Y
+
+				lblGtx := gtx
+				lblGtx.Constraints.Min.Y = 0
+				measMacro := op.Record(gtx.Ops)
+				widestNum := fmt.Sprintf("%*d", numDigits, numLines)
+				measLbl := material.Label(v.app.Theme.Material, unit.Sp(13), widestNum)
+				measLbl.Font.Typeface = "Go Mono"
+				measDims := layout.Inset{Left: unit.Dp(8), Right: unit.Dp(12)}.Layout(lblGtx, measLbl.Layout)
+				measMacro.Stop()
+
+				gutterW := measDims.Size.X
+				lineH := measDims.Size.Y
+
+				defer clip.Rect{Max: image.Pt(gutterW, availH)}.Push(gtx.Ops).Pop()
+				defer op.Offset(image.Pt(0, -scrollOff.Y)).Push(gtx.Ops).Pop()
+
+				for i := 0; i < numLines; i++ {
+					yOff := i * lineH
+					if yOff+lineH < scrollOff.Y || yOff > scrollOff.Y+availH {
+						continue
+					}
+					lineStack := op.Offset(image.Pt(0, yOff)).Push(gtx.Ops)
+					num := fmt.Sprintf("%*d", numDigits, i+1)
+					lbl := material.Label(v.app.Theme.Material, unit.Sp(13), num)
+					lbl.Color = ColorTextDim
+					lbl.Font.Typeface = "Go Mono"
+					layout.Inset{Left: unit.Dp(8), Right: unit.Dp(12)}.Layout(lblGtx, lbl.Layout)
+					lineStack.Pop()
+				}
+
+				return layout.Dimensions{Size: image.Pt(gutterW, availH)}
+			}),
+			// Editor area: colored tokens behind + transparent editor on top
+			layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
+				return layout.Inset{Left: unit.Dp(4), Right: unit.Dp(8)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+					// Render syntax-highlighted tokens as background layer
+					if lines != nil {
+						scrollOff := te.editor.ScrollOff()
+						lblGtx := gtx
+						lblGtx.Constraints.Min.Y = 0
+						lblGtx.Constraints.Min.X = 0
+
+						// Measure line height
+						measMacro := op.Record(gtx.Ops)
+						tmpLbl := material.Label(v.app.Theme.Material, unit.Sp(13), "X")
+						tmpLbl.Font.Typeface = "Go Mono"
+						measDims := tmpLbl.Layout(lblGtx)
+						measMacro.Stop()
+						lineH := measDims.Size.Y
+
+						availH := gtx.Constraints.Max.Y
+						tokClip := clip.Rect{Max: image.Pt(gtx.Constraints.Max.X, availH)}.Push(gtx.Ops)
+						tokScroll := op.Offset(image.Pt(0, -scrollOff.Y)).Push(gtx.Ops)
+
+						for i, toks := range lines {
+							yOff := i * lineH
+							if yOff+lineH < scrollOff.Y || yOff > scrollOff.Y+availH {
+								continue
+							}
+							if len(toks) == 0 {
+								continue
+							}
+							lineStack := op.Offset(image.Pt(0, yOff)).Push(gtx.Ops)
+							xOff := 0
+							for _, tok := range toks {
+								tokStack := op.Offset(image.Pt(xOff, 0)).Push(gtx.Ops)
+								lbl := material.Label(v.app.Theme.Material, unit.Sp(13), tok.text)
+								lbl.Color = tok.color
+								lbl.Font.Typeface = "Go Mono"
+								dims := lbl.Layout(lblGtx)
+								xOff += dims.Size.X
+								tokStack.Pop()
+							}
+							lineStack.Pop()
+						}
+
+						tokScroll.Pop()
+						tokClip.Pop()
+					}
+
+					// Editor on top: transparent text, visible caret + selection
+					te.editor.CaretColor = ColorText
+					e := material.Editor(v.app.Theme.Material, &te.editor, "")
+					if lines != nil {
+						e.Color = color.NRGBA{A: 0}
+					} else {
+						e.Color = ColorText
+					}
+					e.HintColor = ColorTextDim
+					e.TextSize = unit.Sp(13)
+					e.Font.Typeface = "Go Mono"
+					return e.Layout(gtx)
+				})
+			}),
+		)
+	})
 }
 
 // layoutTextEditorView renders a syntax highlighted view with line numbers.

@@ -62,6 +62,7 @@ func (d *InputDialog) Layout(gtx layout.Context) layout.Dimensions {
 		gtx.Execute(key.FocusCmd{Tag: &d.editor})
 	}
 
+	d.cardBtn.Clicked(gtx) // consume card clicks so they don't reach overlay
 	if d.overlayBtn.Clicked(gtx) {
 		d.Hide()
 	}
@@ -92,9 +93,14 @@ func (d *InputDialog) Layout(gtx layout.Context) layout.Dimensions {
 	}
 
 	// Overlay
-	return d.overlayBtn.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-		paint.FillShape(gtx.Ops, color.NRGBA{A: 180}, clip.Rect{Max: gtx.Constraints.Max}.Op())
-		return layout.Center.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+	return layout.Stack{Alignment: layout.Center}.Layout(gtx,
+		layout.Expanded(func(gtx layout.Context) layout.Dimensions {
+			return d.overlayBtn.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+				paint.FillShape(gtx.Ops, color.NRGBA{A: 180}, clip.Rect{Max: gtx.Constraints.Max}.Op())
+				return layout.Dimensions{Size: gtx.Constraints.Max}
+			})
+		}),
+		layout.Stacked(func(gtx layout.Context) layout.Dimensions {
 			return d.cardBtn.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
 				gtx.Constraints.Min.X = gtx.Dp(350)
 				gtx.Constraints.Max.X = gtx.Dp(350)
@@ -137,8 +143,8 @@ func (d *InputDialog) Layout(gtx layout.Context) layout.Dimensions {
 					},
 				)
 			})
-		})
-	})
+		}),
+	)
 }
 
 func (d *InputDialog) layoutEditor(gtx layout.Context, ed *widget.Editor, hint string) layout.Dimensions {

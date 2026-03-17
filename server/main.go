@@ -253,6 +253,7 @@ func main() {
 		Scheduled:           &queries.ScheduledMessageQueries{DB: db.DB},
 		KanbanQ:             &queries.KanbanQueries{DB: db.DB},
 		CalendarQ:           &queries.CalendarQueries{DB: db.DB},
+		LFGQ:                &queries.LFGQueries{DB: db.DB},
 		Tunnels:             &queries.TunnelQueries{DB: db.DB},
 		ChannelPermQ:        &queries.ChannelPermQueries{DB: db.DB},
 		AutoMod:             autoMod,
@@ -451,6 +452,17 @@ func main() {
 			}
 			if n, _ := deps.DeviceBans.DeleteExpired(); n > 0 {
 				slog.Info("cleaned up expired device bans", "count", n)
+			}
+		}
+	}()
+
+	// LFG listings expiration cleanup (every hour)
+	go func() {
+		ticker := time.NewTicker(1 * time.Hour)
+		defer ticker.Stop()
+		for range ticker.C {
+			if n, err := deps.LFGQ.CleanupExpired(); err == nil && n > 0 {
+				slog.Info("cleaned up expired LFG listings", "count", n)
 			}
 		}
 	}()

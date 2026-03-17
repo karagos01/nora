@@ -107,6 +107,7 @@ type App struct {
 	NotifCenter *NotificationCenter
 	NotifMgr    *NotifManager
 	TunnelView  *TunnelView
+	LFGBoard    *LFGBoardView
 
 	// Context menu (right-click)
 	ContextMenu *ContextMenu
@@ -121,10 +122,9 @@ type App struct {
 	// Global notification level
 	GlobalNotifyLevel store.NotifyLevel
 
-	// Sound settings
-	NotifVolume    float64 // 0.0-1.0 (default 1.0)
-	CustomNotifSnd string  // path to custom notification sound
-	CustomDMSnd    string  // path to custom DM sound
+	// Sound settings (per-sound volumes and custom paths)
+	SoundVolumes map[string]float64
+	CustomSounds map[string]string
 
 	// Video settings
 	YouTubeQuality int // preferred height (360, 480, 720), 0 = auto
@@ -226,6 +226,7 @@ func NewApp(w *app.Window, version string) *App {
 	a.NotifCenter = NewNotificationCenter(a)
 	a.NotifMgr = NewNotifManager(a)
 	a.TunnelView = NewTunnelView(a)
+	a.LFGBoard = NewLFGBoardView(a)
 	a.DroppedFiles = make(chan []string, 4)
 	a.Images = NewImageCache()
 	a.ContextMenu = NewContextMenu(a)
@@ -543,7 +544,11 @@ func (a *App) layoutMain(gtx layout.Context) layout.Dimensions {
 					}
 					// Whiteboard overlay
 					if a.WhiteboardView != nil && a.WhiteboardView.Visible {
-						return a.WhiteboardView.Layout(gtx)
+						if a.Mode != ViewChannels {
+							a.WhiteboardView.Visible = false
+						} else {
+							return a.WhiteboardView.Layout(gtx)
+						}
 					}
 					// VideoPlayer / StreamViewer overlay — must be in Stack with CallOverlay
 					// so call buttons (mute/hangup) remain visible
@@ -614,6 +619,14 @@ func (a *App) layoutMain(gtx layout.Context) layout.Dimensions {
 							)
 						}
 						return a.DMView.LayoutMessages(gtx)
+					}
+					// LFG channel: show board instead of messages
+					if conn != nil && a.Mode == ViewChannels {
+						for _, ch := range conn.Channels {
+							if ch.ID == conn.ActiveChannelID && ch.Type == "lfg" {
+								return a.LFGBoard.Layout(gtx)
+							}
+						}
 					}
 					return a.MsgView.Layout(gtx)
 				}),
@@ -933,6 +946,8 @@ func (a *App) handleEscapeKey() {
 		a.CreateGroupDlg.Visible = false
 	case a.ChannelEditDlg.Visible:
 		a.ChannelEditDlg.Visible = false
+	case a.CatEditDlg != nil && a.CatEditDlg.Visible:
+		a.CatEditDlg.Visible = false
 	case a.UploadDlg.Visible:
 		a.UploadDlg.Visible = false
 	case a.SaveDlg.Visible:

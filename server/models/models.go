@@ -520,6 +520,18 @@ type PendingApproval struct {
 	InviterUsername    string     `json:"inviter_username,omitempty"`
 }
 
+// LFG (Looking For Group) listing
+type LFGListing struct {
+	ID        string    `json:"id"`
+	UserID    string    `json:"user_id"`
+	ChannelID string    `json:"channel_id"`
+	GameName  string    `json:"game_name"`
+	Content   string    `json:"content"`
+	CreatedAt time.Time `json:"created_at"`
+	ExpiresAt time.Time `json:"expires_at"`
+	Author    *User     `json:"author,omitempty"`
+}
+
 // Channel permission overrides (per-channel allow/deny for roles or users)
 type ChannelPermOverride struct {
 	ChannelID  string `json:"channel_id"`

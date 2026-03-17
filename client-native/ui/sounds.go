@@ -21,22 +21,30 @@ var (
 	lastSoundTime time.Time
 	soundCooldown = 500 * time.Millisecond
 
-	notifVolume    float64 = 1.0
-	customNotifSnd string
-	customDMSnd    string
+	soundVolumes map[string]float64 // per-sound volumes
+	customSounds map[string]string  // per-sound custom paths
 )
 
-// SetSoundSettings sets the volume and paths for custom sounds.
-func SetSoundSettings(volume float64, notifPath, dmPath string) {
+// SetAllSoundSettings sets per-sound volumes and custom paths.
+func SetAllSoundSettings(volumes map[string]float64, customs map[string]string) {
 	soundMu.Lock()
-	notifVolume = volume
-	customNotifSnd = notifPath
-	customDMSnd = dmPath
+	soundVolumes = volumes
+	customSounds = customs
 	soundMu.Unlock()
 }
 
+// getSoundConfig returns the volume and custom path for a sound key.
+func getSoundConfig(key string) (volume float64, customPath string) {
+	soundMu.Lock()
+	defer soundMu.Unlock()
+	vol, ok := soundVolumes[key]
+	if !ok {
+		vol = 1.0
+	}
+	return vol, customSounds[key]
+}
+
 // PlayNotificationSound plays a short notification beep.
-// Cross-platform: uses paplay on Linux, PowerShell on Windows.
 func PlayNotificationSound() {
 	soundMu.Lock()
 	if time.Since(lastSoundTime) < soundCooldown {
@@ -44,10 +52,9 @@ func PlayNotificationSound() {
 		return
 	}
 	lastSoundTime = time.Now()
-	vol := notifVolume
-	snd := customNotifSnd
 	soundMu.Unlock()
 
+	vol, snd := getSoundConfig("notification")
 	if snd != "" {
 		go playCustomSound(snd, vol)
 	} else {
@@ -63,10 +70,9 @@ func PlayDMSound() {
 		return
 	}
 	lastSoundTime = time.Now()
-	vol := notifVolume
-	snd := customDMSnd
 	soundMu.Unlock()
 
+	vol, snd := getSoundConfig("dm")
 	if snd != "" {
 		go playCustomSound(snd, vol)
 	} else {
@@ -78,35 +84,134 @@ func PlayDMSound() {
 	}
 }
 
-// PlayNotifPreview plays a notification sound without cooldown (for settings preview).
-func PlayNotifPreview() {
+// PlayFriendRequestSound plays an ascending 3-tone (friend request notification).
+func PlayFriendRequestSound() {
 	soundMu.Lock()
-	vol := notifVolume
-	snd := customNotifSnd
+	if time.Since(lastSoundTime) < soundCooldown {
+		soundMu.Unlock()
+		return
+	}
+	lastSoundTime = time.Now()
 	soundMu.Unlock()
 
+	vol, snd := getSoundConfig("friendRequest")
 	if snd != "" {
 		go playCustomSound(snd, vol)
 	} else {
+		go func() {
+			playBeep(523, 60*time.Millisecond, vol)
+			time.Sleep(30 * time.Millisecond)
+			playBeep(659, 60*time.Millisecond, vol)
+			time.Sleep(30 * time.Millisecond)
+			playBeep(784, 80*time.Millisecond, vol)
+		}()
+	}
+}
+
+// PlayLFGSound plays a distinctive game-ready staccato sound.
+func PlayLFGSound() {
+	soundMu.Lock()
+	if time.Since(lastSoundTime) < soundCooldown {
+		soundMu.Unlock()
+		return
+	}
+	lastSoundTime = time.Now()
+	soundMu.Unlock()
+
+	vol, snd := getSoundConfig("lfg")
+	if snd != "" {
+		go playCustomSound(snd, vol)
+	} else {
+		go func() {
+			playBeep(392, 50*time.Millisecond, vol)
+			time.Sleep(25 * time.Millisecond)
+			playBeep(523, 50*time.Millisecond, vol)
+			time.Sleep(25 * time.Millisecond)
+			playBeep(659, 50*time.Millisecond, vol)
+			time.Sleep(25 * time.Millisecond)
+			playBeep(784, 70*time.Millisecond, vol)
+		}()
+	}
+}
+
+// PlayCalendarSound plays a bell-like tone for calendar reminders.
+func PlayCalendarSound() {
+	soundMu.Lock()
+	if time.Since(lastSoundTime) < soundCooldown {
+		soundMu.Unlock()
+		return
+	}
+	lastSoundTime = time.Now()
+	soundMu.Unlock()
+
+	vol, snd := getSoundConfig("calendar")
+	if snd != "" {
+		go playCustomSound(snd, vol)
+	} else {
+		go playBeep(1047, 200*time.Millisecond, vol)
+	}
+}
+
+// PlaySoundPreview plays the sound for a given key without cooldown (for settings).
+func PlaySoundPreview(key string) {
+	vol, snd := getSoundConfig(key)
+	if snd != "" {
+		go playCustomSound(snd, vol)
+		return
+	}
+	switch key {
+	case "notification":
 		go playBeep(800, 120*time.Millisecond, vol)
-	}
-}
-
-// PlayDMPreview plays a DM sound without cooldown (for settings preview).
-func PlayDMPreview() {
-	soundMu.Lock()
-	vol := notifVolume
-	snd := customDMSnd
-	soundMu.Unlock()
-
-	if snd != "" {
-		go playCustomSound(snd, vol)
-	} else {
+	case "dm":
 		go func() {
 			playBeep(600, 80*time.Millisecond, vol)
 			time.Sleep(60 * time.Millisecond)
 			playBeep(900, 100*time.Millisecond, vol)
 		}()
+	case "voiceJoin":
+		go func() {
+			playBeep(440, 60*time.Millisecond, vol)
+			time.Sleep(30 * time.Millisecond)
+			playBeep(660, 80*time.Millisecond, vol)
+		}()
+	case "voiceLeave":
+		go func() {
+			playBeep(660, 60*time.Millisecond, vol)
+			time.Sleep(30 * time.Millisecond)
+			playBeep(440, 80*time.Millisecond, vol)
+		}()
+	case "callRing":
+		go func() {
+			playBeep(523, 150*time.Millisecond, vol)
+			time.Sleep(100 * time.Millisecond)
+			playBeep(659, 150*time.Millisecond, vol)
+		}()
+	case "callEnd":
+		go func() {
+			playBeep(440, 100*time.Millisecond, vol)
+			time.Sleep(30 * time.Millisecond)
+			playBeep(330, 150*time.Millisecond, vol)
+		}()
+	case "friendRequest":
+		go func() {
+			playBeep(523, 60*time.Millisecond, vol)
+			time.Sleep(30 * time.Millisecond)
+			playBeep(659, 60*time.Millisecond, vol)
+			time.Sleep(30 * time.Millisecond)
+			playBeep(784, 80*time.Millisecond, vol)
+		}()
+	case "lfg":
+		go func() {
+			playBeep(392, 50*time.Millisecond, vol)
+			time.Sleep(25 * time.Millisecond)
+			playBeep(523, 50*time.Millisecond, vol)
+			time.Sleep(25 * time.Millisecond)
+			playBeep(659, 50*time.Millisecond, vol)
+			time.Sleep(25 * time.Millisecond)
+			playBeep(784, 70*time.Millisecond, vol)
+		}()
+	case "calendar":
+		go playBeep(1047, 200*time.Millisecond, vol)
 	}
 }
 
@@ -222,14 +327,18 @@ func PlayVoiceJoinSound() {
 		return
 	}
 	lastSoundTime = time.Now()
-	vol := notifVolume
 	soundMu.Unlock()
 
-	go func() {
-		playBeep(440, 60*time.Millisecond, vol)
-		time.Sleep(30 * time.Millisecond)
-		playBeep(660, 80*time.Millisecond, vol)
-	}()
+	vol, snd := getSoundConfig("voiceJoin")
+	if snd != "" {
+		go playCustomSound(snd, vol)
+	} else {
+		go func() {
+			playBeep(440, 60*time.Millisecond, vol)
+			time.Sleep(30 * time.Millisecond)
+			playBeep(660, 80*time.Millisecond, vol)
+		}()
+	}
 }
 
 // PlayVoiceLeaveSound plays a descending two-tone when a user leaves voice.
@@ -240,14 +349,18 @@ func PlayVoiceLeaveSound() {
 		return
 	}
 	lastSoundTime = time.Now()
-	vol := notifVolume
 	soundMu.Unlock()
 
-	go func() {
-		playBeep(660, 60*time.Millisecond, vol)
-		time.Sleep(30 * time.Millisecond)
-		playBeep(440, 80*time.Millisecond, vol)
-	}()
+	vol, snd := getSoundConfig("voiceLeave")
+	if snd != "" {
+		go playCustomSound(snd, vol)
+	} else {
+		go func() {
+			playBeep(660, 60*time.Millisecond, vol)
+			time.Sleep(30 * time.Millisecond)
+			playBeep(440, 80*time.Millisecond, vol)
+		}()
+	}
 }
 
 // callRingStop stops the current ring loop.
@@ -279,16 +392,18 @@ func StartCallRingLoop() {
 				return
 			default:
 			}
-			soundMu.Lock()
-			vol := notifVolume
-			soundMu.Unlock()
-			playBeep(523, 150*time.Millisecond, vol)
-			select {
-			case <-stop:
-				return
-			case <-time.After(100 * time.Millisecond):
+			vol, snd := getSoundConfig("callRing")
+			if snd != "" {
+				playCustomSound(snd, vol)
+			} else {
+				playBeep(523, 150*time.Millisecond, vol)
+				select {
+				case <-stop:
+					return
+				case <-time.After(100 * time.Millisecond):
+				}
+				playBeep(659, 150*time.Millisecond, vol)
 			}
-			playBeep(659, 150*time.Millisecond, vol)
 			select {
 			case <-stop:
 				return
@@ -319,16 +434,18 @@ func StartOutgoingRingLoop() {
 				return
 			default:
 			}
-			soundMu.Lock()
-			vol := notifVolume
-			soundMu.Unlock()
-			playBeep(440, 200*time.Millisecond, vol)
-			select {
-			case <-stop:
-				return
-			case <-time.After(150 * time.Millisecond):
+			vol, snd := getSoundConfig("callRing")
+			if snd != "" {
+				playCustomSound(snd, vol)
+			} else {
+				playBeep(440, 200*time.Millisecond, vol)
+				select {
+				case <-stop:
+					return
+				case <-time.After(150 * time.Millisecond):
+				}
+				playBeep(440, 200*time.Millisecond, vol)
 			}
-			playBeep(440, 200*time.Millisecond, vol)
 			select {
 			case <-stop:
 				return
@@ -354,14 +471,16 @@ func StopCallRingLoop() {
 
 // PlayCallEndSound plays the call end sound.
 func PlayCallEndSound() {
-	soundMu.Lock()
-	vol := notifVolume
-	soundMu.Unlock()
-	go func() {
-		playBeep(440, 100*time.Millisecond, vol)
-		time.Sleep(30 * time.Millisecond)
-		playBeep(330, 150*time.Millisecond, vol)
-	}()
+	vol, snd := getSoundConfig("callEnd")
+	if snd != "" {
+		go playCustomSound(snd, vol)
+	} else {
+		go func() {
+			playBeep(440, 100*time.Millisecond, vol)
+			time.Sleep(30 * time.Millisecond)
+			playBeep(330, 150*time.Millisecond, vol)
+		}()
+	}
 }
 
 // ShouldNotify decides whether to play a notification sound.

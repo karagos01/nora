@@ -779,7 +779,7 @@ func openURL(rawURL string) {
 	case "linux":
 		exec.Command("xdg-open", u.String()).Start()
 	case "windows":
-		exec.Command("cmd", "/c", "start", u.String()).Start()
+		exec.Command("rundll32", "url.dll,FileProtocolHandler", u.String()).Start()
 	case "darwin":
 		exec.Command("open", u.String()).Start()
 	}

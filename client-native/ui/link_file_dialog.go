@@ -102,12 +102,12 @@ func (d *LinkFileDialog) Layout(gtx layout.Context) layout.Dimensions {
 		return layout.Dimensions{}
 	}
 
+	// Click on card -> no action (capture to prevent closing)
+	d.cardBtn.Clicked(gtx)
 	// Click on overlay -> close
 	if d.overlayBtn.Clicked(gtx) {
 		d.Hide()
 	}
-	// Click on card -> no action (capture to prevent closing)
-	d.cardBtn.Clicked(gtx)
 
 	// Back
 	if d.backBtn.Clicked(gtx) && len(d.parentStack) > 0 {
@@ -163,11 +163,14 @@ func (d *LinkFileDialog) Layout(gtx layout.Context) layout.Dimensions {
 		return layout.Dimensions{}
 	}
 
-	// Overlay dark background
-	return d.overlayBtn.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-		paint.FillShape(gtx.Ops, color.NRGBA{A: 180}, clip.Rect{Max: gtx.Constraints.Max}.Op())
-
-		return layout.Center.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+	return layout.Stack{Alignment: layout.Center}.Layout(gtx,
+		layout.Expanded(func(gtx layout.Context) layout.Dimensions {
+			return d.overlayBtn.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+				paint.FillShape(gtx.Ops, color.NRGBA{A: 180}, clip.Rect{Max: gtx.Constraints.Max}.Op())
+				return layout.Dimensions{Size: gtx.Constraints.Max}
+			})
+		}),
+		layout.Stacked(func(gtx layout.Context) layout.Dimensions {
 			maxW := gtx.Dp(500)
 			maxH := gtx.Dp(500)
 			if gtx.Constraints.Max.X < maxW {
@@ -281,8 +284,8 @@ func (d *LinkFileDialog) Layout(gtx layout.Context) layout.Dimensions {
 					}),
 				)
 			})
-		})
-	})
+		}),
+	)
 }
 
 func (d *LinkFileDialog) layoutFolderItem(gtx layout.Context, idx int) layout.Dimensions {

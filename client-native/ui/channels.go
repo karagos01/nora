@@ -1949,6 +1949,8 @@ func (v *ChannelView) layoutChannelItem(gtx layout.Context, idx int, ch api.Chan
 		} else if ch.Type == "lan" {
 			chID := ch.ID
 			go v.app.LANHelper.ToggleLAN(conn, chID)
+		} else if ch.Type == "lfg" {
+			v.app.SelectChannel(ch.ID, ch.Name)
 		}
 	}
 
@@ -2089,6 +2091,24 @@ func (v *ChannelView) layoutChannelItem(gtx layout.Context, idx int, ch api.Chan
 											return layout.Inset{Left: unit.Dp(4)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
 												lbl := material.Body2(v.app.Theme.Material, ch.Name)
 												lbl.Color = textColor
+												return lbl.Layout(gtx)
+											})
+										}),
+									)
+								}
+								isLFG := ch.Type == "lfg"
+								if isLFG {
+									return layout.Flex{Alignment: layout.Middle}.Layout(gtx,
+										layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+											return layoutIcon(gtx, IconGroup, 16, textColor)
+										}),
+										layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+											return layout.Inset{Left: unit.Dp(4)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+												lbl := material.Body2(v.app.Theme.Material, ch.Name)
+												lbl.Color = textColor
+												if !active && unread > 0 {
+													lbl.Font.Weight = 700
+												}
 												return lbl.Layout(gtx)
 											})
 										}),

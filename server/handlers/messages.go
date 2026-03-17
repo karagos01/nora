@@ -621,7 +621,7 @@ func (d *Deps) PinMessage(w http.ResponseWriter, r *http.Request) {
 		"is_pinned":  req.Pinned,
 		"pinned_by":  user.ID,
 	})
-	d.Hub.Broadcast(event)
+	d.broadcastToChannelReaders(msg.ChannelID, event)
 
 	action := "message.pin"
 	if !req.Pinned {
@@ -682,7 +682,7 @@ func (d *Deps) HideMessage(w http.ResponseWriter, r *http.Request) {
 		hidePayload["content"] = msg.Content
 	}
 	event, _ := ws.NewEvent(ws.EventMessageHide, hidePayload)
-	d.Hub.Broadcast(event)
+	d.broadcastToChannelReaders(msg.ChannelID, event)
 
 	action := "message.hide"
 	if !req.Hidden {
@@ -889,8 +889,7 @@ func parseSearchFilters(raw string) (string, *queries.SearchFilters) {
 			hasFilter = true
 		case strings.HasPrefix(lower, "before:"):
 			date := part[7:]
-			// Validate YYYY-MM-DD format
-			if len(date) == 10 && date[4] == '-' && date[7] == '-' {
+			if _, err := time.Parse("2006-01-02", date); err == nil {
 				filters.Before = date
 				hasFilter = true
 			} else {
@@ -898,8 +897,7 @@ func parseSearchFilters(raw string) (string, *queries.SearchFilters) {
 			}
 		case strings.HasPrefix(lower, "after:"):
 			date := part[6:]
-			// Validate YYYY-MM-DD format
-			if len(date) == 10 && date[4] == '-' && date[7] == '-' {
+			if _, err := time.Parse("2006-01-02", date); err == nil {
 				filters.After = date
 				hasFilter = true
 			} else {
@@ -921,7 +919,7 @@ func (d *Deps) ListPinnedMessages(w http.ResponseWriter, r *http.Request) {
 	user := auth.GetUser(r)
 	channelID := r.PathValue("id")
 
-	if err := d.requirePermission(user, models.PermRead); err != nil {
+	if err := d.requireChannelPermission(user, channelID, models.PermRead); err != nil {
 		util.Error(w, http.StatusForbidden, "insufficient permissions")
 		return
 	}

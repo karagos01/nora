@@ -181,6 +181,19 @@ func (db *DB) Migrate() error {
 	// Backfill existing messages into FTS index (no-op if already populated)
 	db.Exec(`INSERT OR IGNORE INTO messages_fts(rowid, content) SELECT rowid, content FROM messages`)
 
+	// Migration: LFG (Looking For Group) listings
+	db.Exec(`CREATE TABLE IF NOT EXISTS lfg_listings (
+		id TEXT PRIMARY KEY,
+		user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+		channel_id TEXT NOT NULL REFERENCES channels(id) ON DELETE CASCADE,
+		game_name TEXT NOT NULL,
+		content TEXT NOT NULL,
+		created_at DATETIME NOT NULL DEFAULT (datetime('now')),
+		expires_at DATETIME NOT NULL
+	)`)
+	db.Exec(`CREATE INDEX IF NOT EXISTS idx_lfg_channel ON lfg_listings(channel_id)`)
+	db.Exec(`CREATE INDEX IF NOT EXISTS idx_lfg_expires ON lfg_listings(expires_at)`)
+
 	// Migration: idempotency key for message deduplication
 	db.Exec("ALTER TABLE messages ADD COLUMN idempotency_key TEXT NOT NULL DEFAULT ''")
 	db.Exec("CREATE UNIQUE INDEX IF NOT EXISTS idx_messages_idempotency ON messages(user_id, idempotency_key) WHERE idempotency_key != ''")

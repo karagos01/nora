@@ -160,3 +160,9 @@ func (q *GroupQueries) DeleteInvite(id string) error {
 	_, err := q.DB.Exec("DELETE FROM group_invites WHERE id = ?", id)
 	return err
 }
+
+// DeleteAllInvites removes all invites for a group.
+func (q *GroupQueries) DeleteAllInvites(groupID string) error {
+	_, err := q.DB.Exec("DELETE FROM group_invites WHERE group_id = ?", groupID)
+	return err
+}

@@ -258,8 +258,10 @@ func (q *MessageQueries) Search(channelID, query string, limit, offset, callerPo
 		// Check if FTS5 table exists
 		var ftsExists int
 		if err := q.DB.QueryRow("SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='messages_fts'").Scan(&ftsExists); err == nil && ftsExists > 0 {
+			// Sanitize query for FTS5 MATCH to prevent injection
+			sanitized := "\"" + strings.ReplaceAll(query, "\"", "\"\"") + "\""
 			conditions = append(conditions, "m.rowid IN (SELECT rowid FROM messages_fts WHERE messages_fts MATCH ?)")
-			args = append(args, query)
+			args = append(args, sanitized)
 			useFTS = true
 		} else {
 			conditions = append(conditions, "m.content LIKE '%' || ? || '%'")

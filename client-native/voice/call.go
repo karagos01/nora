@@ -554,18 +554,26 @@ func (c *CallManager) startAudio() {
 // stopAudio stops audio I/O and loops. peerID must be passed explicitly
 // (after reset() c.PeerID is empty).
 func (c *CallManager) stopAudio(peerID string) {
-	if c.stopCapture != nil {
+	// Copy stop channels under mutex to avoid race with startAudio
+	c.mu.Lock()
+	stopCap := c.stopCapture
+	stopMix := c.stopMixer
+	c.stopCapture = nil
+	c.stopMixer = nil
+	c.mu.Unlock()
+
+	if stopCap != nil {
 		select {
-		case <-c.stopCapture:
+		case <-stopCap:
 		default:
-			close(c.stopCapture)
+			close(stopCap)
 		}
 	}
-	if c.stopMixer != nil {
+	if stopMix != nil {
 		select {
-		case <-c.stopMixer:
+		case <-stopMix:
 		default:
-			close(c.stopMixer)
+			close(stopMix)
 		}
 	}
 

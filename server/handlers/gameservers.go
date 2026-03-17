@@ -3,7 +3,6 @@ package handlers
 import (
 	"bufio"
 	"context"
-	"encoding/json"
 	"io"
 	"log/slog"
 	"mime"
@@ -426,7 +425,7 @@ func (d *Deps) SetGameServerAccess(w http.ResponseWriter, r *http.Request) {
 	var req struct {
 		Mode string `json:"mode"`
 	}
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+	if err := util.DecodeJSON(r, &req); err != nil {
 		util.Error(w, http.StatusBadRequest, "invalid request body")
 		return
 	}

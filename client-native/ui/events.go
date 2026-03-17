@@ -79,34 +79,6 @@ func (a *App) processWSEvent(conn *ServerConnection, ev api.WSEvent) {
 				}
 			}
 
-			// Save to message cache
-			if conn.MsgCache != nil {
-				cm := store.CachedMessage{
-					ID:        msg.ID,
-					ChannelID: msg.ChannelID,
-					UserID:    msg.UserID,
-					Content:   msg.Content,
-					CreatedAt: msg.CreatedAt,
-					IsPinned:  msg.IsPinned,
-					IsHidden:  msg.IsHidden,
-				}
-				if msg.Author != nil {
-					cm.Username = msg.Author.Username
-				}
-				if msg.ReplyToID != nil {
-					cm.ReplyToID = *msg.ReplyToID
-				}
-				for _, att := range msg.Attachments {
-					cm.Attachments = append(cm.Attachments, store.CachedAttachment{
-						Filename: att.Filename,
-						URL:      att.URL,
-						Size:     att.Size,
-						MimeType: att.MimeType,
-					})
-				}
-				conn.MsgCache.AddMessage(cm)
-				conn.MsgCache.Save()
-			}
 		}
 
 	case "message.edit":
@@ -125,10 +97,6 @@ func (a *App) processWSEvent(conn *ServerConnection, ev api.WSEvent) {
 				}
 			}
 			a.mu.Unlock()
-			if conn.MsgCache != nil {
-				conn.MsgCache.UpdateMessage(payload.ID, payload.Content)
-				conn.MsgCache.Save()
-			}
 		}
 
 	case "message.delete":
@@ -142,10 +110,6 @@ func (a *App) processWSEvent(conn *ServerConnection, ev api.WSEvent) {
 				}
 			}
 			a.mu.Unlock()
-			if conn.MsgCache != nil {
-				conn.MsgCache.DeleteMessage(payload.ID)
-				conn.MsgCache.Save()
-			}
 		}
 
 	case "message.pin", "message.unpin":
@@ -164,17 +128,14 @@ func (a *App) processWSEvent(conn *ServerConnection, ev api.WSEvent) {
 			a.mu.Unlock()
 
 			// Update cached pinned messages
+			chID := conn.ActiveChannelID
 			go func() {
-				pins, err := conn.Client.GetPinnedMessages(conn.ActiveChannelID)
+				pins, err := conn.Client.GetPinnedMessages(chID)
 				if err == nil {
 					a.MsgView.pinnedMsgs = pins
 					a.Window.Invalidate()
 				}
 			}()
-			if conn.MsgCache != nil {
-				conn.MsgCache.UpdatePin(payload.ID, payload.IsPinned)
-				conn.MsgCache.Save()
-			}
 		}
 
 	case "message.hide":
@@ -195,14 +156,6 @@ func (a *App) processWSEvent(conn *ServerConnection, ev api.WSEvent) {
 				}
 			}
 			a.mu.Unlock()
-			if conn.MsgCache != nil {
-				content := payload.Content
-				if payload.IsHidden {
-					content = ""
-				}
-				conn.MsgCache.UpdateHidden(payload.ID, payload.IsHidden, content)
-				conn.MsgCache.Save()
-			}
 		}
 
 	case "messages.hide":
@@ -217,10 +170,6 @@ func (a *App) processWSEvent(conn *ServerConnection, ev api.WSEvent) {
 				}
 			}
 			a.mu.Unlock()
-			if conn.MsgCache != nil {
-				conn.MsgCache.HideByUser(payload.UserID)
-				conn.MsgCache.Save()
-			}
 		}
 
 	case "messages.bulk_delete":
@@ -229,7 +178,7 @@ func (a *App) processWSEvent(conn *ServerConnection, ev api.WSEvent) {
 		}
 		if json.Unmarshal(ev.Payload, &payload) == nil {
 			a.mu.Lock()
-			filtered := conn.Messages[:0]
+			var filtered []api.Message
 			for _, m := range conn.Messages {
 				if m.UserID != payload.UserID {
 					filtered = append(filtered, m)
@@ -237,10 +186,6 @@ func (a *App) processWSEvent(conn *ServerConnection, ev api.WSEvent) {
 			}
 			conn.Messages = filtered
 			a.mu.Unlock()
-			if conn.MsgCache != nil {
-				conn.MsgCache.DeleteByUser(payload.UserID)
-				conn.MsgCache.Save()
-			}
 		}
 
 	case "reaction.add":
@@ -569,6 +514,7 @@ func (a *App) processWSEvent(conn *ServerConnection, ev api.WSEvent) {
 			a.mu.Lock()
 			conn.FriendRequests = append(conn.FriendRequests, fr)
 			a.mu.Unlock()
+			PlayFriendRequestSound()
 			// Desktop notification for friend request
 			if a.NotifMgr != nil {
 				fromName := "Someone"
@@ -651,7 +597,16 @@ func (a *App) processWSEvent(conn *ServerConnection, ev api.WSEvent) {
 		var ch api.Channel
 		if json.Unmarshal(ev.Payload, &ch) == nil {
 			a.mu.Lock()
-			conn.Channels = append(conn.Channels, ch)
+			dup := false
+			for _, c := range conn.Channels {
+				if c.ID == ch.ID {
+					dup = true
+					break
+				}
+			}
+			if !dup {
+				conn.Channels = append(conn.Channels, ch)
+			}
 			a.mu.Unlock()
 		}
 
@@ -2092,6 +2047,35 @@ func (a *App) processWSEvent(conn *ServerConnection, ev api.WSEvent) {
 		"kanban.card_create", "kanban.card_update", "kanban.card_move", "kanban.card_delete":
 		a.KanbanView.HandleWSEvent(ev.Type, ev.Payload)
 
+	case "lfg.create":
+		var listing api.LFGListing
+		if json.Unmarshal(ev.Payload, &listing) == nil {
+			if listing.ChannelID == conn.ActiveChannelID && a.Mode == ViewChannels {
+				a.LFGBoard.HandleWSCreate(listing)
+				a.Window.Invalidate()
+			}
+			// Play LFG sound + desktop notification for other users' listings
+			if listing.UserID != conn.UserID {
+				PlayLFGSound()
+				if a.NotifMgr != nil {
+					creatorName := a.ResolveNameByID(conn, listing.UserID)
+					a.NotifMgr.NotifyMessage(conn.Name, "LFG", listing.GameName, creatorName)
+				}
+			}
+		}
+
+	case "lfg.delete":
+		var data struct {
+			ID        string `json:"id"`
+			ChannelID string `json:"channel_id"`
+		}
+		if json.Unmarshal(ev.Payload, &data) == nil {
+			if data.ChannelID == conn.ActiveChannelID && a.Mode == ViewChannels {
+				a.LFGBoard.HandleWSDelete(data.ID)
+				a.Window.Invalidate()
+			}
+		}
+
 	case "calendar.event_create", "calendar.event_update", "calendar.event_delete":
 		a.CalendarView.HandleWSEvent(ev.Type, ev.Payload)
 
@@ -2103,7 +2087,7 @@ func (a *App) processWSEvent(conn *ServerConnection, ev api.WSEvent) {
 		}
 		if json.Unmarshal(ev.Payload, &data) == nil {
 			log.Printf("Calendar reminder: %s", data.Title)
-			go PlayNotificationSound()
+			go PlayCalendarSound()
 			// Desktop notification for calendar reminder
 			if a.NotifMgr != nil {
 				a.NotifMgr.NotifyCalendarReminder(conn.Name, data.Title)

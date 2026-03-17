@@ -407,7 +407,7 @@ func (v *SharesView) LayoutMain(gtx layout.Context) layout.Dimensions {
 	}
 	if v.deleteShareBtn.Clicked(gtx) && isOwner {
 		shareID := v.ActiveShareID
-		v.app.ConfirmDlg.Show("Delete Share", fmt.Sprintf("Stop sharing \"%s\"?", activeShare.DisplayName), func() {
+		v.app.ConfirmDlg.Show("Stop Sharing", fmt.Sprintf("Stop sharing \"%s\"? The directory will no longer be accessible to others.", activeShare.DisplayName), func() {
 			go func() {
 				if conn := v.app.Conn(); conn != nil {
 					if err := conn.Client.DeleteShare(shareID); err != nil {
@@ -761,7 +761,7 @@ func (v *SharesView) layoutHeader(gtx layout.Context, share *api.SharedDirectory
 					return layout.Dimensions{}
 				}
 				return v.deleteShareBtn.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-					return layoutIcon(gtx, IconDelete, 20, ColorDanger)
+					return layoutIcon(gtx, IconCancel, 20, ColorDanger)
 				})
 			}),
 		)

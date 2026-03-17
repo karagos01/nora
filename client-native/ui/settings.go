@@ -204,13 +204,9 @@ type SettingsView struct {
 	notifyMentionsBtn widget.Clickable
 	notifyNothingBtn  widget.Clickable
 
-	// Sound settings
-	notifVolumeSlider Slider
-	notifUploadBtn    widget.Clickable
-	dmUploadBtn       widget.Clickable
-	notifResetBtn     widget.Clickable
-	dmResetBtn        widget.Clickable
-	lastPreviewTime   time.Time
+	// Sound settings (per-sound rows)
+	soundRows       []soundRowState
+	lastPreviewTime time.Time
 
 	// Voice settings
 	voiceMicSlider         Slider
@@ -278,6 +274,14 @@ type voiceDeviceInfo struct {
 	IsDefault bool
 }
 
+type soundRowState struct {
+	key       string
+	label     string
+	slider    Slider
+	uploadBtn widget.Clickable
+	resetBtn  widget.Clickable
+}
+
 type catItem struct {
 	idx   int
 	label string
@@ -301,9 +305,25 @@ func NewSettingsView(a *App) *SettingsView {
 	v.voiceSpeakerSlider.Min = 0
 	v.voiceSpeakerSlider.Max = 2.0
 	v.voiceSpeakerSlider.Value = 1.0
-	v.notifVolumeSlider.Min = 0
-	v.notifVolumeSlider.Max = 1.0
-	v.notifVolumeSlider.Value = 1.0
+	soundDefs := []struct{ key, label string }{
+		{"notification", "Notification"},
+		{"dm", "DM"},
+		{"voiceJoin", "Voice Join"},
+		{"voiceLeave", "Voice Leave"},
+		{"callRing", "Call Ring"},
+		{"callEnd", "Call End"},
+		{"friendRequest", "Friend Request"},
+		{"lfg", "LFG"},
+		{"calendar", "Calendar"},
+	}
+	v.soundRows = make([]soundRowState, len(soundDefs))
+	for i, sd := range soundDefs {
+		v.soundRows[i].key = sd.key
+		v.soundRows[i].label = sd.label
+		v.soundRows[i].slider.Min = 0
+		v.soundRows[i].slider.Max = 1.0
+		v.soundRows[i].slider.Value = 1.0
+	}
 	v.fontScaleSlider.Min = 0.7
 	v.fontScaleSlider.Max = 1.6
 	v.fontScaleSlider.Value = 1.0

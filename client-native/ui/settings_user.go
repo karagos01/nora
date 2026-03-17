@@ -408,136 +408,126 @@ func (v *SettingsView) layoutNotificationsSection(gtx layout.Context) layout.Dim
 		})
 	}))
 
-	// Volume slider
-	if v.notifVolumeSlider.Changed() {
-		a.NotifVolume = float64(v.notifVolumeSlider.Value)
-		SetSoundSettings(a.NotifVolume, a.CustomNotifSnd, a.CustomDMSnd)
-		go store.UpdateSoundSettings(a.PublicKey, a.NotifVolume, a.CustomNotifSnd, a.CustomDMSnd)
-		if time.Since(v.lastPreviewTime) > 400*time.Millisecond {
-			v.lastPreviewTime = time.Now()
-			PlayNotifPreview()
+	// Ensure maps exist
+	if a.SoundVolumes == nil {
+		a.SoundVolumes = make(map[string]float64)
+	}
+	if a.CustomSounds == nil {
+		a.CustomSounds = make(map[string]string)
+	}
+
+	// Per-sound rows: handle events and render
+	for i := range v.soundRows {
+		row := &v.soundRows[i]
+		key := row.key
+
+		// Sync slider value from app
+		vol, ok := a.SoundVolumes[key]
+		if !ok {
+			vol = 1.0
 		}
-	}
-	// Sync slider value from app
-	v.notifVolumeSlider.Value = float32(a.NotifVolume)
+		row.slider.Value = float32(vol)
 
-	items = append(items, layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-		return layout.Inset{Top: unit.Dp(4), Bottom: unit.Dp(8)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-			return layout.Flex{Alignment: layout.Middle}.Layout(gtx,
-				layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-					gtx.Constraints.Min.X = gtx.Dp(130)
-					lbl := material.Caption(v.app.Theme.Material, "Sound Volume")
-					lbl.Color = ColorTextDim
-					return lbl.Layout(gtx)
-				}),
-				layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
-					return v.notifVolumeSlider.Layout(gtx, 0)
-				}),
-				layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-					return layout.Inset{Left: unit.Dp(8)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-						pct := int(v.notifVolumeSlider.Value * 100)
-						lbl := material.Caption(v.app.Theme.Material, fmt.Sprintf("%d%%", pct))
-						lbl.Color = ColorTextDim
-						return lbl.Layout(gtx)
-					})
-				}),
-			)
-		})
-	}))
-
-	// Notification Sound row
-	if v.notifUploadBtn.Clicked(gtx) {
-		go func() {
-			path := openFileDialog()
-			if path == "" {
-				return
+		// Handle slider change
+		if row.slider.Changed() {
+			a.SoundVolumes[key] = float64(row.slider.Value)
+			SetAllSoundSettings(a.SoundVolumes, a.CustomSounds)
+			go store.UpdateAllSoundSettings(a.PublicKey, a.SoundVolumes, a.CustomSounds)
+			if time.Since(v.lastPreviewTime) > 400*time.Millisecond {
+				v.lastPreviewTime = time.Now()
+				PlaySoundPreview(key)
 			}
-			dst := filepath.Join(store.SoundsDir(), "notification"+filepath.Ext(path))
-			if err := copyFile(path, dst); err != nil {
-				log.Printf("copy notification sound: %v", err)
-				return
-			}
-			a.CustomNotifSnd = dst
-			SetSoundSettings(a.NotifVolume, a.CustomNotifSnd, a.CustomDMSnd)
-			store.UpdateSoundSettings(a.PublicKey, a.NotifVolume, a.CustomNotifSnd, a.CustomDMSnd)
-			a.Window.Invalidate()
-		}()
-	}
-	if v.notifResetBtn.Clicked(gtx) {
-		a.CustomNotifSnd = ""
-		SetSoundSettings(a.NotifVolume, "", a.CustomDMSnd)
-		go store.UpdateSoundSettings(a.PublicKey, a.NotifVolume, "", a.CustomDMSnd)
-	}
+		}
 
-	items = append(items, layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-		return v.layoutSoundRow(gtx, "Notification Sound", a.CustomNotifSnd, &v.notifUploadBtn, &v.notifResetBtn)
-	}))
+		// Handle upload
+		if row.uploadBtn.Clicked(gtx) {
+			soundKey := key
+			go func() {
+				path := openFileDialog()
+				if path == "" {
+					return
+				}
+				dst := filepath.Join(store.SoundsDir(), soundKey+filepath.Ext(path))
+				if err := copyFile(path, dst); err != nil {
+					log.Printf("copy %s sound: %v", soundKey, err)
+					return
+				}
+				a.CustomSounds[soundKey] = dst
+				SetAllSoundSettings(a.SoundVolumes, a.CustomSounds)
+				store.UpdateAllSoundSettings(a.PublicKey, a.SoundVolumes, a.CustomSounds)
+				a.Window.Invalidate()
+			}()
+		}
 
-	// DM Sound row
-	if v.dmUploadBtn.Clicked(gtx) {
-		go func() {
-			path := openFileDialog()
-			if path == "" {
-				return
-			}
-			dst := filepath.Join(store.SoundsDir(), "dm"+filepath.Ext(path))
-			if err := copyFile(path, dst); err != nil {
-				log.Printf("copy DM sound: %v", err)
-				return
-			}
-			a.CustomDMSnd = dst
-			SetSoundSettings(a.NotifVolume, a.CustomNotifSnd, a.CustomDMSnd)
-			store.UpdateSoundSettings(a.PublicKey, a.NotifVolume, a.CustomNotifSnd, a.CustomDMSnd)
-			a.Window.Invalidate()
-		}()
-	}
-	if v.dmResetBtn.Clicked(gtx) {
-		a.CustomDMSnd = ""
-		SetSoundSettings(a.NotifVolume, a.CustomNotifSnd, "")
-		go store.UpdateSoundSettings(a.PublicKey, a.NotifVolume, a.CustomNotifSnd, "")
-	}
+		// Handle reset
+		if row.resetBtn.Clicked(gtx) {
+			delete(a.CustomSounds, key)
+			SetAllSoundSettings(a.SoundVolumes, a.CustomSounds)
+			go store.UpdateAllSoundSettings(a.PublicKey, a.SoundVolumes, a.CustomSounds)
+		}
 
-	items = append(items, layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-		return v.layoutSoundRow(gtx, "DM Sound", a.CustomDMSnd, &v.dmUploadBtn, &v.dmResetBtn)
-	}))
+		idx := i
+		items = append(items, layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+			r := &v.soundRows[idx]
+			return v.layoutSoundRowNew(gtx, r, a.CustomSounds[r.key])
+		}))
+	}
 
 	return layout.Flex{Axis: layout.Vertical}.Layout(gtx, items...)
 }
 
-// layoutSoundRow renders a sound row (label, state, upload, reset).
-func (v *SettingsView) layoutSoundRow(gtx layout.Context, label, customPath string, uploadBtn, resetBtn *widget.Clickable) layout.Dimensions {
-	return layout.Inset{Bottom: unit.Dp(6)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+// layoutSoundRowNew renders a compact one-line sound row: label | status | slider | pct | [reset] | upload
+func (v *SettingsView) layoutSoundRowNew(gtx layout.Context, row *soundRowState, customPath string) layout.Dimensions {
+	return layout.Inset{Bottom: unit.Dp(4)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
 		return layout.Flex{Alignment: layout.Middle}.Layout(gtx,
+			// Label (120dp)
 			layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-				gtx.Constraints.Min.X = gtx.Dp(130)
-				lbl := material.Caption(v.app.Theme.Material, label)
+				gtx.Constraints.Min.X = gtx.Dp(120)
+				lbl := material.Caption(v.app.Theme.Material, row.label)
 				lbl.Color = ColorTextDim
 				return lbl.Layout(gtx)
 			}),
-			layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
+			// Status (90dp)
+			layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+				gtx.Constraints.Min.X = gtx.Dp(90)
 				text := "Default"
+				clr := ColorTextDim
 				if customPath != "" {
 					text = filepath.Base(customPath)
+					clr = ColorAccent
 				}
 				lbl := material.Caption(v.app.Theme.Material, text)
-				if customPath != "" {
-					lbl.Color = ColorAccent
-				} else {
-					lbl.Color = ColorTextDim
-				}
+				lbl.Color = clr
+				lbl.MaxLines = 1
 				return lbl.Layout(gtx)
 			}),
+			// Volume slider (flex)
+			layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
+				return row.slider.Layout(gtx, 0)
+			}),
+			// Percentage
+			layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+				return layout.Inset{Left: unit.Dp(6)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+					gtx.Constraints.Min.X = gtx.Dp(36)
+					pct := int(row.slider.Value * 100)
+					lbl := material.Caption(v.app.Theme.Material, fmt.Sprintf("%d%%", pct))
+					lbl.Color = ColorTextDim
+					return lbl.Layout(gtx)
+				})
+			}),
+			// Reset button (only if custom)
 			layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 				if customPath != "" {
 					return layout.Inset{Left: unit.Dp(4)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-						return v.layoutSmallBtn(gtx, resetBtn, "Reset", ColorDanger)
+						return v.layoutSmallBtn(gtx, &row.resetBtn, "Reset", ColorDanger)
 					})
 				}
 				return layout.Dimensions{}
 			}),
+			// Upload button
 			layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 				return layout.Inset{Left: unit.Dp(4)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-					return v.layoutSmallBtn(gtx, uploadBtn, "Upload", ColorAccent)
+					return v.layoutSmallBtn(gtx, &row.uploadBtn, "Upload", ColorAccent)
 				})
 			}),
 		)

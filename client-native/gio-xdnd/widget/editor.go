@@ -5,6 +5,7 @@ package widget
 import (
 	"bufio"
 	"image"
+	"image/color"
 	"io"
 	"math"
 	"strings"
@@ -25,6 +26,7 @@ import (
 	"gioui.org/layout"
 	"gioui.org/op"
 	"gioui.org/op/clip"
+	"gioui.org/op/paint"
 	"gioui.org/text"
 	"gioui.org/unit"
 )
@@ -66,6 +68,8 @@ type Editor struct {
 	Filter string
 	// WrapPolicy configures how displayed text will be broken into lines.
 	WrapPolicy text.WrapPolicy
+	// CaretColor, if non-zero, overrides the text color for caret rendering.
+	CaretColor color.NRGBA
 
 	buffer *editBuffer
 	// scratch is a byte buffer that is reused to efficiently read portions of text
@@ -737,7 +741,14 @@ func (e *Editor) layout(gtx layout.Context, textMaterial, selectMaterial op.Call
 		e.paintText(gtx, textMaterial)
 	}
 	if gtx.Enabled() {
-		e.paintCaret(gtx, textMaterial)
+		if e.CaretColor != (color.NRGBA{}) {
+			m := op.Record(gtx.Ops)
+			paint.ColorOp{Color: e.CaretColor}.Add(gtx.Ops)
+			caretMat := m.Stop()
+			e.paintCaret(gtx, caretMat)
+		} else {
+			e.paintCaret(gtx, textMaterial)
+		}
 	}
 	return visibleDims
 }
@@ -1091,6 +1102,19 @@ func (e *Editor) Read(p []byte) (int, error) {
 func (e *Editor) Regions(start, end int, regions []Region) []Region {
 	e.initBuffer()
 	return e.text.Regions(start, end, regions)
+}
+
+// ScrollOff returns the scroll offset of the text viewport.
+func (e *Editor) ScrollOff() image.Point {
+	e.initBuffer()
+	return e.text.ScrollOff()
+}
+
+// FullDimensions returns the dimensions of all shaped text, including
+// text that isn't visible within the current viewport.
+func (e *Editor) FullDimensions() layout.Dimensions {
+	e.initBuffer()
+	return e.text.FullDimensions()
 }
 
 func abs(n int) int {

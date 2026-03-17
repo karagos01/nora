@@ -71,8 +71,8 @@ func (d *Deps) CreateChannel(w http.ResponseWriter, r *http.Request) {
 	if chType == "" {
 		chType = "text"
 	}
-	if chType != "text" && chType != "voice" && chType != "lobby" && chType != "lan" {
-		util.Error(w, http.StatusBadRequest, "type must be 'text', 'voice', 'lobby' or 'lan'")
+	if chType != "text" && chType != "voice" && chType != "lobby" && chType != "lan" && chType != "lfg" {
+		util.Error(w, http.StatusBadRequest, "type must be 'text', 'voice', 'lobby', 'lan' or 'lfg'")
 		return
 	}
 

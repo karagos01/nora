@@ -68,6 +68,10 @@ func NewUserPopup(a *App) *UserPopup {
 }
 
 func (p *UserPopup) Show(userID, username string) {
+	// Don't show popup for own user
+	if conn := p.app.Conn(); conn != nil && userID == conn.UserID {
+		return
+	}
 	p.Visible = true
 	p.UserID = userID
 	p.Username = username

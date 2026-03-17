@@ -349,6 +349,9 @@ func (d *Deps) CreateGroupInvite(w http.ResponseWriter, r *http.Request) {
 	rand.Read(b)
 	code := hex.EncodeToString(b)
 
+	// Delete all existing invites — only one active invite at a time
+	d.Groups.DeleteAllInvites(groupID)
+
 	id, _ := uuid.NewV7()
 	inv := &models.GroupInvite{
 		ID:        id.String(),
@@ -422,4 +425,23 @@ func (d *Deps) ListGroupInvites(w http.ResponseWriter, r *http.Request) {
 	}
 
 	util.JSON(w, http.StatusOK, result)
+}
+
+func (d *Deps) DeleteGroupInvite(w http.ResponseWriter, r *http.Request) {
+	user := auth.GetUser(r)
+	groupID := r.PathValue("id")
+	inviteID := r.PathValue("inviteId")
+
+	ok, _ := d.Groups.IsMember(groupID, user.ID)
+	if !ok {
+		util.Error(w, http.StatusForbidden, "not a member")
+		return
+	}
+
+	if err := d.Groups.DeleteInvite(inviteID); err != nil {
+		util.Error(w, http.StatusInternalServerError, "failed to delete invite")
+		return
+	}
+
+	w.WriteHeader(http.StatusNoContent)
 }

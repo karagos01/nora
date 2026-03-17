@@ -121,9 +121,6 @@ type ServerConnection struct {
 	StunURL string
 	Icon    image.Image
 
-	// Message cache (local cache of channel messages)
-	MsgCache *store.MessageCache
-
 	// VPN Tunnels
 	Tunnels []api.Tunnel
 
@@ -160,14 +157,19 @@ func (a *App) Unlock(username, password string) error {
 			a.Mode = ViewHome
 			a.GlobalNotifyLevel = id.NotifyLevel
 
-			vol := id.NotifVolume
-			if vol == 0 {
-				vol = 1.0
+			// Migrate old sound settings to new maps
+			if id.MigrateSoundSettings() {
+				_ = store.SaveIdentities(ids)
 			}
-			a.NotifVolume = vol
-			a.CustomNotifSnd = id.CustomNotifSnd
-			a.CustomDMSnd = id.CustomDMSnd
-			SetSoundSettings(vol, id.CustomNotifSnd, id.CustomDMSnd)
+			if id.SoundVolumes == nil {
+				id.SoundVolumes = make(map[string]float64)
+			}
+			if id.CustomSounds == nil {
+				id.CustomSounds = make(map[string]string)
+			}
+			a.SoundVolumes = id.SoundVolumes
+			a.CustomSounds = id.CustomSounds
+			SetAllSoundSettings(id.SoundVolumes, id.CustomSounds)
 
 			if id.VideoVolume > 0 {
 				a.VideoPlayer.SetVolume(id.VideoVolume)
@@ -376,9 +378,6 @@ func (a *App) setupServerConnection(serverURL, name, description, iconURL, stunU
 			conn.SharePaths[k] = v
 		}
 	}
-
-	// Initialize message cache for this server
-	conn.MsgCache = store.NewMessageCache(a.PublicKey, serverURL)
 
 	// Load notify settings from identity
 	srvNotify, chNotify := store.GetServerNotifySettings(a.PublicKey, serverURL)
@@ -623,7 +622,11 @@ func (a *App) ConnectServer(serverURL string, username string, inviteCode ...str
 		serverURL = "http://" + serverURL
 	}
 	serverURL = strings.TrimRight(serverURL, "/")
-	if !strings.Contains(serverURL[7:], ":") {
+	// Strip scheme to check for an explicit port (works for both http:// and https://)
+	after := serverURL
+	after = strings.TrimPrefix(after, "https://")
+	after = strings.TrimPrefix(after, "http://")
+	if !strings.Contains(after, ":") {
 		serverURL += ":9021"
 	}
 
@@ -913,69 +916,6 @@ func (a *App) loadServerData(conn *ServerConnection) {
 	}
 }
 
-// messagesToCached converts an api.Message slice to a CachedMessage slice.
-func messagesToCached(msgs []api.Message) []store.CachedMessage {
-	cached := make([]store.CachedMessage, len(msgs))
-	for i, m := range msgs {
-		cm := store.CachedMessage{
-			ID:        m.ID,
-			ChannelID: m.ChannelID,
-			UserID:    m.UserID,
-			Content:   m.Content,
-			CreatedAt: m.CreatedAt,
-			IsPinned:  m.IsPinned,
-			IsHidden:  m.IsHidden,
-		}
-		if m.Author != nil {
-			cm.Username = m.Author.Username
-		}
-		if m.ReplyToID != nil {
-			cm.ReplyToID = *m.ReplyToID
-		}
-		for _, a := range m.Attachments {
-			cm.Attachments = append(cm.Attachments, store.CachedAttachment{
-				Filename: a.Filename,
-				URL:      a.URL,
-				Size:     a.Size,
-				MimeType: a.MimeType,
-			})
-		}
-		cached[i] = cm
-	}
-	return cached
-}
-
-// cachedToMessages converts a CachedMessage slice to an api.Message slice.
-func cachedToMessages(cached []store.CachedMessage) []api.Message {
-	msgs := make([]api.Message, len(cached))
-	for i, cm := range cached {
-		m := api.Message{
-			ID:        cm.ID,
-			ChannelID: cm.ChannelID,
-			UserID:    cm.UserID,
-			Content:   cm.Content,
-			CreatedAt: cm.CreatedAt,
-			IsPinned:  cm.IsPinned,
-			IsHidden:  cm.IsHidden,
-			Author:    &api.User{ID: cm.UserID, Username: cm.Username},
-		}
-		if cm.ReplyToID != "" {
-			rid := cm.ReplyToID
-			m.ReplyToID = &rid
-		}
-		for _, ca := range cm.Attachments {
-			m.Attachments = append(m.Attachments, api.Attachment{
-				Filename: ca.Filename,
-				URL:      ca.URL,
-				Size:     ca.Size,
-				MimeType: ca.MimeType,
-			})
-		}
-		msgs[i] = m
-	}
-	return msgs
-}
-
 func reverseMessages(msgs []api.Message) {
 	for i, j := 0, len(msgs)-1; i < j; i, j = i+1, j-1 {
 		msgs[i], msgs[j] = msgs[j], msgs[i]
@@ -1015,6 +955,11 @@ func (a *App) SelectChannel(id, name string) {
 		return
 	}
 
+	// Close whiteboard overlay when switching channels
+	if a.WhiteboardView != nil && a.WhiteboardView.Visible {
+		a.WhiteboardView.Visible = false
+	}
+
 	a.mu.Lock()
 	conn.ActiveChannelID = id
 	conn.ActiveChannelName = name
@@ -1024,14 +969,21 @@ func (a *App) SelectChannel(id, name string) {
 	conn.ActiveDMPeerKey = ""
 	a.Mode = ViewChannels
 
-	// Load from local cache for instant display
-	if conn.MsgCache != nil {
-		cached := conn.MsgCache.GetMessages(id)
-		if len(cached) > 0 {
-			conn.Messages = cachedToMessages(cached)
+	a.mu.Unlock()
+
+	// Check if this is an LFG channel — load board instead of messages
+	isLFG := false
+	for _, ch := range conn.Channels {
+		if ch.ID == id && ch.Type == "lfg" {
+			isLFG = true
+			break
 		}
 	}
-	a.mu.Unlock()
+
+	if isLFG {
+		a.LFGBoard.Load(id)
+		return
+	}
 
 	a.MsgView.ResetScrollState()
 
@@ -1046,12 +998,6 @@ func (a *App) SelectChannel(id, name string) {
 		conn.Messages = msgs
 		a.mu.Unlock()
 		a.Window.Invalidate()
-
-		// Save to cache
-		if conn.MsgCache != nil {
-			conn.MsgCache.SetMessages(id, messagesToCached(msgs))
-			conn.MsgCache.Save()
-		}
 	}()
 
 	// Load pinSeenID from saved state

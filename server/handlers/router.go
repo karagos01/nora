@@ -87,6 +87,9 @@ type Deps struct {
 
 	AutoMod *moderation.AutoMod
 
+	// LFG (Looking For Group)
+	LFGQ *queries.LFGQueries
+
 	// VPN Tunnels
 	Tunnels *queries.TunnelQueries
 
@@ -242,6 +245,7 @@ func NewRouter(d *Deps) http.Handler {
 	protected.HandleFunc("POST /api/groups/{id}/messages", d.RelayGroupMessage)
 	protected.HandleFunc("POST /api/groups/{id}/invites", d.CreateGroupInvite)
 	protected.HandleFunc("GET /api/groups/{id}/invites", d.ListGroupInvites)
+	protected.HandleFunc("DELETE /api/groups/{id}/invites/{inviteId}", d.DeleteGroupInvite)
 
 	// Emoji
 	protected.HandleFunc("GET /api/emojis", d.ListEmojis)
@@ -410,6 +414,11 @@ func NewRouter(d *Deps) http.Handler {
 	protected.HandleFunc("POST /api/approvals/{userId}/approve", d.ApproveUser)
 	protected.HandleFunc("POST /api/approvals/{userId}/reject", d.RejectUser)
 
+	// LFG (Looking For Group)
+	protected.HandleFunc("GET /api/channels/{id}/lfg", d.ListLFGListings)
+	protected.HandleFunc("POST /api/channels/{id}/lfg", d.CreateLFGListing)
+	protected.HandleFunc("DELETE /api/channels/{id}/lfg/{listingId}", d.DeleteLFGListing)
+
 	// LAN Party (only if WG manager is enabled)
 	if d.WG != nil {
 		protected.HandleFunc("GET /api/lan", d.GetLANParties)
@@ -431,8 +440,10 @@ func NewRouter(d *Deps) http.Handler {
 	mux.HandleFunc("GET /{$}", d.ServerInfo)
 
 	var handler http.Handler = mux
+	handler = middleware.BodyLimit(handler)
 	handler = middleware.Logging(handler)
 	handler = middleware.CORS(handler)
+	handler = middleware.Recovery(handler)
 
 	return handler
 }

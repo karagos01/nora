@@ -22,7 +22,14 @@ func Ed25519SeedToX25519Private(seedHex string) ([]byte, error) {
 	h[31] &= 127
 	h[31] |= 64
 
-	return h[:32], nil
+	// Copy the x25519 scalar before clearing the full hash
+	scalar := make([]byte, 32)
+	copy(scalar, h[:32])
+	for i := range h {
+		h[i] = 0
+	}
+
+	return scalar, nil
 }
 
 // Ed25519PubToX25519Public converts an ed25519 public key (32B Edwards point) to an x25519 public key (32B Montgomery point).

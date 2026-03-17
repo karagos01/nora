@@ -200,6 +200,10 @@ const (
 	EventKanbanCardMove     EventType = "kanban.card_move"
 	EventKanbanCardDelete   EventType = "kanban.card_delete"
 
+	// LFG (Looking For Group)
+	EventLFGCreate EventType = "lfg.create"
+	EventLFGDelete EventType = "lfg.delete"
+
 	// VPN Tunnels
 	EventTunnelRequest EventType = "tunnel.request"
 	EventTunnelAccept  EventType = "tunnel.accept"

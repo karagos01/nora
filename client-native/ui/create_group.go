@@ -27,6 +27,7 @@ type CreateGroupDialog struct {
 func NewCreateGroupDialog(a *App) *CreateGroupDialog {
 	d := &CreateGroupDialog{app: a}
 	d.nameEditor.SingleLine = true
+	d.nameEditor.Submit = true
 	return d
 }
 
@@ -44,7 +45,17 @@ func (d *CreateGroupDialog) Layout(gtx layout.Context) layout.Dimensions {
 		return layout.Dimensions{}
 	}
 
-	if d.createBtn.Clicked(gtx) {
+	submit := d.createBtn.Clicked(gtx)
+	for {
+		ev, ok := d.nameEditor.Update(gtx)
+		if !ok {
+			break
+		}
+		if _, isSubmit := ev.(widget.SubmitEvent); isSubmit {
+			submit = true
+		}
+	}
+	if submit {
 		name := d.nameEditor.Text()
 		if name != "" {
 			d.Hide()

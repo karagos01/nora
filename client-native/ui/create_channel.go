@@ -67,7 +67,8 @@ type CreateDialog struct {
 	voiceTypeBtn widget.Clickable
 	lobbyTypeBtn widget.Clickable
 	lanTypeBtn   widget.Clickable
-	channelType  string // "text", "voice", "lobby" or "lan"
+	lfgTypeBtn   widget.Clickable
+	channelType  string // "text", "voice", "lobby", "lan" or "lfg"
 	catBtns      []widget.Clickable
 	selectedCat  *string // nil = no category
 
@@ -205,6 +206,9 @@ func (d *CreateDialog) Layout(gtx layout.Context) layout.Dimensions {
 	if d.lanTypeBtn.Clicked(gtx) {
 		d.channelType = "lan"
 	}
+	if d.lfgTypeBtn.Clicked(gtx) {
+		d.channelType = "lfg"
+	}
 
 	// Category selection (channel mode) — assignable cats
 	for i := range assignableCats {
@@ -275,8 +279,8 @@ func (d *CreateDialog) Layout(gtx layout.Context) layout.Dimensions {
 			})
 		}),
 		layout.Stacked(func(gtx layout.Context) layout.Dimensions {
-			gtx.Constraints.Max.X = gtx.Dp(340)
-			gtx.Constraints.Min.X = gtx.Dp(340)
+			gtx.Constraints.Max.X = gtx.Dp(400)
+			gtx.Constraints.Min.X = gtx.Dp(400)
 
 			return d.cardBtn.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
 				return layout.Background{}.Layout(gtx,
@@ -366,6 +370,11 @@ func (d *CreateDialog) layoutContent(gtx layout.Context, cats []api.ChannelCateg
 					layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 						return layout.Inset{Left: unit.Dp(4)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
 							return d.layoutTypeBtn(gtx, &d.lanTypeBtn, "LAN", d.channelType == "lan")
+						})
+					}),
+					layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+						return layout.Inset{Left: unit.Dp(4)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+							return d.layoutTypeBtn(gtx, &d.lfgTypeBtn, "LFG", d.channelType == "lfg")
 						})
 					}),
 				)
@@ -592,7 +601,7 @@ func (d *CreateDialog) layoutTypeBtn(gtx layout.Context, btn *widget.Clickable, 
 				return layout.Dimensions{Size: bounds.Max}
 			},
 			func(gtx layout.Context) layout.Dimensions {
-				return layout.Inset{Top: unit.Dp(6), Bottom: unit.Dp(6), Left: unit.Dp(12), Right: unit.Dp(12)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+				return layout.Inset{Top: unit.Dp(6), Bottom: unit.Dp(6), Left: unit.Dp(8), Right: unit.Dp(8)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
 					lbl := material.Caption(d.app.Theme.Material, text)
 					lbl.Color = fg
 					return lbl.Layout(gtx)

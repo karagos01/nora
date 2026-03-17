@@ -58,10 +58,10 @@ func (d *QRDialog) Layout(gtx layout.Context) layout.Dimensions {
 		return layout.Dimensions{}
 	}
 
+	d.cardBtn.Clicked(gtx)
 	if d.overlayBtn.Clicked(gtx) {
 		d.Hide()
 	}
-	d.cardBtn.Clicked(gtx)
 	if d.closeBtn.Clicked(gtx) {
 		d.Hide()
 	}

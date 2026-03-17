@@ -40,15 +40,54 @@ type StoredIdentity struct {
 	PasswordVerify  string         `json:"passwordVerify,omitempty"` // encrypted known string for wrong password detection
 	Servers         []StoredServer `json:"servers,omitempty"`
 	NotifyLevel    NotifyLevel    `json:"notifyLevel,omitempty"`
-	NotifVolume    float64        `json:"notifVolume,omitempty"`    // 0.0-1.0, 0 → default 1.0
-	CustomNotifSnd string         `json:"customNotifSnd,omitempty"` // path to custom notification sound
-	CustomDMSnd    string         `json:"customDmSnd,omitempty"`    // path to custom DM sound
+	NotifVolume    float64        `json:"notifVolume,omitempty"`    // DEPRECATED: use SoundVolumes
+	CustomNotifSnd string         `json:"customNotifSnd,omitempty"` // DEPRECATED: use CustomSounds
+	CustomDMSnd    string         `json:"customDmSnd,omitempty"`    // DEPRECATED: use CustomSounds
+	SoundVolumes   map[string]float64 `json:"soundVolumes,omitempty"`   // soundKey → 0.0-1.0
+	CustomSounds   map[string]string  `json:"customSounds,omitempty"`   // soundKey → file path
 	VideoVolume    int            `json:"videoVolume,omitempty"`    // 0 → default 100 (range 0-200)
 	YouTubeQuality int           `json:"youtubeQuality,omitempty"` // preferred height (360, 480, 720), 0 → auto (best ≤720p)
 	FontScale      float64        `json:"fontScale,omitempty"`      // 0 → default 1.0 (range 0.7-1.6)
 	MaxCacheBytes  int64          `json:"maxCacheBytes,omitempty"`  // 0 → default 2 GB
 	MaxHistoryDays int            `json:"maxHistoryDays,omitempty"` // 0 → unlimited
 	CompactMode    bool           `json:"compactMode,omitempty"`    // IRC-style compact messages
+}
+
+// MigrateSoundSettings migrates old flat sound fields to new maps.
+// Called after loading an identity.
+func (id *StoredIdentity) MigrateSoundSettings() bool {
+	changed := false
+	if id.SoundVolumes == nil {
+		id.SoundVolumes = make(map[string]float64)
+	}
+	if id.CustomSounds == nil {
+		id.CustomSounds = make(map[string]string)
+	}
+	// Migrate old NotifVolume → per-sound defaults
+	if id.NotifVolume > 0 && len(id.SoundVolumes) == 0 {
+		for _, key := range AllSoundKeys {
+			id.SoundVolumes[key] = id.NotifVolume
+		}
+		id.NotifVolume = 0
+		changed = true
+	}
+	if id.CustomNotifSnd != "" && id.CustomSounds["notification"] == "" {
+		id.CustomSounds["notification"] = id.CustomNotifSnd
+		id.CustomNotifSnd = ""
+		changed = true
+	}
+	if id.CustomDMSnd != "" && id.CustomSounds["dm"] == "" {
+		id.CustomSounds["dm"] = id.CustomDMSnd
+		id.CustomDMSnd = ""
+		changed = true
+	}
+	return changed
+}
+
+// AllSoundKeys lists all configurable sound types.
+var AllSoundKeys = []string{
+	"notification", "dm", "voiceJoin", "voiceLeave",
+	"callRing", "callEnd", "friendRequest", "lfg", "calendar",
 }
 
 type MountedShareInfo struct {
@@ -397,6 +436,21 @@ func UpdateSoundSettings(publicKey string, volume float64, notifSnd, dmSnd strin
 			ids[i].NotifVolume = volume
 			ids[i].CustomNotifSnd = notifSnd
 			ids[i].CustomDMSnd = dmSnd
+			return SaveIdentities(ids)
+		}
+	}
+	return nil
+}
+
+func UpdateAllSoundSettings(publicKey string, volumes map[string]float64, customs map[string]string) error {
+	ids, err := LoadIdentities()
+	if err != nil {
+		return err
+	}
+	for i := range ids {
+		if ids[i].PublicKey == publicKey {
+			ids[i].SoundVolumes = volumes
+			ids[i].CustomSounds = customs
 			return SaveIdentities(ids)
 		}
 	}

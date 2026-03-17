@@ -51,19 +51,23 @@ type GroupViewUI struct {
 
 	editorList widget.List
 
-	inviteBtn     widget.Clickable
-	inviteCopyBtn widget.Clickable
-	leaveBtn      widget.Clickable
-	deleteBtn     widget.Clickable
-	membersBtn    widget.Clickable
-	showMembers   bool
-	inviteLink    string
+	inviteBtn widget.Clickable
+	leaveBtn  widget.Clickable
+	deleteBtn widget.Clickable
 
-	// Invite list
-	showInvites    bool
-	inviteListBtn  widget.Clickable
-	invites        []api.GroupInvite
-	inviteCopyBtns []widget.Clickable
+	membersBtn  widget.Clickable
+	showMembers bool
+
+	// Invite popup
+	showInvitePopup   bool
+	invitePopupBg     widget.Clickable
+	invitePopupCard   widget.Clickable
+	inviteGenerateBtn widget.Clickable
+	inviteDeleteBtn   widget.Clickable
+	inviteCopyBtn     widget.Clickable
+	inviteCloseBtn    widget.Clickable
+	currentInvite     *api.GroupInvite
+	inviteLoading     bool
 
 	// Emoji picker
 	emojiBtn         widget.Clickable
@@ -135,46 +139,69 @@ func (v *GroupViewUI) Layout(gtx layout.Context) layout.Dimensions {
 
 	// Handle action buttons
 	if v.inviteBtn.Clicked(gtx) {
+		v.showInvitePopup = true
+		v.inviteLoading = true
+		gid := groupID
 		go func() {
-			inv, err := conn.Client.CreateGroupInvite(groupID, 0, 86400)
+			invs, err := conn.Client.GetGroupInvites(gid)
 			if err != nil {
-				log.Printf("CreateGroupInvite: %v", err)
-				return
+				log.Printf("GetGroupInvites: %v", err)
 			}
-			v.inviteLink = inv.Link
+			v.app.mu.Lock()
+			if len(invs) > 0 {
+				v.currentInvite = &invs[0]
+			} else {
+				v.currentInvite = nil
+			}
+			v.inviteLoading = false
+			v.app.mu.Unlock()
 			v.app.Window.Invalidate()
 		}()
 	}
 	if v.membersBtn.Clicked(gtx) {
 		v.showMembers = !v.showMembers
 	}
-	if v.inviteListBtn.Clicked(gtx) {
-		v.showInvites = !v.showInvites
-		if v.showInvites {
-			gid := groupID
-			go func() {
-				invs, err := conn.Client.GetGroupInvites(gid)
-				if err != nil {
-					log.Printf("GetGroupInvites: %v", err)
-					return
-				}
-				v.invites = invs
-				if len(v.inviteCopyBtns) < len(invs) {
-					v.inviteCopyBtns = make([]widget.Clickable, len(invs)+5)
-				}
+	// Invite popup actions
+	if v.inviteGenerateBtn.Clicked(gtx) {
+		v.inviteLoading = true
+		gid := groupID
+		go func() {
+			inv, err := conn.Client.CreateGroupInvite(gid, 0, 86400)
+			if err != nil {
+				log.Printf("CreateGroupInvite: %v", err)
+				v.inviteLoading = false
 				v.app.Window.Invalidate()
-			}()
-		}
+				return
+			}
+			v.app.mu.Lock()
+			v.currentInvite = inv
+			v.inviteLoading = false
+			v.app.mu.Unlock()
+			v.app.Window.Invalidate()
+		}()
 	}
-	// Handle invite copy clicks
-	for i, inv := range v.invites {
-		if i < len(v.inviteCopyBtns) && v.inviteCopyBtns[i].Clicked(gtx) {
-			copyToClipboard(inv.Link)
-		}
+	if v.inviteDeleteBtn.Clicked(gtx) && v.currentInvite != nil {
+		gid := groupID
+		invID := v.currentInvite.ID
+		v.inviteLoading = true
+		go func() {
+			if err := conn.Client.DeleteGroupInvite(gid, invID); err != nil {
+				log.Printf("DeleteGroupInvite: %v", err)
+			}
+			v.app.mu.Lock()
+			v.currentInvite = nil
+			v.inviteLoading = false
+			v.app.mu.Unlock()
+			v.app.Window.Invalidate()
+		}()
 	}
-	if v.inviteCopyBtn.Clicked(gtx) && v.inviteLink != "" {
-		copyToClipboard(v.inviteLink)
+	if v.inviteCopyBtn.Clicked(gtx) && v.currentInvite != nil {
+		copyToClipboard(v.currentInvite.Link)
 	}
+	if v.inviteCloseBtn.Clicked(gtx) || v.invitePopupBg.Clicked(gtx) {
+		v.showInvitePopup = false
+	}
+	v.invitePopupCard.Clicked(gtx)
 	if v.leaveBtn.Clicked(gtx) {
 		gid := groupID
 		v.app.ConfirmDlg.Show("Leave Group", "Leave this group? You will lose message history.", func() {
@@ -319,7 +346,7 @@ func (v *GroupViewUI) Layout(gtx layout.Context) layout.Dimensions {
 		copy(v.actions, old)
 	}
 
-	return layout.Flex{Axis: layout.Vertical}.Layout(gtx,
+	dims := layout.Flex{Axis: layout.Vertical}.Layout(gtx,
 		// Header
 		layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 			return layout.Inset{Top: unit.Dp(8), Bottom: unit.Dp(8), Left: unit.Dp(16), Right: unit.Dp(16)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
@@ -340,104 +367,16 @@ func (v *GroupViewUI) Layout(gtx layout.Context) layout.Dimensions {
 					}),
 					layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 						return layout.Inset{Left: unit.Dp(4)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-							label := "Links"
-							if v.showInvites {
-								label = "Hide Links"
+							if isCreator {
+								return v.layoutHeaderBtn(gtx, &v.deleteBtn, "Delete")
 							}
-							return v.layoutHeaderBtn(gtx, &v.inviteListBtn, label)
-						})
-					}),
-					layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-						return layout.Inset{Left: unit.Dp(4)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-							return v.layoutHeaderIconBtn(gtx, &v.leaveBtn, IconExit)
-						})
-					}),
-					layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-						if !isCreator {
-							return layout.Dimensions{}
-						}
-						return layout.Inset{Left: unit.Dp(4)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-							return v.layoutHeaderBtn(gtx, &v.deleteBtn, "Delete")
+							return v.layoutHeaderBtn(gtx, &v.leaveBtn, "Leave")
 						})
 					}),
 				)
 			})
 		}),
 
-		// Invite link bar
-		layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-			if v.inviteLink == "" {
-				return layout.Dimensions{}
-			}
-			return layout.Inset{Left: unit.Dp(16), Right: unit.Dp(16), Bottom: unit.Dp(4)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-				return layout.Background{}.Layout(gtx,
-					func(gtx layout.Context) layout.Dimensions {
-						bounds := image.Rect(0, 0, gtx.Constraints.Min.X, gtx.Constraints.Min.Y)
-						rr := gtx.Dp(6)
-						paint.FillShape(gtx.Ops, ColorInput, clip.RRect{
-							Rect: bounds,
-							NE:   rr, NW: rr, SE: rr, SW: rr,
-						}.Op(gtx.Ops))
-						return layout.Dimensions{Size: bounds.Max}
-					},
-					func(gtx layout.Context) layout.Dimensions {
-						return layout.Inset{Top: unit.Dp(6), Bottom: unit.Dp(6), Left: unit.Dp(10), Right: unit.Dp(10)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-							return layout.Flex{Alignment: layout.Middle}.Layout(gtx,
-								layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
-									lbl := material.Caption(v.app.Theme.Material, "Invite: "+v.inviteLink)
-									lbl.Color = ColorAccent
-									return lbl.Layout(gtx)
-								}),
-								layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-									return v.layoutHeaderIconBtn(gtx, &v.inviteCopyBtn, IconCopy)
-								}),
-							)
-						})
-					},
-				)
-			})
-		}),
-
-		// Invite list panel (collapsible)
-		layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-			if !v.showInvites || len(v.invites) == 0 {
-				return layout.Dimensions{}
-			}
-			return layout.Inset{Left: unit.Dp(16), Right: unit.Dp(16), Bottom: unit.Dp(4)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-				var items []layout.FlexChild
-				items = append(items, layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-					lbl := material.Caption(v.app.Theme.Material, "INVITE LINKS")
-					lbl.Color = ColorTextDim
-					return lbl.Layout(gtx)
-				}))
-				for i, inv := range v.invites {
-					idx := i
-					invite := inv
-					items = append(items, layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-						return layout.Inset{Top: unit.Dp(2)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-							return layout.Flex{Alignment: layout.Middle}.Layout(gtx,
-								layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
-									text := invite.Link
-									if invite.MaxUses > 0 {
-										text += fmt.Sprintf(" (%d/%d uses)", invite.Uses, invite.MaxUses)
-									}
-									lbl := material.Caption(v.app.Theme.Material, text)
-									lbl.Color = ColorAccent
-									return lbl.Layout(gtx)
-								}),
-								layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-									if idx >= len(v.inviteCopyBtns) {
-										return layout.Dimensions{}
-									}
-									return v.layoutHeaderIconBtn(gtx, &v.inviteCopyBtns[idx], IconCopy)
-								}),
-							)
-						})
-					}))
-				}
-				return layout.Flex{Axis: layout.Vertical}.Layout(gtx, items...)
-			})
-		}),
 
 		// Members panel (collapsible)
 		layout.Rigid(func(gtx layout.Context) layout.Dimensions {
@@ -581,6 +520,126 @@ func (v *GroupViewUI) Layout(gtx layout.Context) layout.Dimensions {
 							)
 						})
 					}),
+				)
+			})
+		}),
+	)
+
+	// Invite popup overlay
+	if v.showInvitePopup {
+		v.layoutInvitePopup(gtx)
+	}
+
+	return dims
+}
+
+func (v *GroupViewUI) layoutInvitePopup(gtx layout.Context) layout.Dimensions {
+	return layout.Stack{Alignment: layout.Center}.Layout(gtx,
+		layout.Expanded(func(gtx layout.Context) layout.Dimensions {
+			return v.invitePopupBg.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+				paint.FillShape(gtx.Ops, color.NRGBA{A: 140}, clip.Rect{Max: gtx.Constraints.Max}.Op())
+				return layout.Dimensions{Size: gtx.Constraints.Max}
+			})
+		}),
+		layout.Stacked(func(gtx layout.Context) layout.Dimensions {
+			gtx.Constraints.Max.X = gtx.Dp(380)
+			gtx.Constraints.Min.X = gtx.Dp(380)
+
+			return v.invitePopupCard.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+				return layout.Background{}.Layout(gtx,
+					func(gtx layout.Context) layout.Dimensions {
+						bounds := image.Rect(0, 0, gtx.Constraints.Min.X, gtx.Constraints.Min.Y)
+						rr := gtx.Dp(12)
+						paint.FillShape(gtx.Ops, ColorCard, clip.RRect{
+							Rect: bounds,
+							NE:   rr, NW: rr, SE: rr, SW: rr,
+						}.Op(gtx.Ops))
+						return layout.Dimensions{Size: bounds.Max}
+					},
+					func(gtx layout.Context) layout.Dimensions {
+						return layout.UniformInset(unit.Dp(20)).Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+							return layout.Flex{Axis: layout.Vertical}.Layout(gtx,
+								// Title
+								layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+									return layout.Flex{Alignment: layout.Middle}.Layout(gtx,
+										layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
+											lbl := material.H6(v.app.Theme.Material, "Invite Link")
+											lbl.Color = ColorText
+											return lbl.Layout(gtx)
+										}),
+										layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+											return v.layoutHeaderIconBtn(gtx, &v.inviteCloseBtn, IconClose)
+										}),
+									)
+								}),
+								layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+									return layout.Inset{Top: unit.Dp(4)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+										lbl := material.Caption(v.app.Theme.Material, "Share this link to invite people to the group. Only one link can be active at a time.")
+										lbl.Color = ColorTextDim
+										return lbl.Layout(gtx)
+									})
+								}),
+								// Current link
+								layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+									return layout.Inset{Top: unit.Dp(16)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+										if v.inviteLoading {
+											lbl := material.Caption(v.app.Theme.Material, "Loading...")
+											lbl.Color = ColorTextDim
+											return lbl.Layout(gtx)
+										}
+										if v.currentInvite == nil {
+											lbl := material.Caption(v.app.Theme.Material, "No active invite link.")
+											lbl.Color = ColorTextDim
+											return lbl.Layout(gtx)
+										}
+										return layout.Background{}.Layout(gtx,
+											func(gtx layout.Context) layout.Dimensions {
+												bounds := image.Rect(0, 0, gtx.Constraints.Min.X, gtx.Constraints.Min.Y)
+												rr := gtx.Dp(6)
+												paint.FillShape(gtx.Ops, ColorInput, clip.RRect{
+													Rect: bounds,
+													NE:   rr, NW: rr, SE: rr, SW: rr,
+												}.Op(gtx.Ops))
+												return layout.Dimensions{Size: bounds.Max}
+											},
+											func(gtx layout.Context) layout.Dimensions {
+												return layout.Inset{Top: unit.Dp(10), Bottom: unit.Dp(10), Left: unit.Dp(12), Right: unit.Dp(8)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+													return layout.Flex{Alignment: layout.Middle}.Layout(gtx,
+														layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
+															lbl := material.Body2(v.app.Theme.Material, v.currentInvite.Link)
+															lbl.Color = ColorAccent
+															return lbl.Layout(gtx)
+														}),
+														layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+															return v.layoutHeaderIconBtn(gtx, &v.inviteCopyBtn, IconCopy)
+														}),
+													)
+												})
+											},
+										)
+									})
+								}),
+								// Buttons
+								layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+									return layout.Inset{Top: unit.Dp(16)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+										return layout.Flex{Spacing: layout.SpaceStart}.Layout(gtx,
+											layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+												if v.currentInvite == nil {
+													return layout.Dimensions{}
+												}
+												return layoutDialogBtn(gtx, v.app.Theme, &v.inviteDeleteBtn, "Revoke", color.NRGBA{R: 200, G: 60, B: 60, A: 255}, color.NRGBA{R: 255, G: 255, B: 255, A: 255})
+											}),
+											layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+												return layout.Inset{Left: unit.Dp(8)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+													return layoutDialogBtn(gtx, v.app.Theme, &v.inviteGenerateBtn, "Generate New", ColorAccent, color.NRGBA{R: 255, G: 255, B: 255, A: 255})
+												})
+											}),
+										)
+									})
+								}),
+							)
+						})
+					},
 				)
 			})
 		}),
