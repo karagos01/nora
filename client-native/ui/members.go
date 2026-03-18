@@ -5,6 +5,7 @@ import (
 	"image/color"
 	"sort"
 
+	"gioui.org/io/pointer"
 	"gioui.org/layout"
 	"gioui.org/op/clip"
 	"gioui.org/op/paint"
@@ -125,6 +126,7 @@ func (v *MemberView) Layout(gtx layout.Context) layout.Dimensions {
 							bg := color.NRGBA{}
 							if v.memberBtns[idx].Hovered() && m.id != myUserID {
 								bg = ColorHover
+								pointer.CursorPointer.Add(gtx.Ops)
 							}
 
 							return layout.Background{}.Layout(gtx,

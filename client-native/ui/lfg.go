@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"gioui.org/font"
+	"gioui.org/io/pointer"
 	"gioui.org/layout"
 	"gioui.org/text"
 	"gioui.org/op/clip"
@@ -332,12 +333,12 @@ func (v *LFGBoardView) layoutListingCard(gtx layout.Context, th *Theme, listing 
 										authorName = v.app.ResolveUserName(listing.Author)
 									}
 									return v.authorBtns[listing.ID].Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+										if v.authorBtns[listing.ID].Hovered() {
+											pointer.CursorPointer.Add(gtx.Ops)
+										}
 										nameColor := UserColor(authorName)
 										if conn != nil {
 											nameColor = v.app.GetUserRoleColor(conn, listing.UserID, authorName)
-										}
-										if v.authorBtns[listing.ID].Hovered() {
-											nameColor.A = 200
 										}
 										lbl := material.Label(th.Material, unit.Sp(11), authorName)
 										lbl.Color = nameColor
@@ -357,10 +358,10 @@ func (v *LFGBoardView) layoutListingCard(gtx layout.Context, th *Theme, listing 
 									}
 									return layout.Inset{Left: unit.Dp(8)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
 										return v.dmBtns[listing.ID].Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-											clr := ColorAccent
 											if v.dmBtns[listing.ID].Hovered() {
-												clr.A = 200
+												pointer.CursorPointer.Add(gtx.Ops)
 											}
+											clr := ColorAccent
 											lbl := material.Label(th.Material, unit.Sp(11), "Message")
 											lbl.Color = clr
 											return lbl.Layout(gtx)
