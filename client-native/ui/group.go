@@ -390,22 +390,33 @@ func (v *GroupViewUI) Layout(gtx layout.Context) layout.Dimensions {
 					online := onlineUsers[member.UserID]
 					items = append(items, layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 						return layout.Inset{Top: unit.Dp(2), Bottom: unit.Dp(2)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+							name := member.DisplayName
+							if name == "" {
+								name = member.Username
+							}
 							return layout.Flex{Alignment: layout.Middle}.Layout(gtx,
+								// Avatar with online indicator
 								layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-									dotSize := gtx.Dp(8)
-									clr := ColorOffline
-									if online {
-										clr = ColorOnline
-									}
-									paint.FillShape(gtx.Ops, clr, clip.Ellipse{
-										Max: image.Pt(dotSize, dotSize),
-									}.Op(gtx.Ops))
-									return layout.Dimensions{Size: image.Pt(dotSize, dotSize)}
+									return layout.Stack{Alignment: layout.SE}.Layout(gtx,
+										layout.Stacked(func(gtx layout.Context) layout.Dimensions {
+											return layoutAvatar(gtx, v.app, name, member.AvatarURL, 24)
+										}),
+										layout.Stacked(func(gtx layout.Context) layout.Dimensions {
+											sz := gtx.Dp(8)
+											clr := ColorOffline
+											if online {
+												clr = ColorOnline
+											}
+											paint.FillShape(gtx.Ops, clr, clip.Ellipse{
+												Max: image.Pt(sz, sz),
+											}.Op(gtx.Ops))
+											return layout.Dimensions{Size: image.Pt(sz, sz)}
+										}),
+									)
 								}),
 								layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-									return layout.Inset{Left: unit.Dp(6)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-										name := member.Username
-										lbl := material.Caption(v.app.Theme.Material, name)
+									return layout.Inset{Left: unit.Dp(8)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+										lbl := material.Body2(v.app.Theme.Material, name)
 										nameColor := UserColor(name)
 										if !online {
 											nameColor = color.NRGBA{

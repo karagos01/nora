@@ -756,6 +756,9 @@ func (a *App) loadServerData(conn *ServerConnection) {
 		}
 	}
 
+	// Sync friends from this server to contacts DB
+	a.SyncFriendsToContacts()
+
 	convs, err := conn.Client.GetDMConversations()
 	if err == nil {
 		conn.DMConversations = convs

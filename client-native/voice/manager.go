@@ -25,6 +25,9 @@ type Peer struct {
 // SendWSFunc is a callback to send a WS event.
 type SendWSFunc func(eventType string, payload any) error
 
+// SendRelayFunc is a callback to send a call event via cross-server relay.
+type SendRelayFunc func(eventType string, payload map[string]interface{}) error
+
 // Manager handles voice channel connections, WebRTC peers, and audio.
 type Manager struct {
 	mu sync.Mutex

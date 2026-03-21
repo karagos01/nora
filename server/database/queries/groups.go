@@ -74,7 +74,11 @@ func (q *GroupQueries) RemoveMember(groupID, userID string) error {
 
 func (q *GroupQueries) GetMembers(groupID string) ([]models.GroupMember, error) {
 	rows, err := q.DB.Query(
-		"SELECT group_id, user_id, public_key, joined_at FROM group_members WHERE group_id = ?",
+		`SELECT gm.group_id, gm.user_id, gm.public_key, gm.joined_at,
+		        COALESCE(u.username, ''), COALESCE(u.display_name, ''), COALESCE(u.avatar_url, '')
+		 FROM group_members gm
+		 LEFT JOIN users u ON u.id = gm.user_id
+		 WHERE gm.group_id = ?`,
 		groupID,
 	)
 	if err != nil {
@@ -85,7 +89,8 @@ func (q *GroupQueries) GetMembers(groupID string) ([]models.GroupMember, error) 
 	var members []models.GroupMember
 	for rows.Next() {
 		var m models.GroupMember
-		if err := rows.Scan(&m.GroupID, &m.UserID, &m.PublicKey, &m.JoinedAt); err != nil {
+		if err := rows.Scan(&m.GroupID, &m.UserID, &m.PublicKey, &m.JoinedAt,
+			&m.Username, &m.DisplayName, &m.AvatarURL); err != nil {
 			return nil, err
 		}
 		members = append(members, m)

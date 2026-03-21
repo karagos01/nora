@@ -20,7 +20,8 @@ type Contact struct {
 	FirstSeenServer string
 	FirstSeenAt     time.Time
 	Notes           string
-	Blocked         bool   // cross-server block (client-side blocklist)
+	Blocked         bool // cross-server block (client-side blocklist)
+	IsFriend        bool // cross-server friend flag
 }
 
 type ServerName struct {
@@ -80,8 +81,9 @@ func OpenContacts(publicKey string) (*ContactsDB, error) {
 		return nil, err
 	}
 
-	// Migration: add blocked column
+	// Migration: add blocked + is_friend columns
 	db.Exec("ALTER TABLE contacts ADD COLUMN blocked INTEGER NOT NULL DEFAULT 0")
+	db.Exec("ALTER TABLE contacts ADD COLUMN is_friend INTEGER NOT NULL DEFAULT 0")
 
 	return &ContactsDB{db: db}, nil
 }
@@ -150,19 +152,20 @@ func (c *ContactsDB) GetContact(pubKey string) *Contact {
 		return nil
 	}
 	row := c.db.QueryRow(`
-		SELECT public_key, custom_name, auto_name, discriminant, first_seen_server, first_seen_at, notes, blocked
+		SELECT public_key, custom_name, auto_name, discriminant, first_seen_server, first_seen_at, notes, blocked, is_friend
 		FROM contacts WHERE public_key = ?
 	`, pubKey)
 
 	var ct Contact
 	var firstSeen string
-	var blocked int
-	err := row.Scan(&ct.PublicKey, &ct.CustomName, &ct.AutoName, &ct.Discriminant, &ct.FirstSeenServer, &firstSeen, &ct.Notes, &blocked)
+	var blocked, isFriend int
+	err := row.Scan(&ct.PublicKey, &ct.CustomName, &ct.AutoName, &ct.Discriminant, &ct.FirstSeenServer, &firstSeen, &ct.Notes, &blocked, &isFriend)
 	if err != nil {
 		return nil
 	}
 	ct.FirstSeenAt, _ = time.Parse("2006-01-02 15:04:05", firstSeen)
 	ct.Blocked = blocked != 0
+	ct.IsFriend = isFriend != 0
 	return &ct
 }
 
@@ -216,7 +219,7 @@ func (c *ContactsDB) AllContacts() []Contact {
 		return nil
 	}
 	rows, err := c.db.Query(`
-		SELECT public_key, custom_name, auto_name, discriminant, first_seen_server, first_seen_at, notes
+		SELECT public_key, custom_name, auto_name, discriminant, first_seen_server, first_seen_at, notes, blocked, is_friend
 		FROM contacts ORDER BY auto_name
 	`)
 	if err != nil {
@@ -228,8 +231,11 @@ func (c *ContactsDB) AllContacts() []Contact {
 	for rows.Next() {
 		var ct Contact
 		var firstSeen string
-		if err := rows.Scan(&ct.PublicKey, &ct.CustomName, &ct.AutoName, &ct.Discriminant, &ct.FirstSeenServer, &firstSeen, &ct.Notes); err == nil {
+		var blocked, isFriend int
+		if err := rows.Scan(&ct.PublicKey, &ct.CustomName, &ct.AutoName, &ct.Discriminant, &ct.FirstSeenServer, &firstSeen, &ct.Notes, &blocked, &isFriend); err == nil {
 			ct.FirstSeenAt, _ = time.Parse("2006-01-02 15:04:05", firstSeen)
+			ct.Blocked = blocked != 0
+			ct.IsFriend = isFriend != 0
 			result = append(result, ct)
 		}
 	}
@@ -243,7 +249,7 @@ func (c *ContactsDB) Search(query string) []Contact {
 	}
 	like := "%" + query + "%"
 	rows, err := c.db.Query(`
-		SELECT public_key, custom_name, auto_name, discriminant, first_seen_server, first_seen_at, notes
+		SELECT public_key, custom_name, auto_name, discriminant, first_seen_server, first_seen_at, notes, blocked, is_friend
 		FROM contacts
 		WHERE custom_name LIKE ? OR auto_name LIKE ? OR public_key LIKE ? OR discriminant LIKE ?
 		ORDER BY auto_name LIMIT 50
@@ -257,8 +263,11 @@ func (c *ContactsDB) Search(query string) []Contact {
 	for rows.Next() {
 		var ct Contact
 		var firstSeen string
-		if err := rows.Scan(&ct.PublicKey, &ct.CustomName, &ct.AutoName, &ct.Discriminant, &ct.FirstSeenServer, &firstSeen, &ct.Notes); err == nil {
+		var blocked, isFriend int
+		if err := rows.Scan(&ct.PublicKey, &ct.CustomName, &ct.AutoName, &ct.Discriminant, &ct.FirstSeenServer, &firstSeen, &ct.Notes, &blocked, &isFriend); err == nil {
 			ct.FirstSeenAt, _ = time.Parse("2006-01-02 15:04:05", firstSeen)
+			ct.Blocked = blocked != 0
+			ct.IsFriend = isFriend != 0
 			result = append(result, ct)
 		}
 	}
@@ -291,6 +300,48 @@ func (c *ContactsDB) IsBlocked(pubKey string) bool {
 		return false
 	}
 	return blocked != 0
+}
+
+// SetFriend sets the cross-server friend flag for a contact.
+func (c *ContactsDB) SetFriend(pubKey string, isFriend bool) {
+	if c == nil || c.db == nil || pubKey == "" {
+		return
+	}
+	val := 0
+	if isFriend {
+		val = 1
+	}
+	c.EnsureContact(pubKey, "", "", "")
+	c.db.Exec("UPDATE contacts SET is_friend = ? WHERE public_key = ?", val, pubKey)
+}
+
+// GetFriends returns all contacts marked as friends.
+func (c *ContactsDB) GetFriends() []Contact {
+	if c == nil || c.db == nil {
+		return nil
+	}
+	rows, err := c.db.Query(`
+		SELECT public_key, custom_name, auto_name, discriminant, first_seen_server, first_seen_at, notes, blocked, is_friend
+		FROM contacts WHERE is_friend = 1 ORDER BY auto_name
+	`)
+	if err != nil {
+		return nil
+	}
+	defer rows.Close()
+
+	var result []Contact
+	for rows.Next() {
+		var ct Contact
+		var firstSeen string
+		var blocked, isFriend int
+		if err := rows.Scan(&ct.PublicKey, &ct.CustomName, &ct.AutoName, &ct.Discriminant, &ct.FirstSeenServer, &firstSeen, &ct.Notes, &blocked, &isFriend); err == nil {
+			ct.FirstSeenAt, _ = time.Parse("2006-01-02 15:04:05", firstSeen)
+			ct.Blocked = blocked != 0
+			ct.IsFriend = isFriend != 0
+			result = append(result, ct)
+		}
+	}
+	return result
 }
 
 // HasNameCollision checks whether two or more contacts share the same auto_name.

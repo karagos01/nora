@@ -210,28 +210,8 @@ func (q *LFGQueries) GetApplications(listingID string) ([]models.LFGApplication,
 	return apps, rows.Err()
 }
 
-// CleanupExpired deletes all expired listings and their groups. Returns listing count deleted.
+// CleanupExpired deletes all expired listings. Groups are kept alive. Returns listing count deleted.
 func (q *LFGQueries) CleanupExpired() (int64, error) {
-	// Get group IDs before deleting
-	rows, err := q.DB.Query(`SELECT group_id FROM lfg_listings WHERE expires_at <= datetime('now') AND group_id != ''`)
-	if err == nil {
-		var groupIDs []string
-		for rows.Next() {
-			var groupID string
-			if err := rows.Scan(&groupID); err != nil {
-				continue
-			}
-			if groupID != "" {
-				groupIDs = append(groupIDs, groupID)
-			}
-		}
-		rows.Close()
-		if err := rows.Err(); err == nil {
-			for _, gid := range groupIDs {
-				q.DB.Exec(`DELETE FROM groups WHERE id = ?`, gid)
-			}
-		}
-	}
 	res, err := q.DB.Exec(`DELETE FROM lfg_listings WHERE expires_at <= datetime('now')`)
 	if err != nil {
 		return 0, err

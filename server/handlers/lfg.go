@@ -338,6 +338,16 @@ func (d *Deps) AcceptLFGApplication(w http.ResponseWriter, r *http.Request) {
 	acceptMsg, _ := ws.NewEvent("lfg.accepted", acceptPayload)
 	d.Hub.BroadcastToUser(applicantID, acceptMsg)
 
+	// Auto-delete listing when max_players reached
+	if listing.MaxPlayers > 0 && len(participants) >= listing.MaxPlayers {
+		d.LFGQ.DeleteByID(listingID)
+		delMsg, _ := ws.NewEvent(ws.EventLFGDelete, map[string]string{
+			"id":         listingID,
+			"channel_id": listing.ChannelID,
+		})
+		d.broadcastToChannelReaders(listing.ChannelID, delMsg)
+	}
+
 	util.JSON(w, http.StatusOK, map[string]interface{}{
 		"participants": participants,
 		"applications": apps,
@@ -457,16 +467,7 @@ func (d *Deps) DeleteLFGListing(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	// Also delete the associated group (notify BEFORE delete)
-	if listing.GroupID != "" {
-		delMsg, _ := ws.NewEvent(ws.EventGroupDelete, map[string]string{"group_id": listing.GroupID})
-		if members, err := d.Groups.GetMembers(listing.GroupID); err == nil {
-			for _, m := range members {
-				d.Hub.BroadcastToUser(m.UserID, delMsg)
-			}
-		}
-		d.Groups.Delete(listing.GroupID)
-	}
+	// Group is kept alive — users may have ongoing conversations
 
 	msg, _ := ws.NewEvent(ws.EventLFGDelete, map[string]string{
 		"id":         listingID,

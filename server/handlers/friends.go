@@ -9,7 +9,8 @@ import (
 )
 
 type sendFriendRequestReq struct {
-	UserID string `json:"user_id"`
+	UserID    string `json:"user_id"`
+	PublicKey string `json:"public_key"`
 }
 
 func (d *Deps) ListFriends(w http.ResponseWriter, r *http.Request) {
@@ -55,8 +56,17 @@ func (d *Deps) SendFriendRequest(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Resolve user by ID or public key
+	if req.UserID == "" && req.PublicKey != "" {
+		u, err := d.Users.GetByPublicKey(req.PublicKey)
+		if err != nil {
+			util.Error(w, http.StatusNotFound, "user not found")
+			return
+		}
+		req.UserID = u.ID
+	}
 	if req.UserID == "" {
-		util.Error(w, http.StatusBadRequest, "user_id is required")
+		util.Error(w, http.StatusBadRequest, "user_id or public_key is required")
 		return
 	}
 	if req.UserID == user.ID {

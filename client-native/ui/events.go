@@ -554,7 +554,12 @@ func (a *App) processWSEvent(conn *ServerConnection, ev api.WSEvent) {
 		if json.Unmarshal(ev.Payload, &user) == nil {
 			a.mu.Lock()
 			conn.Friends = append(conn.Friends, user)
+			pubKey := user.PublicKey
 			a.mu.Unlock()
+			// Sync to contacts DB (outside mutex to avoid blocking)
+			if a.Contacts != nil && pubKey != "" {
+				go a.Contacts.SetFriend(pubKey, true)
+			}
 			name := user.DisplayName
 			if name == "" {
 				name = user.Username
@@ -568,14 +573,35 @@ func (a *App) processWSEvent(conn *ServerConnection, ev api.WSEvent) {
 	case "friend.remove":
 		var payload struct{ UserID string `json:"user_id"` }
 		if json.Unmarshal(ev.Payload, &payload) == nil {
+			var removedKey string
 			a.mu.Lock()
 			for i, f := range conn.Friends {
 				if f.ID == payload.UserID {
+					removedKey = f.PublicKey
 					conn.Friends = append(conn.Friends[:i], conn.Friends[i+1:]...)
 					break
 				}
 			}
+			// Check if still friend on any other server
+			stillFriend := false
+			if removedKey != "" {
+				for _, s := range a.Servers {
+					for _, f := range s.Friends {
+						if f.PublicKey == removedKey {
+							stillFriend = true
+							break
+						}
+					}
+					if stillFriend {
+						break
+					}
+				}
+			}
 			a.mu.Unlock()
+			// Sync to contacts DB outside mutex
+			if a.Contacts != nil && removedKey != "" && !stillFriend {
+				go a.Contacts.SetFriend(removedKey, false)
+			}
 		}
 
 	case "server.update":

@@ -136,6 +136,9 @@ func NewRouter(d *Deps) http.Handler {
 	// Uploads (public read)
 	mux.HandleFunc("GET /api/uploads/", d.ServeUpload)
 
+	// Cross-server relay (public — ed25519 signature auth)
+	mux.HandleFunc("POST /api/relay", d.RelayEvent)
+
 	// Webhook send (public — token in URL)
 	mux.HandleFunc("POST /api/webhooks/{id}/{token}", d.WebhookSend)
 

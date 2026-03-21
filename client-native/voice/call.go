@@ -23,6 +23,39 @@ const (
 
 const callRingTimeout = 30 * time.Second
 
+// SetRelay configures a cross-server relay function for call signaling.
+// When set, sendWS is bypassed and relay is used instead.
+func (c *CallManager) SetRelay(fn SendRelayFunc) {
+	c.mu.Lock()
+	c.sendRelay = fn
+	c.mu.Unlock()
+}
+
+// ClearRelay removes the cross-server relay (back to normal WS).
+func (c *CallManager) ClearRelay() {
+	c.mu.Lock()
+	c.sendRelay = nil
+	c.mu.Unlock()
+}
+
+// send dispatches a call event either via relay or WS.
+func (c *CallManager) send(eventType string, payload any) {
+	c.mu.Lock()
+	relay := c.sendRelay
+	c.mu.Unlock()
+
+	if relay != nil {
+		data, _ := json.Marshal(payload)
+		var m map[string]interface{}
+		json.Unmarshal(data, &m)
+		if err := relay(eventType, m); err != nil {
+			log.Printf("call relay error: %v", err)
+		}
+		return
+	}
+	c.sendWS(eventType, payload)
+}
+
 // CallManager manages 1:1 DM calls (WebRTC + audio).
 type CallManager struct {
 	mu             sync.Mutex
@@ -49,6 +82,7 @@ type CallManager struct {
 	speakingThreshold float32
 
 	sendWS       SendWSFunc
+	sendRelay    SendRelayFunc // Cross-server relay (nil = not cross-server)
 	invalidate   func()
 	onLeaveVoice func() // Callback: leave voice channel before a call
 	onRingStop   func() // Callback: stop the ring sound
@@ -107,7 +141,7 @@ func (c *CallManager) StartCall(conversationID, peerID string) {
 		c.onLeaveVoice()
 	}
 
-	c.sendWS("call.ring", map[string]string{
+	c.send("call.ring", map[string]string{
 		"to":              peerID,
 		"conversation_id": conversationID,
 	})
@@ -140,7 +174,7 @@ func (c *CallManager) HandleRing(from, conversationID string) {
 	if c.State != CallIdle {
 		// Already in a call — decline
 		c.mu.Unlock()
-		c.sendWS("call.decline", map[string]string{
+		c.send("call.decline", map[string]string{
 			"to": from,
 		})
 		return
@@ -190,7 +224,7 @@ func (c *CallManager) AcceptCall() {
 	c.StartTime = time.Now()
 	c.mu.Unlock()
 
-	c.sendWS("call.accept", map[string]string{
+	c.send("call.accept", map[string]string{
 		"to": peerID,
 	})
 
@@ -213,7 +247,7 @@ func (c *CallManager) DeclineCall() {
 	c.reset()
 	c.mu.Unlock()
 
-	c.sendWS("call.decline", map[string]string{
+	c.send("call.decline", map[string]string{
 		"to": peerID,
 	})
 
@@ -235,7 +269,7 @@ func (c *CallManager) HangupCall() {
 	c.reset()
 	c.mu.Unlock()
 
-	c.sendWS("call.hangup", map[string]string{
+	c.send("call.hangup", map[string]string{
 		"to": peerID,
 	})
 
@@ -342,7 +376,7 @@ func (c *CallManager) HandleOffer(from string, sdpStr string) {
 		return
 	}
 
-	c.sendWS("call.answer", map[string]string{
+	c.send("call.answer", map[string]string{
 		"to":  from,
 		"sdp": answer.SDP,
 	})
@@ -442,7 +476,7 @@ func (c *CallManager) connectToPeer(userID string) {
 		return
 	}
 
-	c.sendWS("call.offer", map[string]string{
+	c.send("call.offer", map[string]string{
 		"to":  userID,
 		"sdp": offer.SDP,
 	})
@@ -497,7 +531,7 @@ func (c *CallManager) createPeer(userID string) (*Peer, error) {
 			return
 		}
 		candidateJSON := cand.ToJSON()
-		c.sendWS("call.ice", map[string]any{
+		c.send("call.ice", map[string]any{
 			"to":            userID,
 			"candidate":     candidateJSON.Candidate,
 			"sdpMLineIndex": candidateJSON.SDPMLineIndex,

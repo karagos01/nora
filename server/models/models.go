@@ -191,10 +191,13 @@ type Group struct {
 }
 
 type GroupMember struct {
-	GroupID   string    `json:"group_id"`
-	UserID    string    `json:"user_id"`
-	PublicKey string    `json:"public_key"`
-	JoinedAt  time.Time `json:"joined_at"`
+	GroupID     string    `json:"group_id"`
+	UserID      string    `json:"user_id"`
+	PublicKey   string    `json:"public_key"`
+	Username    string    `json:"username,omitempty"`
+	DisplayName string   `json:"display_name,omitempty"`
+	AvatarURL   string   `json:"avatar_url,omitempty"`
+	JoinedAt    time.Time `json:"joined_at"`
 }
 
 type GroupInvite struct {

@@ -5,6 +5,7 @@ import (
 	"image"
 	"image/color"
 	"log"
+	"strings"
 
 	"gioui.org/io/pointer"
 	"gioui.org/layout"
@@ -31,15 +32,18 @@ type FriendListView struct {
 	sentCancelBtns []widget.Clickable
 
 	// Add friend
-	addFriendEditor widget.Editor
-	addFriendBtn    widget.Clickable
-	addFriendError  string
+	addFriendEditor   widget.Editor
+	addFriendBtn      widget.Clickable
+	addFriendError    string
+	autocompleteBtns  []widget.Clickable
+	autocompleteUsers []api.User
 }
 
 func NewFriendListView(a *App) *FriendListView {
 	v := &FriendListView{app: a}
 	v.list.Axis = layout.Vertical
 	v.addFriendEditor.SingleLine = true
+	v.addFriendEditor.Submit = true
 	return v
 }
 
@@ -51,37 +55,34 @@ func (v *FriendListView) Layout(gtx layout.Context) layout.Dimensions {
 		return layoutColoredBg(gtx, ColorCard)
 	}
 
+	// Unified friends from contacts DB (cross-server)
+	unifiedFriends := v.app.GetUnifiedFriends()
+
+	// Requests from ALL servers
 	v.app.mu.RLock()
-	friends := conn.Friends
-	requests := conn.FriendRequests
-	sentRequests := conn.SentFriendRequests
 	myUserID := conn.UserID
-	onlineUsers := conn.OnlineUsers
-	// Build map of user → share access level + ID
-	type friendShareInfo struct {
-		access  shareAccess
-		shareID string
+	type taggedRequest struct {
+		api.FriendRequest
+		ServerName string
+		ServerIdx  int
 	}
-	friendShares := make(map[string]friendShareInfo)
-	for _, s := range conn.MyShares {
-		friendShares[s.OwnerID] = friendShareInfo{shareWrite, s.ID}
-	}
-	for _, s := range conn.SharedWithMe {
-		acc := shareRead
-		if s.CanWrite {
-			acc = shareWrite
+	var requests []taggedRequest
+	var sentRequests []taggedRequest
+	for srvIdx, s := range v.app.Servers {
+		for _, r := range s.FriendRequests {
+			requests = append(requests, taggedRequest{r, s.Name, srvIdx})
 		}
-		if prev, ok := friendShares[s.OwnerID]; !ok || acc > prev.access {
-			friendShares[s.OwnerID] = friendShareInfo{acc, s.ID}
+		for _, r := range s.SentFriendRequests {
+			sentRequests = append(sentRequests, taggedRequest{r, s.Name, srvIdx})
 		}
 	}
 	v.app.mu.RUnlock()
 
-	if len(v.friendBtns) < len(friends) {
-		v.friendBtns = make([]widget.Clickable, len(friends)+10)
+	if len(v.friendBtns) < len(unifiedFriends) {
+		v.friendBtns = make([]widget.Clickable, len(unifiedFriends)+10)
 	}
-	if len(v.shareBtns) < len(friends) {
-		v.shareBtns = make([]widget.Clickable, len(friends)+10)
+	if len(v.shareBtns) < len(unifiedFriends) {
+		v.shareBtns = make([]widget.Clickable, len(unifiedFriends)+10)
 	}
 	if len(v.reqBtns) < len(requests) {
 		v.reqBtns = make([]friendRequestBtns, len(requests)+5)
@@ -92,23 +93,38 @@ func (v *FriendListView) Layout(gtx layout.Context) layout.Dimensions {
 
 	// Handle request button clicks
 	for i, req := range requests {
+		if i >= len(v.reqBtns) {
+			break
+		}
 		if v.reqBtns[i].accept.Clicked(gtx) {
 			reqID := req.ID
+			srvIdx := req.ServerIdx
 			go func() {
-				if conn := v.app.Conn(); conn != nil {
-					if err := conn.Client.AcceptFriendRequest(reqID); err != nil {
+				v.app.mu.RLock()
+				if srvIdx >= 0 && srvIdx < len(v.app.Servers) {
+					s := v.app.Servers[srvIdx]
+					v.app.mu.RUnlock()
+					if err := s.Client.AcceptFriendRequest(reqID); err != nil {
 						log.Printf("AcceptFriendRequest error: %v", err)
 					}
+				} else {
+					v.app.mu.RUnlock()
 				}
 			}()
 		}
 		if v.reqBtns[i].decline.Clicked(gtx) {
 			reqID := req.ID
+			srvIdx := req.ServerIdx
 			go func() {
-				if conn := v.app.Conn(); conn != nil {
-					if err := conn.Client.DeclineFriendRequest(reqID); err != nil {
+				v.app.mu.RLock()
+				if srvIdx >= 0 && srvIdx < len(v.app.Servers) {
+					s := v.app.Servers[srvIdx]
+					v.app.mu.RUnlock()
+					if err := s.Client.DeclineFriendRequest(reqID); err != nil {
 						log.Printf("DeclineFriendRequest error: %v", err)
 					}
+				} else {
+					v.app.mu.RUnlock()
 				}
 			}()
 		}
@@ -116,59 +132,97 @@ func (v *FriendListView) Layout(gtx layout.Context) layout.Dimensions {
 
 	// Handle sent request cancel clicks
 	for i, req := range sentRequests {
+		if i >= len(v.sentCancelBtns) {
+			break
+		}
 		if v.sentCancelBtns[i].Clicked(gtx) {
 			reqID := req.ID
+			srvIdx := req.ServerIdx
 			go func() {
-				if conn := v.app.Conn(); conn != nil {
-					if err := conn.Client.DeclineFriendRequest(reqID); err != nil {
+				v.app.mu.RLock()
+				if srvIdx >= 0 && srvIdx < len(v.app.Servers) {
+					s := v.app.Servers[srvIdx]
+					v.app.mu.RUnlock()
+					if err := s.Client.DeclineFriendRequest(reqID); err != nil {
 						log.Printf("CancelFriendRequest error: %v", err)
 					}
+				} else {
+					v.app.mu.RUnlock()
 				}
 			}()
 		}
 	}
 
 	// Handle friend clicks
-	for i, f := range friends {
-		if v.friendBtns[i].Clicked(gtx) && f.ID != myUserID {
-			v.app.UserPopup.Show(f.ID, v.app.ResolveUserName(&f))
+	for i, uf := range unifiedFriends {
+		if i < len(v.friendBtns) && v.friendBtns[i].Clicked(gtx) {
+			// Find user on any server to get ID for popup
+			v.app.mu.RLock()
+			if user, _ := v.app.FindUserAcrossServers(uf.PublicKey); user != nil {
+				v.app.mu.RUnlock()
+				v.app.UserPopup.Show(user.ID, uf.Name)
+			} else {
+				v.app.mu.RUnlock()
+			}
 		}
 	}
 
-	// Handle add friend
+	// Handle autocomplete clicks
+	for i := range v.autocompleteUsers {
+		if i < len(v.autocompleteBtns) && v.autocompleteBtns[i].Clicked(gtx) {
+			v.sendFriendRequestTo(v.autocompleteUsers[i].ID)
+		}
+	}
+
+	// Handle add friend button / submit
 	if v.addFriendBtn.Clicked(gtx) {
-		username := v.addFriendEditor.Text()
-		if username != "" {
-			// Find user by username/display name in members
-			var targetID string
+		v.doAddFriend()
+	}
+	for {
+		ev, ok := v.addFriendEditor.Update(gtx)
+		if !ok {
+			break
+		}
+		if _, isSubmit := ev.(widget.SubmitEvent); isSubmit {
+			v.doAddFriend()
+		}
+	}
+
+	// Build autocomplete list
+	query := strings.ToLower(strings.TrimSpace(v.addFriendEditor.Text()))
+	v.autocompleteUsers = nil
+	if len(query) >= 2 && conn != nil {
+		// Check if it looks like a public key (long hex string)
+		isKey := len(query) > 20
+		if !isKey {
 			v.app.mu.RLock()
-			for _, u := range conn.Users {
-				if u.Username == username || u.DisplayName == username {
-					targetID = u.ID
+			seen := make(map[string]bool)
+			for _, s := range v.app.Servers {
+				for _, u := range s.Members {
+					if u.ID == myUserID || seen[u.PublicKey] {
+						continue
+					}
+					name := strings.ToLower(u.Username)
+					disp := strings.ToLower(u.DisplayName)
+					if strings.Contains(name, query) || strings.Contains(disp, query) {
+						v.autocompleteUsers = append(v.autocompleteUsers, u)
+						if u.PublicKey != "" {
+							seen[u.PublicKey] = true
+						}
+						if len(v.autocompleteUsers) >= 8 {
+							break
+						}
+					}
+				}
+				if len(v.autocompleteUsers) >= 8 {
 					break
 				}
 			}
 			v.app.mu.RUnlock()
-
-			if targetID == "" {
-				v.addFriendError = "User not found"
-			} else if targetID == myUserID {
-				v.addFriendError = "Cannot add yourself"
-			} else {
-				v.addFriendError = ""
-				go func() {
-					if c := v.app.Conn(); c != nil {
-						if err := c.Client.SendFriendRequest(targetID); err != nil {
-							v.addFriendError = err.Error()
-							v.app.Window.Invalidate()
-						} else {
-							v.addFriendEditor.SetText("")
-							v.app.Window.Invalidate()
-						}
-					}
-				}()
-			}
 		}
+	}
+	if len(v.autocompleteBtns) < len(v.autocompleteUsers) {
+		v.autocompleteBtns = make([]widget.Clickable, len(v.autocompleteUsers)+5)
 	}
 
 	// Build layout items
@@ -191,7 +245,8 @@ func (v *FriendListView) Layout(gtx layout.Context) layout.Dimensions {
 						},
 						func(gtx layout.Context) layout.Dimensions {
 							return layout.Inset{Top: unit.Dp(6), Bottom: unit.Dp(6), Left: unit.Dp(8), Right: unit.Dp(8)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-								ed := material.Editor(v.app.Theme.Material, &v.addFriendEditor, "Add friend...")
+								hint := "Name, key, or key#server..."
+							ed := material.Editor(v.app.Theme.Material, &v.addFriendEditor, hint)
 								ed.Color = ColorText
 								ed.HintColor = ColorTextDim
 								return ed.Layout(gtx)
@@ -213,6 +268,58 @@ func (v *FriendListView) Layout(gtx layout.Context) layout.Dimensions {
 				lbl := material.Caption(v.app.Theme.Material, v.addFriendError)
 				lbl.Color = ColorDanger
 				return lbl.Layout(gtx)
+			})
+		}))
+	}
+
+	// Autocomplete dropdown
+	if len(v.autocompleteUsers) > 0 {
+		items = append(items, layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+			return layout.Inset{Left: unit.Dp(8), Right: unit.Dp(8), Bottom: unit.Dp(4)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+				var acItems []layout.FlexChild
+				for i, u := range v.autocompleteUsers {
+					idx := i
+					user := u
+					acItems = append(acItems, layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+						return v.autocompleteBtns[idx].Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+							bg := color.NRGBA{}
+							if v.autocompleteBtns[idx].Hovered() {
+								bg = ColorHover
+							}
+							if bg.A > 0 {
+								paint.FillShape(gtx.Ops, bg, clip.Rect{Max: image.Pt(gtx.Constraints.Max.X, gtx.Constraints.Min.Y)}.Op())
+							}
+							return layout.Inset{Top: unit.Dp(3), Bottom: unit.Dp(3), Left: unit.Dp(8), Right: unit.Dp(8)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+								return layout.Flex{Alignment: layout.Middle}.Layout(gtx,
+									layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+										dn := user.DisplayName
+										if dn == "" {
+											dn = user.Username
+										}
+										return layoutAvatar(gtx, v.app, dn, user.AvatarURL, 20)
+									}),
+									layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+										return layout.Inset{Left: unit.Dp(6)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+											dn := user.DisplayName
+											if dn == "" {
+												dn = user.Username
+											}
+											lbl := material.Body2(v.app.Theme.Material, dn)
+											lbl.Color = ColorText
+											return lbl.Layout(gtx)
+										})
+									}),
+									layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+										return layout.Inset{Left: unit.Dp(4)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+											return layoutIcon(gtx, IconPersonAdd, 14, ColorAccent)
+										})
+									}),
+								)
+							})
+						})
+					}))
+				}
+				return layout.Flex{Axis: layout.Vertical}.Layout(gtx, acItems...)
 			})
 		}))
 	}
@@ -242,7 +349,7 @@ func (v *FriendListView) Layout(gtx layout.Context) layout.Dimensions {
 			idx := i
 			r := req
 			items = append(items, layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-				return v.layoutFriendRequest(gtx, idx, r)
+				return v.layoutFriendRequest(gtx, idx, r.FriendRequest)
 			}))
 		}
 
@@ -270,7 +377,7 @@ func (v *FriendListView) Layout(gtx layout.Context) layout.Dimensions {
 			idx := i
 			r := req
 			items = append(items, layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-				return v.layoutSentRequest(gtx, idx, r)
+				return v.layoutSentRequest(gtx, idx, r.FriendRequest)
 			}))
 		}
 		items = append(items, layout.Rigid(func(gtx layout.Context) layout.Dimensions {
@@ -299,7 +406,7 @@ func (v *FriendListView) Layout(gtx layout.Context) layout.Dimensions {
 	)
 
 	// Friends list
-	if len(friends) == 0 {
+	if len(unifiedFriends) == 0 {
 		items = append(items, layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
 			return layout.Center.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
 				lbl := material.Body2(v.app.Theme.Material, "No friends yet")
@@ -309,21 +416,12 @@ func (v *FriendListView) Layout(gtx layout.Context) layout.Dimensions {
 		}))
 	} else {
 		items = append(items, layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
-			return material.List(v.app.Theme.Material, &v.list).Layout(gtx, len(friends), func(gtx layout.Context, idx int) layout.Dimensions {
-				f := friends[idx]
-				online := onlineUsers[f.ID]
-				fsi := friendShares[f.ID]
-
-				// Handle share icon click
-				if v.shareBtns[idx].Clicked(gtx) && fsi.access != shareNone && fsi.shareID != "" {
-					v.app.Mode = ViewShares
-					v.app.SharesView.selectShare(fsi.shareID)
-				}
+			return material.List(v.app.Theme.Material, &v.list).Layout(gtx, len(unifiedFriends), func(gtx layout.Context, idx int) layout.Dimensions {
+				uf := unifiedFriends[idx]
 
 				return v.friendBtns[idx].Layout(gtx, func(gtx layout.Context) layout.Dimensions {
 					bg := color.NRGBA{}
 					if v.friendBtns[idx].Hovered() {
-						pointer.CursorPointer.Add(gtx.Ops)
 						bg = ColorHover
 					}
 
@@ -344,22 +442,28 @@ func (v *FriendListView) Layout(gtx layout.Context) layout.Dimensions {
 							return layout.Inset{Top: unit.Dp(4), Bottom: unit.Dp(4), Left: unit.Dp(12), Right: unit.Dp(8)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
 								return layout.Flex{Alignment: layout.Middle}.Layout(gtx,
 									layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-										size := gtx.Dp(8)
-										clr := ColorOffline
-										if online {
-											clr = ColorOnline
-										}
-										paint.FillShape(gtx.Ops, clr, clip.Ellipse{
-											Max: image.Pt(size, size),
-										}.Op(gtx.Ops))
-										return layout.Dimensions{Size: image.Pt(size, size)}
+										return layout.Stack{Alignment: layout.SE}.Layout(gtx,
+											layout.Stacked(func(gtx layout.Context) layout.Dimensions {
+												return layoutAvatar(gtx, v.app, uf.Name, uf.AvatarURL, 24)
+											}),
+											layout.Stacked(func(gtx layout.Context) layout.Dimensions {
+												sz := gtx.Dp(8)
+												clr := ColorOffline
+												if uf.Online {
+													clr = ColorOnline
+												}
+												paint.FillShape(gtx.Ops, clr, clip.Ellipse{
+													Max: image.Pt(sz, sz),
+												}.Op(gtx.Ops))
+												return layout.Dimensions{Size: image.Pt(sz, sz)}
+											}),
+										)
 									}),
 									layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 										return layout.Inset{Left: unit.Dp(8)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-											dn := v.app.ResolveUserName(&f)
-											lbl := material.Body2(v.app.Theme.Material, dn)
-											nameColor := UserColor(dn)
-											if !online {
+											lbl := material.Body2(v.app.Theme.Material, uf.Name)
+											nameColor := UserColor(uf.Name)
+											if !uf.Online {
 												nameColor = color.NRGBA{
 													R: nameColor.R/2 + ColorOffline.R/2,
 													G: nameColor.G/2 + ColorOffline.G/2,
@@ -369,23 +473,6 @@ func (v *FriendListView) Layout(gtx layout.Context) layout.Dimensions {
 											}
 											lbl.Color = nameColor
 											return lbl.Layout(gtx)
-										})
-									}),
-									layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-										if fsi.access == shareNone {
-											return layout.Dimensions{}
-										}
-										clr := ColorTextDim // read-only = gray
-										if fsi.access == shareWrite {
-											clr = ColorOnline // write = green
-										}
-										return layout.Inset{Left: unit.Dp(4)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-											return v.shareBtns[idx].Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-												if v.shareBtns[idx].Hovered() {
-													pointer.CursorPointer.Add(gtx.Ops)
-												}
-												return layoutIcon(gtx, IconFolder, 14, clr)
-											})
 										})
 									}),
 								)
@@ -469,6 +556,123 @@ func (v *FriendListView) layoutSmallIconBtn(gtx layout.Context, btn *widget.Clic
 			},
 		)
 	})
+}
+
+func (v *FriendListView) doAddFriend() {
+	input := strings.TrimSpace(v.addFriendEditor.Text())
+	if input == "" {
+		return
+	}
+
+	// Format: key#server — cross-server contact sharing
+	if strings.Contains(input, "#") && len(input) > 20 {
+		parts := strings.SplitN(input, "#", 2)
+		pubKey := strings.TrimSpace(parts[0])
+		serverURL := strings.TrimSpace(parts[1])
+
+		// Save to contacts DB
+		if v.app.Contacts != nil {
+			v.app.Contacts.EnsureContact(pubKey, "", serverURL, "")
+			v.app.Contacts.SetFriend(pubKey, true)
+		}
+
+		// Try to send friend request on the target server
+		v.addFriendError = ""
+		go func() {
+			sent := false
+			v.app.mu.RLock()
+			for _, s := range v.app.Servers {
+				if s.URL == serverURL || strings.Contains(s.URL, serverURL) || strings.Contains(serverURL, s.URL) {
+					// We're connected to this server — send request there
+					v.app.mu.RUnlock()
+					if err := s.Client.SendFriendRequestByKey(pubKey); err != nil {
+						v.addFriendError = err.Error()
+					} else {
+						v.addFriendEditor.SetText("")
+					}
+					sent = true
+					v.app.Window.Invalidate()
+					return
+				}
+			}
+			v.app.mu.RUnlock()
+			if !sent {
+				// Not connected to that server — just save contact locally
+				v.addFriendEditor.SetText("")
+				v.app.Window.Invalidate()
+			}
+		}()
+		return
+	}
+
+	// Check if input looks like a public key (long hex/base64 string)
+	if len(input) > 20 {
+		v.addFriendError = ""
+		conn := v.app.Conn()
+		if conn == nil {
+			return
+		}
+		go func() {
+			if err := conn.Client.SendFriendRequestByKey(input); err != nil {
+				v.addFriendError = err.Error()
+			} else {
+				v.addFriendEditor.SetText("")
+			}
+			v.app.Window.Invalidate()
+		}()
+		return
+	}
+
+	// Find by username/display name across ALL servers
+	var targetID string
+	var targetConn *ServerConnection
+	v.app.mu.RLock()
+	for _, s := range v.app.Servers {
+		for _, u := range s.Users {
+			if strings.EqualFold(u.Username, input) || strings.EqualFold(u.DisplayName, input) {
+				targetID = u.ID
+				targetConn = s
+				break
+			}
+		}
+		if targetID != "" {
+			break
+		}
+	}
+	myID := ""
+	if conn := v.app.Conn(); conn != nil {
+		myID = conn.UserID
+	}
+	v.app.mu.RUnlock()
+
+	if targetID == "" {
+		v.addFriendError = "User not found on any server"
+	} else if targetID == myID {
+		v.addFriendError = "Cannot add yourself"
+	} else if targetConn != nil {
+		v.sendFriendRequestOn(targetConn, targetID)
+	}
+}
+
+func (v *FriendListView) sendFriendRequestTo(userID string) {
+	v.sendFriendRequestOn(v.app.Conn(), userID)
+}
+
+func (v *FriendListView) sendFriendRequestOn(c *ServerConnection, userID string) {
+	if c == nil {
+		return
+	}
+	v.addFriendError = ""
+	go func() {
+		if c != nil {
+			if err := c.Client.SendFriendRequest(userID); err != nil {
+				v.addFriendError = err.Error()
+			} else {
+				v.addFriendEditor.SetText("")
+			}
+			v.app.Window.Invalidate()
+		}
+	}()
 }
 
 func (v *FriendListView) layoutSmallBtn(gtx layout.Context, btn *widget.Clickable, text string, clr color.NRGBA) layout.Dimensions {

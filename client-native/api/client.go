@@ -461,6 +461,39 @@ func (c *Client) SendFriendRequest(userID string) error {
 	return c.doJSON("POST", "/api/friends/requests", body, nil)
 }
 
+func (c *Client) SendFriendRequestByKey(publicKey string) error {
+	body := map[string]string{"public_key": publicKey}
+	return c.doJSON("POST", "/api/friends/requests", body, nil)
+}
+
+// RelayCallEvent sends a call signaling event to a remote server via the public relay endpoint.
+// serverURL is the base URL of the target server (e.g., "https://example.com:9021").
+// No JWT needed — uses ed25519 signature for auth.
+func RelayCallEvent(serverURL, eventType, toPubKey, fromPubKey, signature string, payload map[string]interface{}) error {
+	body := map[string]interface{}{
+		"type":           eventType,
+		"to_public_key":  toPubKey,
+		"from_public_key": fromPubKey,
+		"signature":      signature,
+		"payload":        payload,
+	}
+	bodyData, err := json.Marshal(body)
+	if err != nil {
+		return err
+	}
+	resp, err := http.Post(serverURL+"/api/relay", "application/json", bytes.NewReader(bodyData))
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		var errResp struct{ Error string `json:"error"` }
+		json.NewDecoder(resp.Body).Decode(&errResp)
+		return fmt.Errorf("relay: %s", errResp.Error)
+	}
+	return nil
+}
+
 func (c *Client) RemoveFriend(userID string) error {
 	return c.doJSON("DELETE", fmt.Sprintf("/api/friends/%s", userID), nil, nil)
 }

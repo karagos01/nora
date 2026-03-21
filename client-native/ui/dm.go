@@ -189,8 +189,7 @@ func (v *DMViewUI) LayoutSidebar(gtx layout.Context) layout.Dimensions {
 	activeDM := conn.ActiveDMID
 	userID := conn.UserID
 	onlineUsers := conn.OnlineUsers
-	groups := make([]api.Group, len(conn.Groups))
-	copy(groups, conn.Groups)
+	unifiedGroups := v.app.GetUnifiedGroups()
 	activeGroupID := conn.ActiveGroupID
 	v.app.mu.RUnlock()
 
@@ -215,8 +214,8 @@ func (v *DMViewUI) LayoutSidebar(gtx layout.Context) layout.Dimensions {
 	if len(v.delBtns) < len(convs) {
 		v.delBtns = make([]widget.Clickable, len(convs)+10)
 	}
-	if len(v.groupBtns) < len(groups) {
-		v.groupBtns = make([]widget.Clickable, len(groups)+10)
+	if len(v.groupBtns) < len(unifiedGroups) {
+		v.groupBtns = make([]widget.Clickable, len(unifiedGroups)+10)
 	}
 
 	// Handle delete clicks — show confirm dialog
@@ -233,9 +232,9 @@ func (v *DMViewUI) LayoutSidebar(gtx layout.Context) layout.Dimensions {
 	}
 
 	// Handle group clicks
-	for i, grp := range groups {
-		if v.groupBtns[i].Clicked(gtx) {
-			v.app.SelectGroup(grp.ID, grp.Name)
+	for i, ug := range unifiedGroups {
+		if i < len(v.groupBtns) && v.groupBtns[i].Clicked(gtx) {
+			v.app.SelectUnifiedGroup(ug.GroupID, ug.ServerIdx)
 		}
 	}
 
@@ -287,7 +286,7 @@ func (v *DMViewUI) LayoutSidebar(gtx layout.Context) layout.Dimensions {
 	if v.showJoinGroup {
 		joinGroupExtra = 1
 	}
-	totalItems := len(convs) + 1 + joinGroupExtra + len(groups) + 1 // +1 for groups header, +1 for create btn
+	totalItems := len(convs) + 1 + joinGroupExtra + len(unifiedGroups) + 1 // +1 for groups header, +1 for create btn
 
 	return layout.Flex{Axis: layout.Vertical}.Layout(gtx,
 		layout.Rigid(func(gtx layout.Context) layout.Dimensions {
@@ -524,15 +523,14 @@ func (v *DMViewUI) LayoutSidebar(gtx layout.Context) layout.Dimensions {
 
 				// Group items
 				gi := gIdx - 1 - joinGroupExtra // offset by header + optional join editor
-				if gi >= 0 && gi < len(groups) {
-					grp := groups[gi]
-					active := grp.ID == activeGroupID
+				if gi >= 0 && gi < len(unifiedGroups) {
+					ug := unifiedGroups[gi]
+					active := ug.GroupID == activeGroupID
 
 					bg := ColorCard
 					if active {
 						bg = ColorSelected
-					} else if v.groupBtns[gi].Hovered() {
-						pointer.CursorPointer.Add(gtx.Ops)
+					} else if gi < len(v.groupBtns) && v.groupBtns[gi].Hovered() {
 						bg = ColorHover
 					}
 
@@ -547,7 +545,7 @@ func (v *DMViewUI) LayoutSidebar(gtx layout.Context) layout.Dimensions {
 								return layout.Inset{Top: unit.Dp(6), Bottom: unit.Dp(6), Left: unit.Dp(12), Right: unit.Dp(12)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
 									return layout.Flex{Alignment: layout.Middle}.Layout(gtx,
 										layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
-											lbl := material.Body2(v.app.Theme.Material, grp.Name)
+											lbl := material.Body2(v.app.Theme.Material, ug.Name)
 											if active {
 												lbl.Color = ColorText
 											} else {
@@ -556,7 +554,7 @@ func (v *DMViewUI) LayoutSidebar(gtx layout.Context) layout.Dimensions {
 											return lbl.Layout(gtx)
 										}),
 										layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-											if !conn.UnreadGroups[grp.ID] {
+											if !ug.Unread {
 												return layout.Dimensions{}
 											}
 											sz := gtx.Dp(8)
@@ -671,21 +669,88 @@ func (v *DMViewUI) LayoutMessages(gtx layout.Context) layout.Dimensions {
 	peerName := "Encrypted Conversation"
 	dmPeerID := ""
 	peerOnline := false
+	var peerPubKeyForOnline string
 	v.app.mu.RLock()
 	for _, conv := range conn.DMConversations {
 		if conv.ID == activeDM {
 			peerName = v.peerName(conv, userID)
 			dmPeerID = v.peerID(conv, userID)
 			peerOnline = conn.OnlineUsers[dmPeerID]
+			// Get peer public key for cross-server online check
+			for _, p := range conv.Participants {
+				if p.UserID != conn.UserID {
+					peerPubKeyForOnline = p.PublicKey
+					break
+				}
+			}
 			break
 		}
 	}
+	// Cross-server online check
+	if !peerOnline && peerPubKeyForOnline != "" {
+		peerOnline = v.app.IsOnlineAnywhere(peerPubKeyForOnline)
+	}
 	v.app.mu.RUnlock()
 
-	// Handle call button
-	if v.callBtn.Clicked(gtx) {
-		if conn.Call != nil && dmPeerID != "" && peerOnline {
-			conn.Call.StartCall(activeDM, dmPeerID)
+	// Handle call button — find best server where peer is online
+	if v.callBtn.Clicked(gtx) && dmPeerID != "" {
+		// Find peer's public key
+		var peerPubKey string
+		v.app.mu.RLock()
+		for _, conv := range conn.DMConversations {
+			if conv.ID == activeDM {
+				for _, p := range conv.Participants {
+					if p.UserID != conn.UserID {
+						peerPubKey = p.PublicKey
+						break
+					}
+				}
+				break
+			}
+		}
+		v.app.mu.RUnlock()
+
+		// Try active server first, then find server where peer is online
+		callConn := conn
+		callConvID := activeDM
+		callPeerID := dmPeerID
+		if !peerOnline && peerPubKey != "" {
+			v.app.mu.RLock()
+			for _, s := range v.app.Servers {
+				for _, u := range s.Users {
+					if u.PublicKey == peerPubKey && s.OnlineUsers[u.ID] {
+						callConn = s
+						callPeerID = u.ID
+						callConvID = findDMConvByPubKey(s, peerPubKey)
+						peerOnline = true
+						break
+					}
+				}
+				if peerOnline {
+					break
+				}
+			}
+			v.app.mu.RUnlock()
+		}
+
+		if callConn.Call != nil && peerOnline {
+			// If calling through a different server, set up relay
+			if callConn != conn && peerPubKey != "" {
+				myKey := v.app.PublicKey
+				serverURL := callConn.URL
+				callConn.Call.SetRelay(func(eventType string, payload map[string]interface{}) error {
+					payloadBytes, _ := json.Marshal(payload)
+					signData := []byte(eventType + ":" + string(payloadBytes))
+					sig := v.app.SignMessage(signData)
+					return api.RelayCallEvent(serverURL, eventType, peerPubKey, myKey, sig, payload)
+				})
+			} else {
+				callConn.Call.ClearRelay()
+			}
+			if callConvID == "" {
+				callConvID = "relay"
+			}
+			callConn.Call.StartCall(callConvID, callPeerID)
 			StartOutgoingRingLoop()
 		}
 	}
