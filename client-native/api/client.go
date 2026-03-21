@@ -1790,8 +1790,8 @@ func (c *Client) ListLFGListings(channelID string) ([]LFGListing, error) {
 	return listings, err
 }
 
-func (c *Client) CreateLFGListing(channelID, gameName, content string) (*LFGListing, error) {
-	body := map[string]string{"game_name": gameName, "content": content}
+func (c *Client) CreateLFGListing(channelID, gameName, content string, maxPlayers int) (*LFGListing, error) {
+	body := map[string]interface{}{"game_name": gameName, "content": content, "max_players": maxPlayers}
 	var listing LFGListing
 	err := c.doJSON("POST", fmt.Sprintf("/api/channels/%s/lfg", channelID), body, &listing)
 	return &listing, err
@@ -1799,6 +1799,27 @@ func (c *Client) CreateLFGListing(channelID, gameName, content string) (*LFGList
 
 func (c *Client) DeleteLFGListing(channelID, listingID string) error {
 	return c.doJSON("DELETE", fmt.Sprintf("/api/channels/%s/lfg/%s", channelID, listingID), nil, nil)
+}
+
+func (c *Client) JoinLFGListing(channelID, listingID string) error {
+	return c.doJSON("POST", fmt.Sprintf("/api/channels/%s/lfg/%s/join", channelID, listingID), nil, nil)
+}
+
+func (c *Client) LeaveLFGListing(channelID, listingID string) error {
+	return c.doJSON("POST", fmt.Sprintf("/api/channels/%s/lfg/%s/leave", channelID, listingID), nil, nil)
+}
+
+func (c *Client) ApplyLFGListing(channelID, listingID, message string) error {
+	body := map[string]string{"message": message}
+	return c.doJSON("POST", fmt.Sprintf("/api/channels/%s/lfg/%s/apply", channelID, listingID), body, nil)
+}
+
+func (c *Client) AcceptLFGApplication(channelID, listingID, userID string) error {
+	return c.doJSON("POST", fmt.Sprintf("/api/channels/%s/lfg/%s/accept/%s", channelID, listingID, userID), nil, nil)
+}
+
+func (c *Client) RejectLFGApplication(channelID, listingID, userID string) error {
+	return c.doJSON("POST", fmt.Sprintf("/api/channels/%s/lfg/%s/reject/%s", channelID, listingID, userID), nil, nil)
 }
 
 // Channel permission overrides

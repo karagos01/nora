@@ -203,6 +203,8 @@ const (
 	// LFG (Looking For Group)
 	EventLFGCreate EventType = "lfg.create"
 	EventLFGDelete EventType = "lfg.delete"
+	EventLFGJoin   EventType = "lfg.join"
+	EventLFGLeave  EventType = "lfg.leave"
 
 	// VPN Tunnels
 	EventTunnelRequest EventType = "tunnel.request"

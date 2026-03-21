@@ -555,6 +555,7 @@ $n = New-Object System.Windows.Forms.NotifyIcon
 $n.Icon = [System.Drawing.SystemIcons]::Information
 $n.BalloonTipTitle = '%s'
 $n.BalloonTipText = '%s'
+$n.BalloonTipIcon = [System.Windows.Forms.ToolTipIcon]::None
 $n.Visible = $true
 $n.ShowBalloonTip(5000)
 Start-Sleep -Milliseconds 5100

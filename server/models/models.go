@@ -522,14 +522,27 @@ type PendingApproval struct {
 
 // LFG (Looking For Group) listing
 type LFGListing struct {
-	ID        string    `json:"id"`
+	ID           string           `json:"id"`
+	UserID       string           `json:"user_id"`
+	ChannelID    string           `json:"channel_id"`
+	GroupID      string           `json:"group_id"`
+	GameName     string           `json:"game_name"`
+	Content      string           `json:"content"`
+	MaxPlayers   int              `json:"max_players"`
+	CreatedAt    time.Time        `json:"created_at"`
+	ExpiresAt    time.Time        `json:"expires_at"`
+	Author       *User            `json:"author,omitempty"`
+	Participants []User           `json:"participants,omitempty"`
+	Applications []LFGApplication `json:"applications,omitempty"`
+}
+
+type LFGApplication struct {
+	ListingID string    `json:"listing_id"`
 	UserID    string    `json:"user_id"`
-	ChannelID string    `json:"channel_id"`
-	GameName  string    `json:"game_name"`
-	Content   string    `json:"content"`
+	Message   string    `json:"message"`
+	Status    string    `json:"status"` // "pending", "accepted", "rejected"
 	CreatedAt time.Time `json:"created_at"`
-	ExpiresAt time.Time `json:"expires_at"`
-	Author    *User     `json:"author,omitempty"`
+	User      *User     `json:"user,omitempty"`
 }
 
 // Channel permission overrides (per-channel allow/deny for roles or users)

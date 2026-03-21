@@ -14,10 +14,20 @@ import (
 	"gioui.org/widget/material"
 )
 
+// shareAccess describes a user's share access level.
+type shareAccess int
+
+const (
+	shareNone  shareAccess = iota
+	shareRead              // read-only
+	shareWrite             // read+write (or owner)
+)
+
 type MemberView struct {
 	app        *App
 	list       widget.List
 	memberBtns []widget.Clickable
+	shareBtns  []widget.Clickable // click on folder icon
 }
 
 func NewMemberView(a *App) *MemberView {
@@ -41,15 +51,38 @@ func (v *MemberView) Layout(gtx layout.Context) layout.Dimensions {
 		avatarURL  string
 		online     bool
 		isOwner    bool
+		share      shareAccess
+		shareID    string // first share ID for navigation
 		status     string
 		statusText string
+	}
+	// Build map of user → best share access + first share ID
+	type shareInfo struct {
+		access  shareAccess
+		shareID string
+	}
+	userShares := make(map[string]shareInfo)
+	for _, s := range conn.MyShares {
+		userShares[s.OwnerID] = shareInfo{shareWrite, s.ID}
+	}
+	for _, s := range conn.SharedWithMe {
+		acc := shareRead
+		if s.CanWrite {
+			acc = shareWrite
+		}
+		if prev, ok := userShares[s.OwnerID]; !ok || acc > prev.access {
+			userShares[s.OwnerID] = shareInfo{acc, s.ID}
+		}
 	}
 	members := make([]memberInfo, len(conn.Members))
 	for i, m := range conn.Members {
 		displayName := v.app.ResolveUserName(&conn.Members[i])
+		si := userShares[m.ID]
 		members[i] = memberInfo{
 			id:         m.ID,
 			username:   displayName,
+			share:      si.access,
+			shareID:    si.shareID,
 			avatarURL:  m.AvatarURL,
 			online:     conn.OnlineUsers[m.ID],
 			isOwner:    m.IsOwner,
@@ -78,6 +111,9 @@ func (v *MemberView) Layout(gtx layout.Context) layout.Dimensions {
 	if len(v.memberBtns) < len(members) {
 		v.memberBtns = make([]widget.Clickable, len(members)+10)
 	}
+	if len(v.shareBtns) < len(members) {
+		v.shareBtns = make([]widget.Clickable, len(members)+10)
+	}
 
 	return layout.Flex{Axis: layout.Vertical}.Layout(gtx,
 		layout.Rigid(func(gtx layout.Context) layout.Dimensions {
@@ -101,6 +137,12 @@ func (v *MemberView) Layout(gtx layout.Context) layout.Dimensions {
 				// Handle click — show user popup
 				if v.memberBtns[idx].Clicked(gtx) && m.id != myUserID {
 					v.app.UserPopup.Show(m.id, m.username)
+				}
+
+				// Handle share icon click — navigate to shares
+				if v.shareBtns[idx].Clicked(gtx) && m.share != shareNone && m.shareID != "" {
+					v.app.Mode = ViewShares
+					v.app.SharesView.selectShare(m.shareID)
 				}
 
 				var sectionHeader string
@@ -201,6 +243,24 @@ func (v *MemberView) Layout(gtx layout.Context) layout.Dimensions {
 																return lbl.Layout(gtx)
 															})
 														}),
+														// Share folder icon (colored by access level)
+														layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+															if m.share == shareNone {
+																return layout.Dimensions{}
+															}
+															clr := ColorTextDim // read-only = gray
+															if m.share == shareWrite {
+																clr = ColorOnline // write = green
+															}
+															return layout.Inset{Left: unit.Dp(4)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+																return v.shareBtns[idx].Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+																	if v.shareBtns[idx].Hovered() {
+																		pointer.CursorPointer.Add(gtx.Ops)
+																	}
+																	return layoutIcon(gtx, IconFolder, 14, clr)
+																})
+															})
+														}),
 													)
 												})
 											}),
@@ -215,4 +275,3 @@ func (v *MemberView) Layout(gtx layout.Context) layout.Dimensions {
 		}),
 	)
 }
-

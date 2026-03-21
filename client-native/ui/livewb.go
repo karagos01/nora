@@ -954,6 +954,9 @@ func (lw *LiveWhiteboardView) renderTextStroke(gtx layout.Context, s api.Whitebo
 	if fontSize < 4 {
 		fontSize = 4
 	}
+	if fontSize > 200 {
+		fontSize = 200
+	}
 
 	stack := op.Offset(image.Pt(int(pos.X), int(pos.Y))).Push(gtx.Ops)
 	lbl := material.Label(lw.app.Theme.Material, unit.Sp(fontSize), td.Text)
@@ -1104,6 +1107,12 @@ func (lw *LiveWhiteboardView) exportPNG(strokes []api.WhiteboardStroke, canvasW,
 	}
 	if canvasH < 100 {
 		canvasH = 1080
+	}
+	if canvasW > 4000 {
+		canvasW = 4000
+	}
+	if canvasH > 4000 {
+		canvasH = 4000
 	}
 
 	img := renderStrokesToImage(strokes, canvasW, canvasH)

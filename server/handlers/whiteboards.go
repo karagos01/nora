@@ -144,13 +144,24 @@ func (d *Deps) AddWhiteboardStroke(w http.ResponseWriter, r *http.Request) {
 		util.Error(w, http.StatusBadRequest, "path_data is required")
 		return
 	}
+	if len(req.PathData) > 50000 {
+		util.Error(w, http.StatusBadRequest, "path_data too large (max 50KB)")
+		return
+	}
+	if req.Color != "" && !isValidHexColor(req.Color) {
+		util.Error(w, http.StatusBadRequest, "invalid color format")
+		return
+	}
 	if req.Color == "" {
 		req.Color = "#ffffff"
 	}
 	if req.Width < 1 || req.Width > 20 {
 		req.Width = 2
 	}
-	if req.Tool != "pen" && req.Tool != "eraser" {
+	switch req.Tool {
+	case "pen", "eraser", "rect", "rect_fill", "circle", "circle_fill", "line", "arrow", "text":
+		// valid
+	default:
 		req.Tool = "pen"
 	}
 
@@ -233,4 +244,19 @@ func (d *Deps) ClearWhiteboard(w http.ResponseWriter, r *http.Request) {
 	d.Hub.Broadcast(event)
 
 	util.JSON(w, http.StatusOK, map[string]string{"status": "ok"})
+}
+
+func isValidHexColor(s string) bool {
+	if len(s) != 7 && len(s) != 9 {
+		return false
+	}
+	if s[0] != '#' {
+		return false
+	}
+	for _, c := range s[1:] {
+		if !((c >= '0' && c <= '9') || (c >= 'a' && c <= 'f') || (c >= 'A' && c <= 'F')) {
+			return false
+		}
+	}
+	return true
 }

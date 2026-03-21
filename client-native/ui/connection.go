@@ -56,9 +56,10 @@ type ServerConnection struct {
 	ActiveChannelName string
 
 	// Groups
-	Groups       []api.Group
-	GroupMessages []api.GroupMessage // current group messages
-	ActiveGroupID string
+	Groups              []api.Group
+	GroupMessages       []api.GroupMessage // current group messages
+	ActiveGroupID       string
+	PendingGroupMsgs    []api.GroupMessage // messages waiting for key
 
 	OnlineUsers    map[string]bool
 	UserStatuses   map[string]string    // userID → status (away/dnd)

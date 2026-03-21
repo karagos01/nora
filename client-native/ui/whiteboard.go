@@ -1402,8 +1402,23 @@ func drawLine(ops *op.Ops, p0, p1 f32.Point, clr color.NRGBA, width float32) {
 		return
 	}
 
-	nx := -dy / length * width / 2
-	ny := dx / length * width / 2
+	// Break long diagonal lines into shorter segments to avoid Gio clip bounds issues
+	const maxSegLen = 200.0
+	if length > maxSegLen {
+		steps := int(length/maxSegLen) + 1
+		for i := 0; i < steps; i++ {
+			t0 := float32(i) / float32(steps)
+			t1 := float32(i+1) / float32(steps)
+			sp0 := f32.Point{X: p0.X + dx*t0, Y: p0.Y + dy*t0}
+			sp1 := f32.Point{X: p0.X + dx*t1, Y: p0.Y + dy*t1}
+			drawLine(ops, sp0, sp1, clr, width)
+		}
+		return
+	}
+
+	hw := width / 2
+	nx := -dy / length * hw
+	ny := dx / length * hw
 
 	var path clip.Path
 	path.Begin(ops)
@@ -1484,8 +1499,6 @@ func drawFilledEllipse(ops *op.Ops, p0, p1 f32.Point, clr color.NRGBA) {
 }
 
 func drawArrowLine(ops *op.Ops, p0, p1 f32.Point, clr color.NRGBA, width float32) {
-	drawLine(ops, p0, p1, clr, width)
-
 	dx := p1.X - p0.X
 	dy := p1.Y - p0.Y
 	length := float32(math.Sqrt(float64(dx*dx + dy*dy)))
@@ -1493,35 +1506,43 @@ func drawArrowLine(ops *op.Ops, p0, p1 f32.Point, clr color.NRGBA, width float32
 		return
 	}
 
-	// Unit vector towards the tip
 	ux := dx / length
 	uy := dy / length
-	// Perpendikular
 	px := -uy
 	py := ux
 
-	headLen := width * 4
-	if headLen < 10 {
-		headLen = 10
+	headLen := width*6 + 8
+	if headLen > length*0.4 {
+		headLen = length * 0.4
 	}
-	headW := headLen * 0.6
+	headW := headLen * 0.7
 
-	// Triangle tip
+	// Draw shaft (shortened so it doesn't poke through arrowhead)
+	lineEnd := f32.Point{X: p1.X - ux*headLen*0.3, Y: p1.Y - uy*headLen*0.3}
+	drawLine(ops, p0, lineEnd, clr, width)
+
+	// Fill arrowhead triangle by scanning horizontal/vertical lines
 	tip := p1
 	left := f32.Point{X: p1.X - ux*headLen + px*headW/2, Y: p1.Y - uy*headLen + py*headW/2}
 	right := f32.Point{X: p1.X - ux*headLen - px*headW/2, Y: p1.Y - uy*headLen - py*headW/2}
 
-	var path clip.Path
-	path.Begin(ops)
-	path.MoveTo(tip)
-	path.LineTo(left)
-	path.LineTo(right)
-	path.Close()
-
-	st := clip.Outline{Path: path.End()}.Op().Push(ops)
-	paint.ColorOp{Color: clr}.Add(ops)
-	paint.PaintOp{}.Add(ops)
-	st.Pop()
+	// Draw filled triangle as series of lines from base to tip
+	n := int(headLen/2) + 2
+	for i := 0; i <= n; i++ {
+		t := float32(i) / float32(n)
+		// Left edge point at t
+		lx := left.X + (tip.X-left.X)*t
+		ly := left.Y + (tip.Y-left.Y)*t
+		// Right edge point at t
+		rx := right.X + (tip.X-right.X)*t
+		ry := right.Y + (tip.Y-right.Y)*t
+		// Draw horizontal line between left and right at this t
+		w := float32(2.0)
+		if t > 0.9 {
+			w = 1.0
+		}
+		drawLine(ops, f32.Point{X: lx, Y: ly}, f32.Point{X: rx, Y: ry}, clr, w)
+	}
 }
 
 // --- Transform helpers ---

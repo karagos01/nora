@@ -418,6 +418,11 @@ func NewRouter(d *Deps) http.Handler {
 	protected.HandleFunc("GET /api/channels/{id}/lfg", d.ListLFGListings)
 	protected.HandleFunc("POST /api/channels/{id}/lfg", d.CreateLFGListing)
 	protected.HandleFunc("DELETE /api/channels/{id}/lfg/{listingId}", d.DeleteLFGListing)
+	protected.HandleFunc("POST /api/channels/{id}/lfg/{listingId}/join", d.JoinLFGListing)
+	protected.HandleFunc("POST /api/channels/{id}/lfg/{listingId}/leave", d.LeaveLFGListing)
+	protected.HandleFunc("POST /api/channels/{id}/lfg/{listingId}/apply", d.ApplyLFGListing)
+	protected.HandleFunc("POST /api/channels/{id}/lfg/{listingId}/accept/{userId}", d.AcceptLFGApplication)
+	protected.HandleFunc("POST /api/channels/{id}/lfg/{listingId}/reject/{userId}", d.RejectLFGApplication)
 
 	// LAN Party (only if WG manager is enabled)
 	if d.WG != nil {

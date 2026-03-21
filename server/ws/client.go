@@ -443,6 +443,12 @@ func (c *Client) handleLiveWBStroke(event IncomingEvent) {
 	if c.hub.VoiceChannelOf(c.UserID) != payload.ChannelID {
 		return
 	}
+	switch payload.Tool {
+	case "pen", "eraser", "rect", "rect_fill", "circle", "circle_fill", "line", "arrow", "text":
+		// valid
+	default:
+		payload.Tool = "pen"
+	}
 	strokeID := payload.ID
 	if strokeID == "" {
 		strokeID = uuid.New().String()

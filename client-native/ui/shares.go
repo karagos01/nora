@@ -45,7 +45,17 @@ type SharesView struct {
 	deleteShareBtn widget.Clickable
 	refreshBtn     widget.Clickable
 
+	// Server picker for new shares
+	showServerPicker  bool
+	pendingShareDir   string // local path waiting for server selection
+	pendingShareHash  string
+	pendingShareName  string
+	serverCheckboxes  []widget.Bool
+	serverPickerOkBtn     widget.Clickable
+	serverPickerCancelBtn widget.Clickable
+
 	// Permission editor
+	memberSearchEd  widget.Editor // search filter for member picker
 	permsBtn        widget.Clickable
 	permList        widget.List
 	permEditBtns    []widget.Clickable
@@ -64,6 +74,11 @@ type SharesView struct {
 	editBlockedCheck widget.Bool
 	savePermBtn     widget.Clickable
 	cancelPermBtn   widget.Clickable
+
+	// Server info
+	showServerInfo   bool
+	serverInfoBtn    widget.Clickable
+	serverToggleBtns []widget.Clickable // per-server toggle buttons
 
 	// Limits editor
 	limitsBtn           widget.Clickable
@@ -110,6 +125,7 @@ func NewSharesView(a *App) *SharesView {
 	v.permList.Axis = layout.Vertical
 	v.BrowsePath = "/"
 	v.editPermIdx = -1
+	v.memberSearchEd.SingleLine = true
 	v.fileWidget = NewFileExplorerWidget(a)
 	return v
 }
@@ -361,6 +377,11 @@ func (v *SharesView) LayoutSidebar(gtx layout.Context) layout.Dimensions {
 func (v *SharesView) LayoutMain(gtx layout.Context) layout.Dimensions {
 	paint.FillShape(gtx.Ops, ColorBg, clip.Rect{Max: gtx.Constraints.Max}.Op())
 
+	// Server picker overlay
+	if v.showServerPicker {
+		return v.layoutServerPicker(gtx)
+	}
+
 	conn := v.app.Conn()
 	if conn == nil {
 		return layoutCentered(gtx, v.app.Theme, "Not connected", ColorTextDim)
@@ -422,10 +443,18 @@ func (v *SharesView) LayoutMain(gtx layout.Context) layout.Dimensions {
 			v.ActiveShareID = ""
 		})
 	}
+	if v.serverInfoBtn.Clicked(gtx) && isOwner {
+		v.showServerInfo = !v.showServerInfo
+		if v.showServerInfo {
+			v.ShowLimits = false
+			v.ShowPerms = false
+		}
+	}
 	if v.limitsBtn.Clicked(gtx) && isOwner {
 		v.ShowLimits = !v.ShowLimits
 		if v.ShowLimits {
 			v.ShowPerms = false
+			v.showServerInfo = false
 			v.loadLimits(activeShare)
 		}
 	}
@@ -433,6 +462,7 @@ func (v *SharesView) LayoutMain(gtx layout.Context) layout.Dimensions {
 		v.ShowPerms = !v.ShowPerms
 		if v.ShowPerms {
 			v.ShowLimits = false
+			v.showServerInfo = false
 			v.loadPermissions()
 		}
 		v.editPermIdx = -1
@@ -633,6 +663,9 @@ func (v *SharesView) LayoutMain(gtx layout.Context) layout.Dimensions {
 		}),
 		// File list or Permission editor or Limits editor
 		layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
+			if v.showServerInfo {
+				return v.layoutServerInfo(gtx, activeShare)
+			}
 			if v.ShowLimits {
 				return v.layoutLimits(gtx, activeShare)
 			}
@@ -669,8 +702,15 @@ func (v *SharesView) layoutHeader(gtx layout.Context, share *api.SharedDirectory
 							if share.IsActive {
 								status = "online"
 							}
-							text := fmt.Sprintf("Owner: %s · %s", owner, status)
 							conn := v.app.Conn()
+							serverName := ""
+							if conn != nil {
+								serverName = conn.Name
+								if serverName == "" {
+									serverName = conn.URL
+								}
+							}
+							text := fmt.Sprintf("Owner: %s · %s · Server: %s", owner, status, serverName)
 							if conn != nil {
 								if isOwner {
 									v.app.mu.RLock()
@@ -744,6 +784,21 @@ func (v *SharesView) layoutHeader(gtx layout.Context, share *api.SharedDirectory
 				return layout.Inset{Right: unit.Dp(4)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
 					return v.permsBtn.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
 						return layoutIcon(gtx, IconSettings, 20, clr)
+					})
+				})
+			}),
+			// Server info (owner only — shows which servers share this directory)
+			layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+				if !isOwner {
+					return layout.Dimensions{}
+				}
+				clr := ColorTextDim
+				if v.showServerInfo {
+					clr = ColorAccent
+				}
+				return layout.Inset{Right: unit.Dp(4)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+					return v.serverInfoBtn.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+						return layoutIcon(gtx, IconMonitor, 20, clr)
 					})
 				})
 			}),
@@ -1093,11 +1148,18 @@ func (v *SharesView) layoutPermissions(gtx layout.Context) layout.Dimensions {
 			hasPermSet[*p.GranteeID] = true
 		}
 	}
+	searchQuery := strings.ToLower(strings.TrimSpace(v.memberSearchEd.Text()))
 	var availableMembers []api.User
 	if conn != nil {
 		v.app.mu.RLock()
 		for _, m := range conn.Members {
 			if m.ID != conn.UserID && !hasPermSet[m.ID] {
+				if searchQuery != "" {
+					name := strings.ToLower(v.app.ResolveUserName(&m))
+					if !strings.Contains(name, searchQuery) && !strings.Contains(strings.ToLower(m.Username), searchQuery) {
+						continue
+					}
+				}
 				availableMembers = append(availableMembers, m)
 			}
 		}
@@ -1126,9 +1188,23 @@ func (v *SharesView) layoutPermissions(gtx layout.Context) layout.Dimensions {
 		}
 	}
 
-	if len(availableMembers) > 0 {
+	// Always show the add user section when there are members without perms (or search is active)
+	showAddSection := len(availableMembers) > 0 || searchQuery != ""
+	if conn != nil && !showAddSection {
+		// Check if there are ANY members without perms (before search filter)
+		v.app.mu.RLock()
+		for _, m := range conn.Members {
+			if m.ID != conn.UserID && !hasPermSet[m.ID] {
+				showAddSection = true
+				break
+			}
+		}
+		v.app.mu.RUnlock()
+	}
+	if showAddSection {
 		items = append(items, permListItem{kind: "divider"})
 		items = append(items, permListItem{kind: "add_header"})
+		items = append(items, permListItem{kind: "add_search"})
 		for i := range availableMembers {
 			items = append(items, permListItem{kind: "add_member", idx: i})
 		}
@@ -1173,6 +1249,29 @@ func (v *SharesView) layoutPermissions(gtx layout.Context) layout.Dimensions {
 				lbl.Color = ColorText
 				lbl.Font.Weight = font.Bold
 				return lbl.Layout(gtx)
+			})
+		case "add_search":
+			return layout.Inset{Left: unit.Dp(16), Right: unit.Dp(16), Bottom: unit.Dp(6)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+				return layout.Background{}.Layout(gtx,
+					func(gtx layout.Context) layout.Dimensions {
+						sz := image.Pt(gtx.Constraints.Max.X, gtx.Constraints.Min.Y)
+						rr := gtx.Dp(4)
+						paint.FillShape(gtx.Ops, ColorInput, clip.RRect{
+							Rect: image.Rect(0, 0, sz.X, sz.Y),
+							NE: rr, NW: rr, SE: rr, SW: rr,
+						}.Op(gtx.Ops))
+						return layout.Dimensions{Size: sz}
+					},
+					func(gtx layout.Context) layout.Dimensions {
+						return layout.Inset{Top: unit.Dp(6), Bottom: unit.Dp(6), Left: unit.Dp(8), Right: unit.Dp(8)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+							ed := material.Editor(v.app.Theme.Material, &v.memberSearchEd, "Search users...")
+							ed.Color = ColorText
+							ed.HintColor = ColorTextDim
+							ed.TextSize = unit.Sp(13)
+							return ed.Layout(gtx)
+						})
+					},
+				)
 			})
 		case "add_member":
 			m := availableMembers[item.idx]
@@ -1706,6 +1805,264 @@ func (v *SharesView) layoutDivider(gtx layout.Context) layout.Dimensions {
 	return layout.Dimensions{Size: size}
 }
 
+func (v *SharesView) layoutServerInfo(gtx layout.Context, share *api.SharedDirectory) layout.Dimensions {
+	if share == nil {
+		return layout.Dimensions{}
+	}
+	th := v.app.Theme
+
+	v.app.mu.RLock()
+	servers := make([]*ServerConnection, len(v.app.Servers))
+	copy(servers, v.app.Servers)
+	v.app.mu.RUnlock()
+
+	type serverStatus struct {
+		idx      int
+		conn     *ServerConnection
+		name     string
+		isShared bool
+		shareID  string
+	}
+	var statuses []serverStatus
+	for i, s := range servers {
+		name := s.Name
+		if name == "" {
+			name = s.URL
+		}
+		found := false
+		foundID := ""
+		for _, ms := range s.MyShares {
+			if ms.PathHash == share.PathHash {
+				found = true
+				foundID = ms.ID
+				break
+			}
+		}
+		statuses = append(statuses, serverStatus{idx: i, conn: s, name: name, isShared: found, shareID: foundID})
+	}
+
+	// Ensure toggle buttons
+	if len(v.serverToggleBtns) < len(statuses) {
+		v.serverToggleBtns = make([]widget.Clickable, len(statuses)+5)
+	}
+
+	// Handle toggle clicks
+	for i, st := range statuses {
+		if v.serverToggleBtns[i].Clicked(gtx) {
+			s := st
+			pathHash := share.PathHash
+			displayName := share.DisplayName
+			if s.isShared {
+				// Confirm before disabling
+				sid := s.shareID
+				sconn := s.conn
+				sname := s.name
+				v.app.ConfirmDlg.Show("Stop Sharing", fmt.Sprintf("Stop sharing \"%s\" on server \"%s\"?", displayName, sname), func() {
+					go func() {
+						if err := sconn.Client.DeleteShare(sid); err != nil {
+							log.Printf("DeleteShare on server %s: %v", sname, err)
+						}
+						v.app.mu.Lock()
+						delete(sconn.SharePaths, sid)
+						v.app.mu.Unlock()
+						v.persistSharePaths()
+						v.loadShareList()
+						v.app.Window.Invalidate()
+					}()
+				})
+			} else {
+				// Enable — no confirm needed
+				sconn := s.conn
+				go func() {
+					var localPath string
+					v.app.mu.RLock()
+					for _, srv := range v.app.Servers {
+						for _, ms := range srv.MyShares {
+							if ms.PathHash == pathHash {
+								if lp, ok := srv.SharePaths[ms.ID]; ok {
+									localPath = lp
+									break
+								}
+							}
+						}
+						if localPath != "" {
+							break
+						}
+					}
+					v.app.mu.RUnlock()
+					if localPath == "" {
+						log.Printf("Cannot find local path for share %s", displayName)
+						return
+					}
+					v.createShareOnServer(sconn, localPath, pathHash, displayName)
+				}()
+			}
+		}
+	}
+
+	return layout.Inset{Left: unit.Dp(16), Right: unit.Dp(16), Top: unit.Dp(8)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+		var items []layout.FlexChild
+
+		items = append(items, layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+			lbl := material.Body1(th.Material, "Shared on Servers")
+			lbl.Color = ColorText
+			lbl.Font.Weight = font.Bold
+			return lbl.Layout(gtx)
+		}))
+		items = append(items, layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+			return layout.Inset{Top: unit.Dp(4), Bottom: unit.Dp(12)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+				lbl := material.Caption(th.Material, "Click a server to enable or disable sharing on it.")
+				lbl.Color = ColorTextDim
+				return lbl.Layout(gtx)
+			})
+		}))
+
+		for i, st := range statuses {
+			s := st
+			btnIdx := i
+			items = append(items, layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+				return layout.Inset{Bottom: unit.Dp(4), Left: unit.Dp(4), Right: unit.Dp(4)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+					return layout.Flex{Alignment: layout.Middle}.Layout(gtx,
+						layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+							clr := ColorDanger
+							if s.isShared {
+								clr = ColorOnline
+							}
+							return layoutIcon(gtx, IconMonitor, 18, clr)
+						}),
+						layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
+							return layout.Inset{Left: unit.Dp(8)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+								lbl := material.Body2(th.Material, s.name)
+								lbl.Color = ColorText
+								return lbl.Layout(gtx)
+							})
+						}),
+						layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+							label := "Enable"
+							btnBg := ColorAccent
+							if s.isShared {
+								label = "Disable"
+								btnBg = ColorDanger
+							}
+							btn := material.Button(th.Material, &v.serverToggleBtns[btnIdx], label)
+							btn.Background = btnBg
+							btn.Color = color.NRGBA{255, 255, 255, 255}
+							btn.CornerRadius = unit.Dp(3)
+							btn.TextSize = unit.Sp(12)
+							btn.Inset = layout.Inset{Top: unit.Dp(4), Bottom: unit.Dp(4), Left: unit.Dp(12), Right: unit.Dp(12)}
+							return btn.Layout(gtx)
+						}),
+					)
+				})
+			}))
+		}
+
+		return layout.Flex{Axis: layout.Vertical}.Layout(gtx, items...)
+	})
+}
+
+func (v *SharesView) layoutServerPicker(gtx layout.Context) layout.Dimensions {
+	th := v.app.Theme
+
+	// Handle OK button
+	if v.serverPickerOkBtn.Clicked(gtx) {
+		v.confirmServerPicker()
+	}
+
+	v.app.mu.RLock()
+	servers := make([]*ServerConnection, len(v.app.Servers))
+	copy(servers, v.app.Servers)
+	v.app.mu.RUnlock()
+
+	// Ensure checkboxes match server count
+	if len(v.serverCheckboxes) < len(servers) {
+		old := v.serverCheckboxes
+		v.serverCheckboxes = make([]widget.Bool, len(servers))
+		copy(v.serverCheckboxes, old)
+	}
+
+	return layout.Center.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+		gtx.Constraints.Max.X = gtx.Dp(380)
+		gtx.Constraints.Min.X = gtx.Dp(380)
+		return layout.Background{}.Layout(gtx,
+			func(gtx layout.Context) layout.Dimensions {
+				sz := image.Pt(gtx.Constraints.Max.X, gtx.Constraints.Min.Y)
+				rr := gtx.Dp(8)
+				paint.FillShape(gtx.Ops, ColorCard, clip.RRect{
+					Rect: image.Rect(0, 0, sz.X, sz.Y),
+					NE: rr, NW: rr, SE: rr, SW: rr,
+				}.Op(gtx.Ops))
+				return layout.Dimensions{Size: sz}
+			},
+			func(gtx layout.Context) layout.Dimensions {
+				return layout.Inset{Top: unit.Dp(16), Bottom: unit.Dp(16), Left: unit.Dp(20), Right: unit.Dp(20)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+					var items []layout.FlexChild
+
+					// Title
+					items = append(items, layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+						lbl := material.Body1(th.Material, "Share \""+v.pendingShareName+"\" on servers:")
+						lbl.Color = ColorText
+						lbl.Font.Weight = font.Bold
+						return lbl.Layout(gtx)
+					}))
+					items = append(items, layout.Rigid(layout.Spacer{Height: unit.Dp(12)}.Layout))
+
+					// Server checkboxes
+					for i, s := range servers {
+						idx := i
+						name := s.Name
+						if name == "" {
+							name = s.URL
+						}
+						items = append(items, layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+							return layout.Inset{Bottom: unit.Dp(4)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+								cb := material.CheckBox(th.Material, &v.serverCheckboxes[idx], name)
+								cb.Color = ColorText
+								cb.IconColor = ColorAccent
+								cb.Size = unit.Dp(18)
+								cb.TextSize = unit.Sp(14)
+								return cb.Layout(gtx)
+							})
+						}))
+					}
+
+					items = append(items, layout.Rigid(layout.Spacer{Height: unit.Dp(12)}.Layout))
+
+					// OK + Cancel buttons
+					items = append(items, layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+						return layout.Flex{Spacing: layout.SpaceStart}.Layout(gtx,
+							layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+								if v.serverPickerCancelBtn.Clicked(gtx) {
+									v.showServerPicker = false
+								}
+								btn := material.Button(th.Material, &v.serverPickerCancelBtn, "Cancel")
+								btn.Background = ColorInput
+								btn.Color = ColorText
+								btn.CornerRadius = unit.Dp(4)
+								btn.TextSize = unit.Sp(13)
+								btn.Inset = layout.Inset{Top: unit.Dp(6), Bottom: unit.Dp(6), Left: unit.Dp(16), Right: unit.Dp(16)}
+								return btn.Layout(gtx)
+							}),
+							layout.Rigid(layout.Spacer{Width: unit.Dp(8)}.Layout),
+							layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+								btn := material.Button(th.Material, &v.serverPickerOkBtn, "Share")
+								btn.Background = ColorAccent
+								btn.Color = color.NRGBA{255, 255, 255, 255}
+								btn.CornerRadius = unit.Dp(4)
+								btn.TextSize = unit.Sp(13)
+								btn.Inset = layout.Inset{Top: unit.Dp(6), Bottom: unit.Dp(6), Left: unit.Dp(16), Right: unit.Dp(16)}
+								return btn.Layout(gtx)
+							}),
+						)
+					}))
+
+					return layout.Flex{Axis: layout.Vertical}.Layout(gtx, items...)
+				})
+			},
+		)
+	})
+}
+
 // --- Akce ---
 
 func (v *SharesView) selectShare(shareID string) {
@@ -1745,11 +2102,6 @@ func (v *SharesView) addShare() {
 			return
 		}
 
-		conn := v.app.Conn()
-		if conn == nil {
-			return
-		}
-
 		// Hash the path (server does not know the actual path)
 		hash := fmt.Sprintf("%x", sha256.Sum256([]byte(dir)))
 
@@ -1759,21 +2111,73 @@ func (v *SharesView) addShare() {
 			name = "Shared Folder"
 		}
 
-		newDir, err := conn.Client.CreateShare(hash, name)
-		if err != nil {
-			log.Printf("CreateShare error: %v", err)
+		// If connected to multiple servers, show server picker
+		v.app.mu.RLock()
+		numServers := len(v.app.Servers)
+		v.app.mu.RUnlock()
+
+		if numServers > 1 {
+			v.pendingShareDir = dir
+			v.pendingShareHash = hash
+			v.pendingShareName = name
+			v.app.mu.RLock()
+			v.serverCheckboxes = make([]widget.Bool, numServers)
+			// Pre-check the active server
+			for i := range v.serverCheckboxes {
+				v.serverCheckboxes[i].Value = i == v.app.ActiveServer
+			}
+			v.app.mu.RUnlock()
+			v.showServerPicker = true
+			v.app.Window.Invalidate()
 			return
 		}
 
-		// Naskenovat a syncnout soubory
-		v.app.mu.Lock()
-		conn.SharePaths[newDir.ID] = dir
-		v.app.mu.Unlock()
-		v.persistSharePaths()
+		// Single server — create immediately
+		v.createShareOnServer(v.app.Conn(), dir, hash, name)
+	}()
+}
 
-		v.syncShareFiles(newDir.ID, dir)
-		v.loadShareList()
-		v.app.Window.Invalidate()
+func (v *SharesView) createShareOnServer(conn *ServerConnection, dir, hash, name string) {
+	if conn == nil {
+		return
+	}
+	newDir, err := conn.Client.CreateShare(hash, name)
+	if err != nil {
+		log.Printf("CreateShare error: %v", err)
+		return
+	}
+
+	v.app.mu.Lock()
+	conn.SharePaths[newDir.ID] = dir
+	v.app.mu.Unlock()
+	v.persistSharePaths()
+
+	v.syncShareFiles(newDir.ID, dir)
+	v.loadShareList()
+	v.app.Window.Invalidate()
+}
+
+func (v *SharesView) confirmServerPicker() {
+	dir := v.pendingShareDir
+	hash := v.pendingShareHash
+	name := v.pendingShareName
+	v.showServerPicker = false
+
+	v.app.mu.RLock()
+	servers := make([]*ServerConnection, len(v.app.Servers))
+	copy(servers, v.app.Servers)
+	selected := make([]bool, len(v.serverCheckboxes))
+	for i := range v.serverCheckboxes {
+		selected[i] = v.serverCheckboxes[i].Value
+	}
+	v.app.mu.RUnlock()
+
+	go func() {
+		for i, s := range servers {
+			if selected[i] {
+				v.createShareOnServer(s, dir, hash, name)
+			}
+		}
 	}()
 }
 

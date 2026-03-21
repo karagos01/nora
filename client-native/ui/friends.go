@@ -26,6 +26,7 @@ type FriendListView struct {
 	app            *App
 	list           widget.List
 	friendBtns     []widget.Clickable
+	shareBtns      []widget.Clickable
 	reqBtns        []friendRequestBtns
 	sentCancelBtns []widget.Clickable
 
@@ -56,10 +57,31 @@ func (v *FriendListView) Layout(gtx layout.Context) layout.Dimensions {
 	sentRequests := conn.SentFriendRequests
 	myUserID := conn.UserID
 	onlineUsers := conn.OnlineUsers
+	// Build map of user → share access level + ID
+	type friendShareInfo struct {
+		access  shareAccess
+		shareID string
+	}
+	friendShares := make(map[string]friendShareInfo)
+	for _, s := range conn.MyShares {
+		friendShares[s.OwnerID] = friendShareInfo{shareWrite, s.ID}
+	}
+	for _, s := range conn.SharedWithMe {
+		acc := shareRead
+		if s.CanWrite {
+			acc = shareWrite
+		}
+		if prev, ok := friendShares[s.OwnerID]; !ok || acc > prev.access {
+			friendShares[s.OwnerID] = friendShareInfo{acc, s.ID}
+		}
+	}
 	v.app.mu.RUnlock()
 
 	if len(v.friendBtns) < len(friends) {
 		v.friendBtns = make([]widget.Clickable, len(friends)+10)
+	}
+	if len(v.shareBtns) < len(friends) {
+		v.shareBtns = make([]widget.Clickable, len(friends)+10)
 	}
 	if len(v.reqBtns) < len(requests) {
 		v.reqBtns = make([]friendRequestBtns, len(requests)+5)
@@ -290,6 +312,13 @@ func (v *FriendListView) Layout(gtx layout.Context) layout.Dimensions {
 			return material.List(v.app.Theme.Material, &v.list).Layout(gtx, len(friends), func(gtx layout.Context, idx int) layout.Dimensions {
 				f := friends[idx]
 				online := onlineUsers[f.ID]
+				fsi := friendShares[f.ID]
+
+				// Handle share icon click
+				if v.shareBtns[idx].Clicked(gtx) && fsi.access != shareNone && fsi.shareID != "" {
+					v.app.Mode = ViewShares
+					v.app.SharesView.selectShare(fsi.shareID)
+				}
 
 				return v.friendBtns[idx].Layout(gtx, func(gtx layout.Context) layout.Dimensions {
 					bg := color.NRGBA{}
@@ -340,6 +369,23 @@ func (v *FriendListView) Layout(gtx layout.Context) layout.Dimensions {
 											}
 											lbl.Color = nameColor
 											return lbl.Layout(gtx)
+										})
+									}),
+									layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+										if fsi.access == shareNone {
+											return layout.Dimensions{}
+										}
+										clr := ColorTextDim // read-only = gray
+										if fsi.access == shareWrite {
+											clr = ColorOnline // write = green
+										}
+										return layout.Inset{Left: unit.Dp(4)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+											return v.shareBtns[idx].Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+												if v.shareBtns[idx].Hovered() {
+													pointer.CursorPointer.Add(gtx.Ops)
+												}
+												return layoutIcon(gtx, IconFolder, 14, clr)
+											})
 										})
 									}),
 								)

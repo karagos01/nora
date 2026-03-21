@@ -194,6 +194,24 @@ func (db *DB) Migrate() error {
 	db.Exec(`CREATE INDEX IF NOT EXISTS idx_lfg_channel ON lfg_listings(channel_id)`)
 	db.Exec(`CREATE INDEX IF NOT EXISTS idx_lfg_expires ON lfg_listings(expires_at)`)
 
+	// Migration: LFG max_players + participants + applications + group
+	db.Exec("ALTER TABLE lfg_listings ADD COLUMN max_players INTEGER NOT NULL DEFAULT 0")
+	db.Exec("ALTER TABLE lfg_listings ADD COLUMN group_id TEXT NOT NULL DEFAULT ''")
+	db.Exec(`CREATE TABLE IF NOT EXISTS lfg_participants (
+		listing_id TEXT NOT NULL REFERENCES lfg_listings(id) ON DELETE CASCADE,
+		user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+		joined_at DATETIME NOT NULL DEFAULT (datetime('now')),
+		PRIMARY KEY (listing_id, user_id)
+	)`)
+	db.Exec(`CREATE TABLE IF NOT EXISTS lfg_applications (
+		listing_id TEXT NOT NULL REFERENCES lfg_listings(id) ON DELETE CASCADE,
+		user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+		message TEXT NOT NULL DEFAULT '',
+		status TEXT NOT NULL DEFAULT 'pending',
+		created_at DATETIME NOT NULL DEFAULT (datetime('now')),
+		PRIMARY KEY (listing_id, user_id)
+	)`)
+
 	// Migration: idempotency key for message deduplication
 	db.Exec("ALTER TABLE messages ADD COLUMN idempotency_key TEXT NOT NULL DEFAULT ''")
 	db.Exec("CREATE UNIQUE INDEX IF NOT EXISTS idx_messages_idempotency ON messages(user_id, idempotency_key) WHERE idempotency_key != ''")

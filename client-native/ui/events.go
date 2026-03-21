@@ -2,6 +2,7 @@ package ui
 
 import (
 	"encoding/json"
+	"fmt"
 	"log"
 	"os"
 	"path/filepath"
@@ -554,6 +555,14 @@ func (a *App) processWSEvent(conn *ServerConnection, ev api.WSEvent) {
 			a.mu.Lock()
 			conn.Friends = append(conn.Friends, user)
 			a.mu.Unlock()
+			name := user.DisplayName
+			if name == "" {
+				name = user.Username
+			}
+			PlayFriendRequestSound()
+			if a.NotifCenter != nil {
+				a.NotifCenter.AddAlert(conn.Name, "New Friend", name+" is now your friend!")
+			}
 		}
 
 	case "friend.remove":
@@ -704,7 +713,11 @@ func (a *App) processWSEvent(conn *ServerConnection, ev api.WSEvent) {
 						msg.DecryptedContent = "[decryption failed]"
 					}
 				} else {
-					msg.DecryptedContent = "[no key]"
+					// No key yet — queue for retry when key arrives
+					a.mu.Lock()
+					conn.PendingGroupMsgs = append(conn.PendingGroupMsgs, msg)
+					a.mu.Unlock()
+					return
 				}
 			}
 
@@ -757,6 +770,43 @@ func (a *App) processWSEvent(conn *ServerConnection, ev api.WSEvent) {
 					a.GroupHistory.SetKey(payload.GroupID, decryptedKey)
 					a.GroupHistory.Save()
 					log.Printf("Received group key for %s from %s", payload.GroupID, payload.From)
+
+					// Retry pending messages for this group
+					a.mu.Lock()
+					var remaining []api.GroupMessage
+					for _, pendMsg := range conn.PendingGroupMsgs {
+						if pendMsg.GroupID != payload.GroupID {
+							remaining = append(remaining, pendMsg)
+							continue
+						}
+						d, dErr := crypto.DecryptGroupMessage(decryptedKey, pendMsg.EncryptedContent)
+						if dErr == nil {
+							pendMsg.DecryptedContent = d
+							if pendMsg.GroupID == conn.ActiveGroupID {
+								conn.GroupMessages = append(conn.GroupMessages, pendMsg)
+							}
+							if a.GroupHistory != nil {
+								a.GroupHistory.AddMessage(store.StoredGroupMessage{
+									ID:        pendMsg.ID,
+									GroupID:   pendMsg.GroupID,
+									SenderID:  pendMsg.SenderID,
+									Content:   d,
+									CreatedAt: pendMsg.CreatedAt,
+								})
+							}
+						} else {
+							pendMsg.DecryptedContent = "[decryption failed]"
+							if pendMsg.GroupID == conn.ActiveGroupID {
+								conn.GroupMessages = append(conn.GroupMessages, pendMsg)
+							}
+						}
+					}
+					conn.PendingGroupMsgs = remaining
+					a.mu.Unlock()
+					if a.GroupHistory != nil {
+						a.GroupHistory.Save()
+					}
+					a.Window.Invalidate()
 				} else {
 					log.Printf("Failed to decrypt group key: %v", err)
 				}
@@ -792,10 +842,10 @@ func (a *App) processWSEvent(conn *ServerConnection, ev api.WSEvent) {
 				if groupKey != "" && payload.PublicKey != "" {
 					encKey, err := crypto.EncryptGroupKeyForMember(a.SecretKey, payload.PublicKey, groupKey)
 					if err == nil {
-						keyPayload, _ := json.Marshal(map[string]string{
+						keyPayload, _ := json.Marshal(map[string]interface{}{
 							"group_id":      payload.GroupID,
 							"encrypted_key": encKey,
-							"to":            payload.UserID,
+							"to":            []string{payload.UserID},
 						})
 						conn.WS.Send(api.WSEvent{
 							Type:    "group.key",
@@ -860,8 +910,28 @@ func (a *App) processWSEvent(conn *ServerConnection, ev api.WSEvent) {
 		var group api.Group
 		if json.Unmarshal(ev.Payload, &group) == nil {
 			a.mu.Lock()
-			conn.Groups = append(conn.Groups, group)
+			dup := false
+			for _, g := range conn.Groups {
+				if g.ID == group.ID {
+					dup = true
+					break
+				}
+			}
+			if !dup {
+				conn.Groups = append(conn.Groups, group)
+			}
 			a.mu.Unlock()
+
+			// Pre-generate group key so it's ready for distribution to new members
+			if a.GroupHistory != nil && group.CreatorID == conn.UserID {
+				if a.GroupHistory.GetKey(group.ID) == "" {
+					newKey, err := crypto.GenerateGroupKey()
+					if err == nil {
+						a.GroupHistory.SetKey(group.ID, newKey)
+						a.GroupHistory.Save()
+					}
+				}
+			}
 		}
 
 	case "group.delete":
@@ -1126,6 +1196,7 @@ func (a *App) processWSEvent(conn *ServerConnection, ev api.WSEvent) {
 			a.mu.Lock()
 			conn.LastVoiceError = payload.Error
 			a.mu.Unlock()
+			a.Toasts.Error("Voice: " + payload.Error)
 		}
 
 	case "voice.state":
@@ -1261,6 +1332,10 @@ func (a *App) processWSEvent(conn *ServerConnection, ev api.WSEvent) {
 			StopCallRingLoop()
 			conn.Call.HandleDecline(payload.From)
 			PlayCallEndSound()
+			a.mu.RLock()
+			declineName := a.ResolveNameByID(conn, payload.From)
+			a.mu.RUnlock()
+			a.Toasts.Info(declineName + " declined your call")
 		}
 
 	case "call.hangup":
@@ -2050,7 +2125,7 @@ func (a *App) processWSEvent(conn *ServerConnection, ev api.WSEvent) {
 	case "lfg.create":
 		var listing api.LFGListing
 		if json.Unmarshal(ev.Payload, &listing) == nil {
-			if listing.ChannelID == conn.ActiveChannelID && a.Mode == ViewChannels {
+			if a.LFGBoard != nil && listing.ChannelID == conn.ActiveChannelID && a.Mode == ViewChannels {
 				a.LFGBoard.HandleWSCreate(listing)
 				a.Window.Invalidate()
 			}
@@ -2070,9 +2145,114 @@ func (a *App) processWSEvent(conn *ServerConnection, ev api.WSEvent) {
 			ChannelID string `json:"channel_id"`
 		}
 		if json.Unmarshal(ev.Payload, &data) == nil {
-			if data.ChannelID == conn.ActiveChannelID && a.Mode == ViewChannels {
+			if a.LFGBoard != nil && data.ChannelID == conn.ActiveChannelID && a.Mode == ViewChannels {
 				a.LFGBoard.HandleWSDelete(data.ID)
 				a.Window.Invalidate()
+			}
+		}
+
+	case "lfg.join", "lfg.leave":
+		var data struct {
+			ListingID    string     `json:"listing_id"`
+			ChannelID    string     `json:"channel_id"`
+			Participants []api.User `json:"participants"`
+		}
+		if json.Unmarshal(ev.Payload, &data) == nil {
+			if a.LFGBoard != nil && data.ChannelID == conn.ActiveChannelID && a.Mode == ViewChannels {
+				a.LFGBoard.HandleWSParticipants(data.ListingID, data.Participants)
+				a.Window.Invalidate()
+			}
+		}
+
+	case "lfg.apply":
+		var data struct {
+			ListingID    string               `json:"listing_id"`
+			ChannelID    string               `json:"channel_id"`
+			Applications []api.LFGApplication `json:"applications"`
+		}
+		if json.Unmarshal(ev.Payload, &data) == nil {
+			// Always update LFGBoard data (even when not viewing)
+			if a.LFGBoard != nil {
+				a.LFGBoard.HandleWSApplications(data.ListingID, data.Applications)
+			}
+			a.Window.Invalidate()
+
+			// Count pending + find latest applicant name
+			pending := 0
+			applicantName := ""
+			for _, ap := range data.Applications {
+				if ap.Status == "pending" {
+					pending++
+					if ap.User != nil {
+						applicantName = ap.User.DisplayName
+						if applicantName == "" {
+							applicantName = ap.User.Username
+						}
+					}
+				}
+			}
+			PlayLFGSound()
+			notifMsg := fmt.Sprintf("New LFG application from %s", applicantName)
+			if pending > 1 {
+				notifMsg = fmt.Sprintf("%d pending LFG applications", pending)
+			}
+			if a.NotifMgr != nil {
+				a.NotifMgr.NotifyMessage(conn.Name, "LFG Application", notifMsg, applicantName)
+			}
+			if a.NotifCenter != nil {
+				a.NotifCenter.AddAlert(conn.Name, "LFG Application", notifMsg)
+			}
+		}
+
+	case "lfg.accepted":
+		var data struct {
+			ListingID string `json:"listing_id"`
+			GroupID   string `json:"group_id"`
+		}
+		if json.Unmarshal(ev.Payload, &data) == nil {
+			PlayNotificationSound()
+			if a.NotifMgr != nil {
+				a.NotifMgr.NotifyMessage(conn.Name, "LFG", "Your application was accepted!", "")
+			}
+			if a.NotifCenter != nil {
+				a.NotifCenter.AddAlert(conn.Name, "LFG Accepted", "Your application was accepted!")
+			}
+			// Load and add the new group
+			if data.GroupID != "" {
+				go func() {
+					if conn := a.Conn(); conn != nil {
+						group, err := conn.Client.GetGroup(data.GroupID)
+						if err == nil && group != nil {
+							a.mu.Lock()
+							dup := false
+							for _, g := range conn.Groups {
+								if g.ID == group.ID {
+									dup = true
+									break
+								}
+							}
+							if !dup {
+								conn.Groups = append(conn.Groups, *group)
+							}
+							a.mu.Unlock()
+							a.Window.Invalidate()
+						}
+					}
+				}()
+			}
+		}
+
+	case "lfg.rejected":
+		var data struct {
+			ListingID string `json:"listing_id"`
+		}
+		if json.Unmarshal(ev.Payload, &data) == nil {
+			PlayNotificationSound()
+			if a.NotifMgr != nil {
+				a.NotifMgr.NotifyMessage(conn.Name, "LFG", "Your application was rejected.", "")
+			}
+			if a.NotifCenter != nil {
+				a.NotifCenter.AddAlert(conn.Name, "LFG Rejected", "Your application was rejected.")
 			}
 		}
 
