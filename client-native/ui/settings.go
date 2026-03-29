@@ -119,8 +119,8 @@ type SettingsView struct {
 	unbanBtns  []widget.Clickable
 
 	// Bans subsections
-	bansSubTab int // 0=bans, 1=device bans, 2=invite chain, 3=quarantine, 4=approvals
-	bansSubBtns [5]widget.Clickable
+	bansSubTab int // 0=bans, 1=device bans, 2=invite chain, 3=quarantine, 4=approvals, 5=reports
+	bansSubBtns [6]widget.Clickable
 
 	// Device bans
 	deviceBansLoaded bool
@@ -142,6 +142,12 @@ type SettingsView struct {
 	pendingApprovals []api.PendingApproval
 	approveUserBtns  []widget.Clickable
 	rejectUserBtns   []widget.Clickable
+
+	// Reports
+	reportsLoaded   bool
+	pendingReports  []api.Report
+	reviewBtns      []widget.Clickable
+	dismissBtns     []widget.Clickable
 
 	// Password change
 	oldPwEditor    widget.Editor
@@ -1476,7 +1482,7 @@ func (v *SettingsView) layoutAccentBtn(gtx layout.Context, btn *widget.Clickable
 			func(gtx layout.Context) layout.Dimensions {
 				return layout.Inset{Top: unit.Dp(4), Bottom: unit.Dp(4), Left: unit.Dp(12), Right: unit.Dp(12)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
 					lbl := material.Caption(v.app.Theme.Material, text)
-					lbl.Color = color.NRGBA{R: 255, G: 255, B: 255, A: 255}
+					lbl.Color = ColorWhite
 					return lbl.Layout(gtx)
 				})
 			},
@@ -1504,7 +1510,7 @@ func (v *SettingsView) layoutDangerBtn(gtx layout.Context, btn *widget.Clickable
 			func(gtx layout.Context) layout.Dimensions {
 				return layout.Inset{Top: unit.Dp(6), Bottom: unit.Dp(6), Left: unit.Dp(12), Right: unit.Dp(12)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
 					lbl := material.Body2(v.app.Theme.Material, text)
-					lbl.Color = color.NRGBA{R: 255, G: 255, B: 255, A: 255}
+					lbl.Color = ColorWhite
 					return lbl.Layout(gtx)
 				})
 			},

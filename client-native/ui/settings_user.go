@@ -1415,7 +1415,7 @@ func (v *SettingsView) layoutStatusButtons(gtx layout.Context) layout.Dimensions
 					}
 					fg := ColorTextDim
 					if selected {
-						fg = color.NRGBA{R: 255, G: 255, B: 255, A: 255}
+						fg = ColorWhite
 					}
 					return layout.Background{}.Layout(gtx,
 						func(gtx layout.Context) layout.Dimensions {

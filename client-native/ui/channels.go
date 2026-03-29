@@ -394,9 +394,7 @@ func (v *ChannelView) Layout(gtx layout.Context) layout.Dimensions {
 		v.app.mu.Unlock()
 		v.app.Library.Open()
 	}
-	if v.whiteboardBtn.Clicked(gtx) {
-		v.app.WhiteboardView.Open()
-	}
+	// Whiteboard removed from channels — use voice channel whiteboard instead
 	if v.gameServersBtn.Clicked(gtx) {
 		v.app.mu.Lock()
 		v.app.Mode = ViewGameServers
@@ -765,82 +763,11 @@ func (v *ChannelView) Layout(gtx layout.Context) layout.Dimensions {
 		// Files button
 		layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 			return layout.Inset{Top: unit.Dp(4), Left: unit.Dp(8), Right: unit.Dp(8), Bottom: unit.Dp(4)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-				return v.libraryBtn.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-					bg := ColorInput
-					if v.libraryBtn.Hovered() {
-						pointer.CursorPointer.Add(gtx.Ops)
-						bg = ColorHover
-					}
-					return layout.Background{}.Layout(gtx,
-						func(gtx layout.Context) layout.Dimensions {
-							bounds := image.Rect(0, 0, gtx.Constraints.Max.X, gtx.Constraints.Min.Y)
-							rr := gtx.Dp(6)
-							paint.FillShape(gtx.Ops, bg, clip.RRect{
-								Rect: bounds,
-								NE:   rr, NW: rr, SE: rr, SW: rr,
-							}.Op(gtx.Ops))
-							return layout.Dimensions{Size: bounds.Max}
-						},
-						func(gtx layout.Context) layout.Dimensions {
-							return layout.Inset{Top: unit.Dp(6), Bottom: unit.Dp(6), Left: unit.Dp(8), Right: unit.Dp(8)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-								return layout.Flex{Alignment: layout.Middle}.Layout(gtx,
-									layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-										return layoutIcon(gtx, IconFolder, 16, ColorTextDim)
-									}),
-									layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-										return layout.Inset{Left: unit.Dp(6)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-											lbl := material.Body2(v.app.Theme.Material, "Files")
-											lbl.Color = ColorTextDim
-											return lbl.Layout(gtx)
-										})
-									}),
-								)
-							})
-						},
-					)
-				})
+				return layoutIconTextBtn(gtx, v.app.Theme, &v.libraryBtn, IconFolder, "Files", false)
 			})
 		}),
 
-		// Whiteboard button
-		layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-			return layout.Inset{Left: unit.Dp(8), Right: unit.Dp(8), Bottom: unit.Dp(4)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-				return v.whiteboardBtn.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-					bg := ColorInput
-					if v.whiteboardBtn.Hovered() {
-						pointer.CursorPointer.Add(gtx.Ops)
-						bg = ColorHover
-					}
-					return layout.Background{}.Layout(gtx,
-						func(gtx layout.Context) layout.Dimensions {
-							bounds := image.Rect(0, 0, gtx.Constraints.Max.X, gtx.Constraints.Min.Y)
-							rr := gtx.Dp(6)
-							paint.FillShape(gtx.Ops, bg, clip.RRect{
-								Rect: bounds,
-								NE:   rr, NW: rr, SE: rr, SW: rr,
-							}.Op(gtx.Ops))
-							return layout.Dimensions{Size: bounds.Max}
-						},
-						func(gtx layout.Context) layout.Dimensions {
-							return layout.Inset{Top: unit.Dp(6), Bottom: unit.Dp(6), Left: unit.Dp(8), Right: unit.Dp(8)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-								return layout.Flex{Alignment: layout.Middle}.Layout(gtx,
-									layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-										return layoutIcon(gtx, IconEdit, 16, ColorTextDim)
-									}),
-									layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-										return layout.Inset{Left: unit.Dp(6)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-											lbl := material.Body2(v.app.Theme.Material, "Whiteboard")
-											lbl.Color = ColorTextDim
-											return lbl.Layout(gtx)
-										})
-									}),
-								)
-							})
-						},
-					)
-				})
-			})
-		}),
+		// (Whiteboard moved to voice channel only)
 
 		// Servers button (only if game servers enabled)
 		layout.Rigid(func(gtx layout.Context) layout.Dimensions {
@@ -849,40 +776,7 @@ func (v *ChannelView) Layout(gtx layout.Context) layout.Dimensions {
 				return layout.Dimensions{}
 			}
 			return layout.Inset{Left: unit.Dp(8), Right: unit.Dp(8), Bottom: unit.Dp(4)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-				return v.gameServersBtn.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-					bg := ColorInput
-					if v.gameServersBtn.Hovered() {
-						pointer.CursorPointer.Add(gtx.Ops)
-						bg = ColorHover
-					}
-					return layout.Background{}.Layout(gtx,
-						func(gtx layout.Context) layout.Dimensions {
-							bounds := image.Rect(0, 0, gtx.Constraints.Max.X, gtx.Constraints.Min.Y)
-							rr := gtx.Dp(6)
-							paint.FillShape(gtx.Ops, bg, clip.RRect{
-								Rect: bounds,
-								NE:   rr, NW: rr, SE: rr, SW: rr,
-							}.Op(gtx.Ops))
-							return layout.Dimensions{Size: bounds.Max}
-						},
-						func(gtx layout.Context) layout.Dimensions {
-							return layout.Inset{Top: unit.Dp(6), Bottom: unit.Dp(6), Left: unit.Dp(8), Right: unit.Dp(8)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-								return layout.Flex{Alignment: layout.Middle}.Layout(gtx,
-									layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-										return layoutIcon(gtx, IconStorage, 16, ColorTextDim)
-									}),
-									layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-										return layout.Inset{Left: unit.Dp(6)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-											lbl := material.Body2(v.app.Theme.Material, "Servers")
-											lbl.Color = ColorTextDim
-											return lbl.Layout(gtx)
-										})
-									}),
-								)
-							})
-						},
-					)
-				})
+				return layoutIconTextBtn(gtx, v.app.Theme, &v.gameServersBtn, IconMonitor, "Servers", v.app.Mode == ViewGameServers)
 			})
 		}),
 

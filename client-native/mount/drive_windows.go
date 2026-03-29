@@ -43,27 +43,26 @@ func mapDrivePreferred(webdavURL string, preferred string) (string, error) {
 	ensureWebClient()
 
 	if preferred != "" {
-		// Try the preferred letter
+		// Prefer UNC path — more visible in Explorer
+		altURL := webdavToUNC(webdavURL)
+		if altURL != "" {
+			cmd := exec.Command("net", "use", preferred, altURL, "/persistent:no")
+			_, err := cmd.CombinedOutput()
+			if err == nil {
+				log.Printf("drive_windows: mapped %s → %s (preferred)", preferred, altURL)
+				return preferred, nil
+			}
+		}
+		// Fallback to direct URL
 		cmd := exec.Command("net", "use", preferred, webdavURL, "/persistent:no")
 		out, err := cmd.CombinedOutput()
 		if err == nil {
-			log.Printf("drive_windows: mapped %s → %s (preferred)", preferred, webdavURL)
+			log.Printf("drive_windows: mapped %s → %s (preferred, direct)", preferred, webdavURL)
 			return preferred, nil
-		}
-		// UNC fallback
-		altURL := webdavToUNC(webdavURL)
-		if altURL != "" {
-			cmd2 := exec.Command("net", "use", preferred, altURL, "/persistent:no")
-			_, err2 := cmd2.CombinedOutput()
-			if err2 == nil {
-				log.Printf("drive_windows: mapped %s → %s (preferred, UNC)", preferred, altURL)
-				return preferred, nil
-			}
 		}
 		log.Printf("drive_windows: preferred %s failed: %s, falling back", preferred, strings.TrimSpace(string(out)))
 	}
 
-	// Fallback to standard mapDrive
 	return mapDrive(webdavURL)
 }
 
@@ -76,50 +75,57 @@ func mapDrive(webdavURL string) (string, error) {
 		return "", err
 	}
 
-	// net use Z: http://localhost:PORT/ /persistent:no
-	cmd := exec.Command("net", "use", letter, webdavURL, "/persistent:no")
-	out, err := cmd.CombinedOutput()
-	if err != nil {
-		// If net use fails, try alternative URL format
-		// Windows sometimes wants \\host@port\DavWWWRoot format
-		altURL := webdavToUNC(webdavURL)
-		if altURL != "" {
-			cmd2 := exec.Command("net", "use", letter, altURL, "/persistent:no")
-			out2, err2 := cmd2.CombinedOutput()
-			if err2 == nil {
-				log.Printf("drive_windows: mapped %s → %s (UNC)", letter, altURL)
-				return letter, nil
-			}
-			log.Printf("drive_windows: UNC fallback also failed: %s", strings.TrimSpace(string(out2)))
-		}
-
-		return "", fmt.Errorf("net use %s %s: %s (%w)", letter, webdavURL, strings.TrimSpace(string(out)), err)
+	// Use UNC path format — more reliable for Explorer visibility
+	altURL := webdavToUNC(webdavURL)
+	if altURL == "" {
+		altURL = webdavURL
 	}
 
-	log.Printf("drive_windows: mapped %s → %s", letter, webdavURL)
+	cmd := exec.Command("net", "use", letter, altURL, "/persistent:no")
+	_, err = cmd.CombinedOutput()
+	if err != nil {
+		// Fallback to direct URL
+		cmd2 := exec.Command("net", "use", letter, webdavURL, "/persistent:no")
+		out2, err2 := cmd2.CombinedOutput()
+		if err2 != nil {
+			return "", fmt.Errorf("net use %s: %s (%w)", letter, strings.TrimSpace(string(out2)), err2)
+		}
+		log.Printf("drive_windows: mapped %s → %s (direct URL)", letter, webdavURL)
+		return letter, nil
+	}
+
+	log.Printf("drive_windows: mapped %s → %s", letter, altURL)
 	return letter, nil
 }
 
-// renameDrive sets the display name of a network drive in Explorer.
+// renameDrive sets the display name of a network drive in Explorer via registry.
 func renameDrive(letter, label string) {
-	// Shell.Application COM object — sets the label in Explorer
+	// Set drive label via registry (more reliable than COM on some Windows versions)
+	driveLetter := strings.TrimSuffix(letter, ":")
+	regPath := fmt.Sprintf(`HKCU\Software\Microsoft\Windows\CurrentVersion\Explorer\MountPoints2\##%s`, driveLetter)
+	exec.Command("reg", "add", regPath, "/v", "_LabelFromReg", "/t", "REG_SZ", "/d", label, "/f").Run()
+
+	// Also try COM method as fallback
 	ps := fmt.Sprintf(`(New-Object -ComObject Shell.Application).NameSpace('%s\').Self.Name = '%s'`,
 		letter, strings.ReplaceAll(label, "'", "''"))
 	cmd := exec.Command("powershell", "-NoProfile", "-Command", ps)
 	out, err := cmd.CombinedOutput()
 	if err != nil {
-		log.Printf("drive_windows: rename %s to %q: %s (%v)", letter, label, strings.TrimSpace(string(out)), err)
+		log.Printf("drive_windows: rename %s to %q via COM failed: %s", letter, label, strings.TrimSpace(string(out)))
 	} else {
 		log.Printf("drive_windows: renamed %s → %q", letter, label)
 	}
 }
 
-// unmapDrive disconnects a network drive.
+// unmapDrive disconnects a network drive and cleans up ghost entries.
 func unmapDrive(letter string) {
 	cmd := exec.Command("net", "use", letter, "/delete", "/yes")
 	out, err := cmd.CombinedOutput()
 	if err != nil {
 		log.Printf("drive_windows: unmap %s: %s (%v)", letter, strings.TrimSpace(string(out)), err)
+		// Try to clean up ghost drive from registry
+		regPath := fmt.Sprintf(`HKCU\Network\%s`, strings.TrimSuffix(letter, ":"))
+		exec.Command("reg", "delete", regPath, "/f").Run()
 	} else {
 		log.Printf("drive_windows: unmapped %s", letter)
 	}

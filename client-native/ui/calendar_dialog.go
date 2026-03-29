@@ -377,7 +377,7 @@ func (d *EventEditDialog) Layout(gtx layout.Context) layout.Dimensions {
 										fg := ColorTextDim
 										if d.allDay {
 											bg = ColorAccent
-											fg = color.NRGBA{R: 255, G: 255, B: 255, A: 255}
+											fg = ColorWhite
 										}
 										return layoutPillBtn(gtx, th, "All day", bg, fg)
 									})
@@ -434,7 +434,7 @@ func (d *EventEditDialog) Layout(gtx layout.Context) layout.Dimensions {
 										if !d.IsNew {
 											label = "Save"
 										}
-										return layoutPillBtn(gtx, th, label, ColorAccent, color.NRGBA{R: 255, G: 255, B: 255, A: 255})
+										return layoutPillBtn(gtx, th, label, ColorAccent, ColorWhite)
 									})
 								}),
 								layout.Rigid(layout.Spacer{Width: unit.Dp(8)}.Layout),
@@ -443,7 +443,7 @@ func (d *EventEditDialog) Layout(gtx layout.Context) layout.Dimensions {
 										return layout.Dimensions{}
 									}
 									return d.deleteBtn.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-										return layoutPillBtn(gtx, th, "Delete", ColorDanger, color.NRGBA{R: 255, G: 255, B: 255, A: 255})
+										return layoutPillBtn(gtx, th, "Delete", ColorDanger, ColorWhite)
 									})
 								}),
 							)
@@ -536,7 +536,7 @@ func (d *EventEditDialog) layoutDayPicker(gtx layout.Context, th *material.Theme
 			fg := ColorTextDim
 			if d.dayIndex == i {
 				bg = ColorAccent
-				fg = color.NRGBA{R: 255, G: 255, B: 255, A: 255}
+				fg = ColorWhite
 			}
 			return d.dayBtns[i].Layout(gtx, func(gtx layout.Context) layout.Dimensions {
 				return layoutPillBtn(gtx, th, label, bg, fg)
@@ -592,7 +592,7 @@ func (d *EventEditDialog) layoutReminderPicker(gtx layout.Context, th *material.
 			fg := ColorTextDim
 			if d.reminderIdx == i {
 				bg = ColorAccent
-				fg = color.NRGBA{R: 255, G: 255, B: 255, A: 255}
+				fg = ColorWhite
 			}
 			return d.reminderBtns[i].Layout(gtx, func(gtx layout.Context) layout.Dimensions {
 				return layoutPillBtn(gtx, th, reminderLabels[i], bg, fg)
@@ -614,7 +614,7 @@ func (d *EventEditDialog) layoutRepeatPicker(gtx layout.Context, th *material.Th
 			fg := ColorTextDim
 			if d.repeatIdx == i {
 				bg = ColorAccent
-				fg = color.NRGBA{R: 255, G: 255, B: 255, A: 255}
+				fg = ColorWhite
 			}
 			return d.repeatBtns[i].Layout(gtx, func(gtx layout.Context) layout.Dimensions {
 				return layoutPillBtn(gtx, th, recurrenceLabels[i], bg, fg)

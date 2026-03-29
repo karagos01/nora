@@ -148,7 +148,7 @@ func (v *LFGBoardView) Layout(gtx layout.Context) layout.Dimensions {
 	for id, btn := range v.deleteBtns {
 		if btn.Clicked(gtx) {
 			delID := id
-			v.app.ConfirmDlg.Show("Delete LFG Post", "Delete this post? The group conversation will also be removed.", func() {
+			v.app.ConfirmDlg.Show("Delete LFG Post", "Delete this post? The group conversation will be kept.", func() {
 				v.doDelete(delID)
 			})
 		}
@@ -265,7 +265,7 @@ func (v *LFGBoardView) layoutHeader(gtx layout.Context, th *Theme) layout.Dimens
 					}
 					btn := material.Button(th.Material, &v.newBtn, label)
 					btn.Background = ColorAccent
-					btn.Color = color.NRGBA{255, 255, 255, 255}
+					btn.Color = ColorWhite
 					btn.CornerRadius = unit.Dp(4)
 					btn.TextSize = th.Sp(13)
 					btn.Inset = layout.Inset{Top: unit.Dp(6), Bottom: unit.Dp(6), Left: unit.Dp(12), Right: unit.Dp(12)}
@@ -368,7 +368,7 @@ func (v *LFGBoardView) layoutCreateForm(gtx layout.Context, th *Theme) layout.Di
 										layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 											btn := material.Button(th.Material, &v.submitBtn, "Post")
 											btn.Background = ColorAccent
-											btn.Color = color.NRGBA{255, 255, 255, 255}
+											btn.Color = ColorWhite
 											btn.CornerRadius = unit.Dp(4)
 											btn.TextSize = th.Sp(13)
 											btn.Inset = layout.Inset{Top: unit.Dp(6), Bottom: unit.Dp(6), Left: unit.Dp(16), Right: unit.Dp(16)}
@@ -668,7 +668,7 @@ func (v *LFGBoardView) layoutListingCard(gtx layout.Context, th *Theme, listing 
 												}
 												btn := material.Button(th.Material, v.joinBtns[listing.ID], label)
 												btn.Background = btnBg
-												btn.Color = color.NRGBA{255, 255, 255, 255}
+												btn.Color = ColorWhite
 												btn.CornerRadius = unit.Dp(3)
 												btn.TextSize = th.Sp(13)
 												btn.Inset = layout.Inset{Top: unit.Dp(3), Bottom: unit.Dp(3), Left: unit.Dp(10), Right: unit.Dp(10)}
@@ -868,7 +868,7 @@ func (v *LFGBoardView) layoutOneApplication(gtx layout.Context, th *Theme, a api
 					layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 						btn := material.Button(th.Material, acceptBtn, "Accept")
 						btn.Background = ColorOnline
-						btn.Color = color.NRGBA{255, 255, 255, 255}
+						btn.Color = ColorWhite
 						btn.CornerRadius = unit.Dp(3)
 						btn.TextSize = th.Sp(13)
 						btn.Inset = layout.Inset{Top: unit.Dp(2), Bottom: unit.Dp(2), Left: unit.Dp(8), Right: unit.Dp(8)}
@@ -878,7 +878,7 @@ func (v *LFGBoardView) layoutOneApplication(gtx layout.Context, th *Theme, a api
 						return layout.Inset{Left: unit.Dp(4)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
 							btn := material.Button(th.Material, rejectBtn, "Reject")
 							btn.Background = ColorDanger
-							btn.Color = color.NRGBA{255, 255, 255, 255}
+							btn.Color = ColorWhite
 							btn.CornerRadius = unit.Dp(3)
 							btn.TextSize = th.Sp(13)
 							btn.Inset = layout.Inset{Top: unit.Dp(2), Bottom: unit.Dp(2), Left: unit.Dp(8), Right: unit.Dp(8)}
@@ -961,7 +961,7 @@ func (v *LFGBoardView) layoutApplyPopup(gtx layout.Context, th *Theme) layout.Di
 									layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 										btn := material.Button(th.Material, &v.applySubmitBtn, "Send Application")
 										btn.Background = ColorAccent
-										btn.Color = color.NRGBA{255, 255, 255, 255}
+										btn.Color = ColorWhite
 										btn.CornerRadius = unit.Dp(4)
 										btn.TextSize = th.Sp(13)
 										btn.Inset = layout.Inset{Top: unit.Dp(6), Bottom: unit.Dp(6), Left: unit.Dp(16), Right: unit.Dp(16)}

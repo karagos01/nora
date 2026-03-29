@@ -3,6 +3,7 @@ package handlers
 import (
 	"net/http"
 	"nora/auth"
+	"strings"
 	"nora/models"
 	"nora/util"
 	"nora/ws"
@@ -56,7 +57,12 @@ func (d *Deps) SendFriendRequest(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Resolve user by ID or public key
+	// Resolve user by ID or public key (strip #server suffix if present)
+	if req.PublicKey != "" {
+		if idx := strings.Index(req.PublicKey, "#"); idx > 0 {
+			req.PublicKey = req.PublicKey[:idx]
+		}
+	}
 	if req.UserID == "" && req.PublicKey != "" {
 		u, err := d.Users.GetByPublicKey(req.PublicKey)
 		if err != nil {

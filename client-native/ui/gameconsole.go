@@ -201,7 +201,7 @@ func (v *GameConsoleView) Layout(gtx layout.Context) layout.Dimensions {
 							layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
 								lbl := material.Body1(v.app.Theme.Material, title)
 								lbl.Color = ColorText
-								lbl.TextSize = unit.Sp(14)
+								lbl.TextSize = v.app.Theme.Sp(14)
 								return lbl.Layout(gtx)
 							}),
 							layout.Rigid(func(gtx layout.Context) layout.Dimensions {
@@ -236,7 +236,7 @@ func (v *GameConsoleView) Layout(gtx layout.Context) layout.Dimensions {
 									paint.ColorOp{Color: ColorAccent}.Add(gtx.Ops)
 									selCall := selMac.Stop()
 									return material.List(v.app.Theme.Material, &v.logList).Layout(gtx, 1, func(gtx layout.Context, _ int) layout.Dimensions {
-										return v.logSel.Layout(gtx, v.app.Theme.Material.Shaper, font.Font{Typeface: v.app.Theme.Material.Face}, unit.Sp(12), textCall, selCall)
+										return v.logSel.Layout(gtx, v.app.Theme.Material.Shaper, font.Font{Typeface: v.app.Theme.Material.Face}, v.app.Theme.Sp(12), textCall, selCall)
 									})
 								})
 							},
@@ -260,7 +260,7 @@ func (v *GameConsoleView) Layout(gtx layout.Context) layout.Dimensions {
 											e := material.Editor(v.app.Theme.Material, &v.cmdEd, "Type command...")
 											e.Color = ColorText
 											e.HintColor = ColorTextDim
-											e.TextSize = unit.Sp(13)
+											e.TextSize = v.app.Theme.Sp(13)
 											return e.Layout(gtx)
 										})
 									},

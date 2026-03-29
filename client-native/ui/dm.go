@@ -170,7 +170,7 @@ func (v *DMViewUI) layoutUnreadBadge(gtx layout.Context, count int) layout.Dimen
 				text = "9+"
 			}
 			lbl := material.Caption(v.app.Theme.Material, text)
-			lbl.Color = color.NRGBA{R: 255, G: 255, B: 255, A: 255}
+			lbl.Color = ColorWhite
 			return lbl.Layout(gtx)
 		}),
 	)
@@ -184,45 +184,39 @@ func (v *DMViewUI) LayoutSidebar(gtx layout.Context) layout.Dimensions {
 		return layoutColoredBg(gtx, ColorCard)
 	}
 
+	// Unified DMs across all servers
+	unifiedDMs := v.app.GetUnifiedDMs()
+	// Filter blocked
+	var filteredDMs []UnifiedDM
+	for _, dm := range unifiedDMs {
+		if dm.PeerPublicKey != "" && v.app.IsBlockedKey(dm.PeerPublicKey) {
+			continue
+		}
+		filteredDMs = append(filteredDMs, dm)
+	}
+	unifiedDMs = filteredDMs
+
 	v.app.mu.RLock()
-	allConvs := conn.DMConversations
 	activeDM := conn.ActiveDMID
-	userID := conn.UserID
-	onlineUsers := conn.OnlineUsers
 	unifiedGroups := v.app.GetUnifiedGroups()
 	activeGroupID := conn.ActiveGroupID
 	v.app.mu.RUnlock()
 
-	// Cross-server blocklist: filter conversations with blocked users
-	var convs []api.DMConversation
-	for _, conv := range allConvs {
-		blocked := false
-		for _, p := range conv.Participants {
-			if p.UserID != userID && p.PublicKey != "" && v.app.IsBlockedKey(p.PublicKey) {
-				blocked = true
-				break
-			}
-		}
-		if !blocked {
-			convs = append(convs, conv)
-		}
+	if len(v.convBtns) < len(unifiedDMs) {
+		v.convBtns = make([]widget.Clickable, len(unifiedDMs)+10)
 	}
-
-	if len(v.convBtns) < len(convs) {
-		v.convBtns = make([]widget.Clickable, len(convs)+10)
-	}
-	if len(v.delBtns) < len(convs) {
-		v.delBtns = make([]widget.Clickable, len(convs)+10)
+	if len(v.delBtns) < len(unifiedDMs) {
+		v.delBtns = make([]widget.Clickable, len(unifiedDMs)+10)
 	}
 	if len(v.groupBtns) < len(unifiedGroups) {
 		v.groupBtns = make([]widget.Clickable, len(unifiedGroups)+10)
 	}
 
 	// Handle delete clicks — show confirm dialog
-	for i, conv := range convs {
-		if v.delBtns[i].Clicked(gtx) {
-			convID := conv.ID
-			peerName := v.peerName(conv, userID)
+	for i, dm := range unifiedDMs {
+		if i < len(v.delBtns) && v.delBtns[i].Clicked(gtx) {
+			peerName := dm.PeerName
+			convID := dm.BestConvID
 			v.app.ConfirmDlg.Show(
 				"Delete Conversation",
 				"Delete conversation with "+peerName+"? This will delete the history for both users.",
@@ -286,7 +280,7 @@ func (v *DMViewUI) LayoutSidebar(gtx layout.Context) layout.Dimensions {
 	if v.showJoinGroup {
 		joinGroupExtra = 1
 	}
-	totalItems := len(convs) + 1 + joinGroupExtra + len(unifiedGroups) + 1 // +1 for groups header, +1 for create btn
+	totalItems := len(unifiedDMs) + 1 + joinGroupExtra + len(unifiedGroups) + 1 // +1 for groups header, +1 for create btn
 
 	return layout.Flex{Axis: layout.Vertical}.Layout(gtx,
 		layout.Rigid(func(gtx layout.Context) layout.Dimensions {
@@ -318,17 +312,33 @@ func (v *DMViewUI) LayoutSidebar(gtx layout.Context) layout.Dimensions {
 
 		layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
 			return material.List(v.app.Theme.Material, &v.convList).Layout(gtx, totalItems, func(gtx layout.Context, idx int) layout.Dimensions {
-				// DM conversations
-				if idx < len(convs) {
-				conv := convs[idx]
+				// DM conversations (unified across servers)
+				if idx < len(unifiedDMs) {
+				dm := unifiedDMs[idx]
 
 				if v.convBtns[idx].Clicked(gtx) {
-					v.app.SelectDM(conv.ID)
+					// Switch to correct server and select DM
+					if dm.BestServerIdx >= 0 {
+						v.app.mu.Lock()
+						v.app.ActiveServer = dm.BestServerIdx
+						v.app.mu.Unlock()
+					}
+					if dm.BestConvID != "" {
+						// For relay convs, also set peer key directly
+						if strings.HasPrefix(dm.BestConvID, "relay:") {
+							v.app.mu.Lock()
+							if c := v.app.Conn(); c != nil {
+								c.ActiveDMPeerKey = dm.PeerPublicKey
+							}
+							v.app.mu.Unlock()
+						}
+						v.app.SelectDM(dm.BestConvID)
+					}
 				}
 
-				active := conv.ID == activeDM
-				name := v.peerName(conv, userID)
-				peerOnline := onlineUsers[v.peerID(conv, userID)]
+				active := dm.BestConvID == activeDM
+				name := dm.PeerName
+				peerOnline := dm.Online
 				hovered := v.convBtns[idx].Hovered() || v.delBtns[idx].Hovered()
 
 				bg := ColorCard
@@ -369,7 +379,7 @@ func (v *DMViewUI) LayoutSidebar(gtx layout.Context) layout.Dimensions {
 															initial = string([]rune(name)[0])
 														}
 														lbl := material.Caption(v.app.Theme.Material, initial)
-														lbl.Color = color.NRGBA{R: 255, G: 255, B: 255, A: 255}
+														lbl.Color = ColorWhite
 														return lbl.Layout(gtx)
 													}),
 												)
@@ -404,7 +414,7 @@ func (v *DMViewUI) LayoutSidebar(gtx layout.Context) layout.Dimensions {
 												})
 											}),
 											layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-												unread := conn.UnreadDMCount[conv.ID]
+												unread := dm.TotalUnread
 												if unread <= 0 {
 													return layout.Dimensions{}
 												}
@@ -455,7 +465,7 @@ func (v *DMViewUI) LayoutSidebar(gtx layout.Context) layout.Dimensions {
 				}
 
 				// Groups header
-				gIdx := idx - len(convs)
+				gIdx := idx - len(unifiedDMs)
 				if gIdx == 0 {
 					return layout.Inset{Top: unit.Dp(16), Left: unit.Dp(16), Bottom: unit.Dp(4)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
 						return layout.Flex{Alignment: layout.Middle}.Layout(gtx,
@@ -465,31 +475,13 @@ func (v *DMViewUI) LayoutSidebar(gtx layout.Context) layout.Dimensions {
 								return lbl.Layout(gtx)
 							}),
 							layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-								return v.joinGroupBtn.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-									return layout.Inset{Right: unit.Dp(6)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-										clr := ColorAccent
-										if v.joinGroupBtn.Hovered() {
-											pointer.CursorPointer.Add(gtx.Ops)
-											clr = ColorText
-										}
-										lbl := material.Body2(v.app.Theme.Material, "Join")
-										lbl.Color = clr
-										return lbl.Layout(gtx)
-									})
+								return layout.Inset{Right: unit.Dp(6)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+									return layoutTextLink(gtx, v.app.Theme, &v.joinGroupBtn, "Join", ColorAccent)
 								})
 							}),
 							layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-								return v.createGroupBtn.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-									return layout.Inset{Right: unit.Dp(8)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-										clr := ColorAccent
-										if v.createGroupBtn.Hovered() {
-											pointer.CursorPointer.Add(gtx.Ops)
-											clr = ColorText
-										}
-										lbl := material.Body2(v.app.Theme.Material, "Create")
-										lbl.Color = clr
-										return lbl.Layout(gtx)
-									})
+								return layout.Inset{Right: unit.Dp(8)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+									return layoutTextLink(gtx, v.app.Theme, &v.createGroupBtn, "Create", ColorAccent)
 								})
 							}),
 						)
@@ -738,11 +730,12 @@ func (v *DMViewUI) LayoutMessages(gtx layout.Context) layout.Dimensions {
 			if callConn != conn && peerPubKey != "" {
 				myKey := v.app.PublicKey
 				serverURL := callConn.URL
+				toPubKey := peerPubKey
 				callConn.Call.SetRelay(func(eventType string, payload map[string]interface{}) error {
 					payloadBytes, _ := json.Marshal(payload)
-					signData := []byte(eventType + ":" + string(payloadBytes))
+					signData := []byte(eventType + ":" + toPubKey + ":" + string(payloadBytes))
 					sig := v.app.SignMessage(signData)
-					return api.RelayCallEvent(serverURL, eventType, peerPubKey, myKey, sig, payload)
+					return api.RelayCallEvent(serverURL, eventType, toPubKey, myKey, sig, payload)
 				})
 			} else {
 				callConn.Call.ClearRelay()
@@ -769,7 +762,7 @@ func (v *DMViewUI) LayoutMessages(gtx layout.Context) layout.Dimensions {
 						callActive := conn.Call != nil && conn.Call.IsActive()
 						canCall := peerOnline && !callActive && dmPeerID != ""
 						btnColor := ColorAccent
-						textColor := color.NRGBA{R: 255, G: 255, B: 255, A: 255}
+						textColor := ColorWhite
 						if !canCall {
 							btnColor = ColorInput
 							textColor = ColorTextDim
@@ -1139,7 +1132,7 @@ func (v *DMViewUI) layoutDMMessage(gtx layout.Context, username, avatarURL, cont
 									}
 									lbl := material.Caption(v.app.Theme.Material, text)
 									lbl.Color = ColorTextDim
-									lbl.TextSize = unit.Sp(11)
+									lbl.TextSize = v.app.Theme.Sp(11)
 									return lbl.Layout(gtx)
 								}),
 							)
@@ -1681,6 +1674,45 @@ func (v *DMViewUI) sendDMText(text, replyToID string) {
 		return
 	}
 
+	// Check if this is a relay conversation (cross-server)
+	if strings.HasPrefix(convID, "relay:") {
+		// Find server URL for the peer from contacts
+		peerPubKey := peerKey
+		var serverURL string
+		if v.app.Contacts != nil {
+			serverNames := v.app.Contacts.GetServerNames(peerPubKey)
+			for _, sn := range serverNames {
+				serverURL = sn.ServerURL
+				break
+			}
+		}
+		if serverURL == "" {
+			v.app.Toasts.Error("Cannot find server for peer")
+			return
+		}
+		myPubKey := v.app.PublicKey
+		signData := []byte("dm:" + peerPubKey + ":" + encrypted)
+		sig := v.app.SignMessage(signData)
+		go func() {
+			if err := api.RelayDM(serverURL, peerPubKey, myPubKey, sig, encrypted, replyToID); err != nil {
+				log.Printf("DM relay error: %v", err)
+				v.app.Toasts.Error("Failed to relay DM")
+			}
+		}()
+		// Save to local history
+		if v.app.DMHistory != nil {
+			v.app.DMHistory.AddMessage(store.StoredDMMessage{
+				ConversationID: convID,
+				SenderID:       conn.UserID,
+				Content:        text,
+				ReplyToID:      replyToID,
+				CreatedAt:      time.Now(),
+			})
+			v.app.DMHistory.Save()
+		}
+		return
+	}
+
 	sent, err := conn.Client.SendDM(convID, encrypted, replyToID)
 	if err != nil {
 		log.Printf("DM send error: %v", err)
@@ -1897,28 +1929,7 @@ func layoutDMCircleIconBtn(gtx layout.Context, app *App, btn *widget.Clickable, 
 }
 
 func (v *DMViewUI) layoutNavBtn(gtx layout.Context, btn *widget.Clickable, icon *NIcon, label string) layout.Dimensions {
-	bg := ColorCard
-	if btn.Hovered() {
-		pointer.CursorPointer.Add(gtx.Ops)
-		bg = ColorHover
-	}
-	return btn.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-		paint.FillShape(gtx.Ops, bg, clip.Rect{Max: image.Pt(gtx.Constraints.Max.X, gtx.Dp(36))}.Op())
-		return layout.Inset{Top: unit.Dp(8), Bottom: unit.Dp(8), Left: unit.Dp(12), Right: unit.Dp(8)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-			return layout.Flex{Alignment: layout.Middle}.Layout(gtx,
-				layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-					return layoutIcon(gtx, icon, 18, ColorAccent)
-				}),
-				layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-					return layout.Inset{Left: unit.Dp(8)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-						lbl := material.Body2(v.app.Theme.Material, label)
-						lbl.Color = ColorText
-						return lbl.Layout(gtx)
-					})
-				}),
-			)
-		})
-	})
+	return layoutIconTextBtn(gtx, v.app.Theme, btn, icon, label, false)
 }
 
 // pickFilesDM opens a file dialog and offers upload/P2P.

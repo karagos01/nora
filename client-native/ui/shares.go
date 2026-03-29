@@ -41,9 +41,13 @@ type SharesView struct {
 	mainList       widget.List
 	fileBtns       []widget.Clickable
 	downloadBtns   []widget.Clickable
-	parentBtn      widget.Clickable
-	deleteShareBtn widget.Clickable
-	refreshBtn     widget.Clickable
+	parentBtn       widget.Clickable
+	deleteShareBtn  widget.Clickable
+	refreshBtn      widget.Clickable
+	downloadAllBtn  widget.Clickable
+	downloadingAll  bool
+	downloadAllDone int
+	downloadAllTotal int
 
 	// Server picker for new shares
 	showServerPicker  bool
@@ -505,6 +509,10 @@ func (v *SharesView) LayoutMain(gtx layout.Context) layout.Dimensions {
 		}
 	}
 
+	if v.downloadAllBtn.Clicked(gtx) && !v.downloadingAll {
+		v.downloadAllFiles()
+	}
+
 	// FileExplorerWidget event handling
 	fw := v.fileWidget
 	fw.HandleColumnClick(gtx)
@@ -799,6 +807,21 @@ func (v *SharesView) layoutHeader(gtx layout.Context, share *api.SharedDirectory
 				return layout.Inset{Right: unit.Dp(4)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
 					return v.serverInfoBtn.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
 						return layoutIcon(gtx, IconMonitor, 20, clr)
+					})
+				})
+			}),
+			// Download All (non-owner only)
+			layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+				if isOwner {
+					return layout.Dimensions{}
+				}
+				clr := ColorTextDim
+				if v.downloadingAll {
+					clr = ColorAccent
+				}
+				return layout.Inset{Right: unit.Dp(4)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+					return v.downloadAllBtn.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+						return layoutIcon(gtx, IconDownload, 20, clr)
 					})
 				})
 			}),
@@ -1267,7 +1290,7 @@ func (v *SharesView) layoutPermissions(gtx layout.Context) layout.Dimensions {
 							ed := material.Editor(v.app.Theme.Material, &v.memberSearchEd, "Search users...")
 							ed.Color = ColorText
 							ed.HintColor = ColorTextDim
-							ed.TextSize = unit.Sp(13)
+							ed.TextSize = v.app.Theme.Sp(13)
 							return ed.Layout(gtx)
 						})
 					},
@@ -1313,7 +1336,7 @@ func (v *SharesView) layoutGlobalPerms(gtx layout.Context, perm *api.SharePermis
 							btn := material.Button(v.app.Theme.Material, &v.saveGlobalBtn, "Save")
 							btn.Background = ColorAccent
 							btn.Color = ColorText
-							btn.TextSize = unit.Sp(13)
+							btn.TextSize = v.app.Theme.Sp(13)
 							btn.Inset = layout.Inset{Top: unit.Dp(4), Bottom: unit.Dp(4), Left: unit.Dp(12), Right: unit.Dp(12)}
 							return btn.Layout(gtx)
 						}),
@@ -1436,7 +1459,7 @@ func (v *SharesView) layoutEditPermRow(gtx layout.Context) layout.Dimensions {
 								btn := material.Button(v.app.Theme.Material, &v.savePermBtn, "Save")
 								btn.Background = ColorAccent
 								btn.Color = ColorText
-								btn.TextSize = unit.Sp(13)
+								btn.TextSize = v.app.Theme.Sp(13)
 								btn.Inset = layout.Inset{Top: unit.Dp(4), Bottom: unit.Dp(4), Left: unit.Dp(12), Right: unit.Dp(12)}
 								return btn.Layout(gtx)
 							}),
@@ -1445,7 +1468,7 @@ func (v *SharesView) layoutEditPermRow(gtx layout.Context) layout.Dimensions {
 									btn := material.Button(v.app.Theme.Material, &v.cancelPermBtn, "Cancel")
 									btn.Background = ColorHover
 									btn.Color = ColorText
-									btn.TextSize = unit.Sp(13)
+									btn.TextSize = v.app.Theme.Sp(13)
 									btn.Inset = layout.Inset{Top: unit.Dp(4), Bottom: unit.Dp(4), Left: unit.Dp(12), Right: unit.Dp(12)}
 									return btn.Layout(gtx)
 								})
@@ -1485,7 +1508,7 @@ func (v *SharesView) layoutEditPermRow(gtx layout.Context) layout.Dimensions {
 									btn := material.Button(v.app.Theme.Material, delBtn, "Remove")
 									btn.Background = ColorDanger
 									btn.Color = ColorText
-									btn.TextSize = unit.Sp(13)
+									btn.TextSize = v.app.Theme.Sp(13)
 									btn.Inset = layout.Inset{Top: unit.Dp(4), Bottom: unit.Dp(4), Left: unit.Dp(12), Right: unit.Dp(12)}
 									return btn.Layout(gtx)
 								})
@@ -1946,9 +1969,9 @@ func (v *SharesView) layoutServerInfo(gtx layout.Context, share *api.SharedDirec
 							}
 							btn := material.Button(th.Material, &v.serverToggleBtns[btnIdx], label)
 							btn.Background = btnBg
-							btn.Color = color.NRGBA{255, 255, 255, 255}
+							btn.Color = ColorWhite
 							btn.CornerRadius = unit.Dp(3)
-							btn.TextSize = unit.Sp(12)
+							btn.TextSize = v.app.Theme.Sp(12)
 							btn.Inset = layout.Inset{Top: unit.Dp(4), Bottom: unit.Dp(4), Left: unit.Dp(12), Right: unit.Dp(12)}
 							return btn.Layout(gtx)
 						}),
@@ -2020,7 +2043,7 @@ func (v *SharesView) layoutServerPicker(gtx layout.Context) layout.Dimensions {
 								cb.Color = ColorText
 								cb.IconColor = ColorAccent
 								cb.Size = unit.Dp(18)
-								cb.TextSize = unit.Sp(14)
+								cb.TextSize = v.app.Theme.Sp(14)
 								return cb.Layout(gtx)
 							})
 						}))
@@ -2039,7 +2062,7 @@ func (v *SharesView) layoutServerPicker(gtx layout.Context) layout.Dimensions {
 								btn.Background = ColorInput
 								btn.Color = ColorText
 								btn.CornerRadius = unit.Dp(4)
-								btn.TextSize = unit.Sp(13)
+								btn.TextSize = v.app.Theme.Sp(13)
 								btn.Inset = layout.Inset{Top: unit.Dp(6), Bottom: unit.Dp(6), Left: unit.Dp(16), Right: unit.Dp(16)}
 								return btn.Layout(gtx)
 							}),
@@ -2047,9 +2070,9 @@ func (v *SharesView) layoutServerPicker(gtx layout.Context) layout.Dimensions {
 							layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 								btn := material.Button(th.Material, &v.serverPickerOkBtn, "Share")
 								btn.Background = ColorAccent
-								btn.Color = color.NRGBA{255, 255, 255, 255}
+								btn.Color = ColorWhite
 								btn.CornerRadius = unit.Dp(4)
-								btn.TextSize = unit.Sp(13)
+								btn.TextSize = v.app.Theme.Sp(13)
 								btn.Inset = layout.Inset{Top: unit.Dp(6), Bottom: unit.Dp(6), Left: unit.Dp(16), Right: unit.Dp(16)}
 								return btn.Layout(gtx)
 							}),
@@ -2202,6 +2225,43 @@ func (v *SharesView) syncLocalFiles() {
 	}()
 }
 
+func (v *SharesView) downloadAllFiles() {
+	v.downloadingAll = true
+	v.downloadAllDone = 0
+
+	// Collect all non-dir files in current view
+	var filesToDownload []api.SharedFileEntry
+	v.app.mu.RLock()
+	for _, f := range v.Files {
+		if !f.IsDir {
+			filesToDownload = append(filesToDownload, f)
+		}
+	}
+	v.app.mu.RUnlock()
+
+	v.downloadAllTotal = len(filesToDownload)
+	if v.downloadAllTotal == 0 {
+		v.downloadingAll = false
+		v.app.Toasts.Info("No files to download")
+		return
+	}
+
+	v.app.Toasts.Info(fmt.Sprintf("Downloading %d files...", v.downloadAllTotal))
+
+	go func() {
+		for i, f := range filesToDownload {
+			v.requestDownload(f)
+			v.downloadAllDone = i + 1
+			v.app.Window.Invalidate()
+			// Wait a bit between downloads to not overload P2P
+			time.Sleep(2 * time.Second)
+		}
+		v.downloadingAll = false
+		v.app.Toasts.Info(fmt.Sprintf("Downloaded %d files", v.downloadAllTotal))
+		v.app.Window.Invalidate()
+	}()
+}
+
 func (v *SharesView) syncShareFiles(shareID, localPath string) {
 	conn := v.app.Conn()
 	if conn == nil {
@@ -2209,12 +2269,26 @@ func (v *SharesView) syncShareFiles(shareID, localPath string) {
 	}
 
 	var files []map[string]interface{}
+	const maxFiles = 50000
+
+	// Directories to always skip (large build/cache dirs)
+	skipDirs := map[string]bool{
+		"node_modules": true, ".git": true, ".cache": true,
+		"__pycache__": true, ".Trash": true, ".Trash-1000": true,
+		".local": true, ".wine": true, "Cache": true,
+	}
+
+	log.Printf("Share sync starting walk for %s (shareID=%s)", localPath, shareID)
 	err := filepath.Walk(localPath, func(path string, info os.FileInfo, err error) error {
 		if err != nil {
-			return nil // skip errors
+			return nil
 		}
 
-		// Skip symlinks (security — we do not want to serve /etc/shadow etc.)
+		if len(files) >= maxFiles {
+			return filepath.SkipAll
+		}
+
+		// Skip symlinks
 		if info.Mode()&os.ModeSymlink != 0 {
 			return nil
 		}
@@ -2227,6 +2301,17 @@ func (v *SharesView) syncShareFiles(shareID, localPath string) {
 		// Path traversal protection
 		if strings.Contains(rel, "..") {
 			return nil
+		}
+
+		// Skip hidden directories and known large dirs
+		if info.IsDir() {
+			name := info.Name()
+			if len(name) > 0 && name[0] == '.' {
+				return filepath.SkipDir
+			}
+			if skipDirs[name] {
+				return filepath.SkipDir
+			}
 		}
 
 		parent := filepath.Dir(rel)
@@ -2251,6 +2336,7 @@ func (v *SharesView) syncShareFiles(shareID, localPath string) {
 		return
 	}
 
+	log.Printf("Share sync: %d files for %s", len(files), localPath)
 	if err := conn.Client.SyncShareFiles(shareID, files); err != nil {
 		log.Printf("SyncShareFiles error: %v", err)
 	}

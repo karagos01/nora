@@ -212,6 +212,30 @@ func (db *DB) Migrate() error {
 		PRIMARY KEY (listing_id, user_id)
 	)`)
 
+	// Migration: user reports
+	db.Exec(`CREATE TABLE IF NOT EXISTS reports (
+		id TEXT PRIMARY KEY,
+		reporter_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+		target_user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+		target_message_id TEXT DEFAULT '',
+		reason TEXT NOT NULL DEFAULT '',
+		status TEXT NOT NULL DEFAULT 'pending',
+		reviewed_by TEXT DEFAULT '',
+		reviewed_at DATETIME,
+		created_at DATETIME NOT NULL DEFAULT (datetime('now'))
+	)`)
+	db.Exec(`CREATE INDEX IF NOT EXISTS idx_reports_target ON reports(target_user_id)`)
+	db.Exec(`CREATE INDEX IF NOT EXISTS idx_reports_status ON reports(status)`)
+
+	// Migration: channel read state (per-user last read message tracking)
+	db.Exec(`CREATE TABLE IF NOT EXISTS channel_read_state (
+		user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+		channel_id TEXT NOT NULL REFERENCES channels(id) ON DELETE CASCADE,
+		last_read_id TEXT NOT NULL DEFAULT '',
+		last_read_at DATETIME NOT NULL DEFAULT (datetime('now')),
+		PRIMARY KEY (user_id, channel_id)
+	)`)
+
 	// Migration: idempotency key for message deduplication
 	db.Exec("ALTER TABLE messages ADD COLUMN idempotency_key TEXT NOT NULL DEFAULT ''")
 	db.Exec("CREATE UNIQUE INDEX IF NOT EXISTS idx_messages_idempotency ON messages(user_id, idempotency_key) WHERE idempotency_key != ''")

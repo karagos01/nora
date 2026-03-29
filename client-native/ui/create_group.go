@@ -138,7 +138,7 @@ func (d *CreateGroupDialog) Layout(gtx layout.Context) layout.Dimensions {
 											}),
 											layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 												return layout.Inset{Left: unit.Dp(8)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-													return layoutDialogBtn(gtx, d.app.Theme, &d.createBtn, "Create", ColorAccent, color.NRGBA{R: 255, G: 255, B: 255, A: 255})
+													return layoutDialogBtn(gtx, d.app.Theme, &d.createBtn, "Create", ColorAccent, ColorWhite)
 												})
 											}),
 										)

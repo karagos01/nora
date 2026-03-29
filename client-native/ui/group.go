@@ -638,11 +638,11 @@ func (v *GroupViewUI) layoutInvitePopup(gtx layout.Context) layout.Dimensions {
 												if v.currentInvite == nil {
 													return layout.Dimensions{}
 												}
-												return layoutDialogBtn(gtx, v.app.Theme, &v.inviteDeleteBtn, "Revoke", color.NRGBA{R: 200, G: 60, B: 60, A: 255}, color.NRGBA{R: 255, G: 255, B: 255, A: 255})
+												return layoutDialogBtn(gtx, v.app.Theme, &v.inviteDeleteBtn, "Revoke", color.NRGBA{R: 200, G: 60, B: 60, A: 255}, ColorWhite)
 											}),
 											layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 												return layout.Inset{Left: unit.Dp(8)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-													return layoutDialogBtn(gtx, v.app.Theme, &v.inviteGenerateBtn, "Generate New", ColorAccent, color.NRGBA{R: 255, G: 255, B: 255, A: 255})
+													return layoutDialogBtn(gtx, v.app.Theme, &v.inviteGenerateBtn, "Generate New", ColorAccent, ColorWhite)
 												})
 											}),
 										)
@@ -692,7 +692,7 @@ func (v *GroupViewUI) layoutGroupMessage(gtx layout.Context, msgIdx int, msg api
 							initial = string([]rune(username)[0])
 						}
 						lbl := material.Caption(v.app.Theme.Material, initial)
-						lbl.Color = color.NRGBA{R: 255, G: 255, B: 255, A: 255}
+						lbl.Color = ColorWhite
 						return lbl.Layout(gtx)
 					}),
 				)

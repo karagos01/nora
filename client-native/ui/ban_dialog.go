@@ -251,7 +251,7 @@ func (d *BanDialog) Layout(gtx layout.Context) layout.Dimensions {
 										}),
 										layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 											return layout.Inset{Left: unit.Dp(8)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-												return layoutDialogBtn(gtx, d.app.Theme, &d.confirmBtn, "Ban", ColorDanger, color.NRGBA{R: 255, G: 255, B: 255, A: 255})
+												return layoutDialogBtn(gtx, d.app.Theme, &d.confirmBtn, "Ban", ColorDanger, ColorWhite)
 											})
 										}),
 									)
@@ -271,7 +271,7 @@ func (d *BanDialog) layoutDurationBtn(gtx layout.Context, idx int) layout.Dimens
 	fg := ColorTextDim
 	if selected {
 		bg = ColorAccent
-		fg = color.NRGBA{R: 255, G: 255, B: 255, A: 255}
+		fg = ColorWhite
 	}
 	return d.durationBtns[idx].Layout(gtx, func(gtx layout.Context) layout.Dimensions {
 		return layout.Background{}.Layout(gtx,

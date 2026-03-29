@@ -358,7 +358,7 @@ func (w *FileExplorerWidget) LayoutEntryRow(gtx layout.Context, entry FileExplor
 								return layout.Inset{Top: unit.Dp(2), Bottom: unit.Dp(2), Left: unit.Dp(4), Right: unit.Dp(4)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
 									e := material.Editor(th.Material, &w.renameEditor, "")
 									e.Color = ColorText
-									e.TextSize = unit.Sp(13)
+									e.TextSize = th.Sp(13)
 									return e.Layout(gtx)
 								})
 							},
@@ -366,7 +366,7 @@ func (w *FileExplorerWidget) LayoutEntryRow(gtx layout.Context, entry FileExplor
 					}
 					lbl := material.Body2(th.Material, entry.Name)
 					lbl.Color = ColorText
-					lbl.TextSize = unit.Sp(13)
+					lbl.TextSize = th.Sp(13)
 					lbl.MaxLines = 1
 					return lbl.Layout(gtx)
 				})
@@ -448,7 +448,7 @@ func (w *FileExplorerWidget) LayoutDeleteSelectedBar(gtx layout.Context, deleteB
 			layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 				lbl := material.Body2(th.Material, fmt.Sprintf("%d selected", count))
 				lbl.Color = ColorText
-				lbl.TextSize = unit.Sp(12)
+				lbl.TextSize = th.Sp(12)
 				return lbl.Layout(gtx)
 			}),
 			layout.Rigid(func(gtx layout.Context) layout.Dimensions {

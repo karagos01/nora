@@ -2,7 +2,6 @@ package ui
 
 import (
 	"image"
-	"image/color"
 
 	"gioui.org/gesture"
 	"gioui.org/io/pointer"
@@ -110,7 +109,7 @@ func (s *Slider) Layout(gtx layout.Context, width unit.Dp) layout.Dimensions {
 	cx := fillW - handleR
 	cy := totalH/2 - handleR
 	stack := op.Offset(image.Pt(cx, cy)).Push(gtx.Ops)
-	paint.FillShape(gtx.Ops, color.NRGBA{R: 255, G: 255, B: 255, A: 255},
+	paint.FillShape(gtx.Ops, ColorWhite,
 		clip.Ellipse{Max: image.Pt(handleD, handleD)}.Op(gtx.Ops))
 	stack.Pop()
 

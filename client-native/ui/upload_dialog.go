@@ -467,7 +467,7 @@ func (d *UploadDialog) layoutControls(gtx layout.Context, allDone bool) layout.D
 						fg := color.NRGBA{R: 180, G: 180, B: 180, A: 255}
 						if allDone {
 							bg = ColorAccent
-							fg = color.NRGBA{R: 255, G: 255, B: 255, A: 255}
+							fg = ColorWhite
 						}
 						return layout.Inset{Left: unit.Dp(8)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
 							return layoutDialogBtn(gtx, d.app.Theme, &d.sendBtn, "Send", bg, fg)

@@ -1312,7 +1312,7 @@ func (v *MessageView) Layout(gtx layout.Context) layout.Dimensions {
 								}),
 								layout.Stacked(func(gtx layout.Context) layout.Dimensions {
 									lbl := material.Body2(v.app.Theme.Material, "v")
-									lbl.Color = color.NRGBA{R: 255, G: 255, B: 255, A: 255}
+									lbl.Color = ColorWhite
 									return lbl.Layout(gtx)
 								}),
 							)

@@ -317,7 +317,7 @@ func (d *CardEditDialog) Layout(gtx layout.Context) layout.Dimensions {
 												gtx.Constraints.Min = sz
 												return layout.Center.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
 													lbl := material.Body2(d.app.Theme.Material, "Save")
-													lbl.Color = color.NRGBA{R: 255, G: 255, B: 255, A: 255}
+													lbl.Color = ColorWhite
 													lbl.Font.Weight = font.Bold
 													return lbl.Layout(gtx)
 												})
@@ -355,7 +355,7 @@ func (d *CardEditDialog) layoutColorPicker(gtx layout.Context) layout.Dimensions
 								return layout.Dimensions{Size: image.Pt(sz, sz)}
 							}),
 							layout.Stacked(func(gtx layout.Context) layout.Dimensions {
-								return layoutIcon(gtx, IconCheck, 14, color.NRGBA{R: 255, G: 255, B: 255, A: 255})
+								return layoutIcon(gtx, IconCheck, 14, ColorWhite)
 							}),
 						)
 					}

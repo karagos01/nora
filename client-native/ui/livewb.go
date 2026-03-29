@@ -508,7 +508,7 @@ func (lw *LiveWhiteboardView) layoutToolbarRow2(gtx layout.Context) layout.Dimen
 			ed := material.Editor(lw.app.Theme.Material, &lw.hexEditor, "#hex")
 			ed.Color = ColorText
 			ed.HintColor = ColorTextDim
-			ed.TextSize = unit.Sp(12)
+			ed.TextSize = lw.app.Theme.Sp(12)
 			return layout.Background{}.Layout(gtx,
 				func(gtx layout.Context) layout.Dimensions {
 					bounds := image.Rect(0, 0, gtx.Constraints.Max.X, gtx.Constraints.Min.Y)
@@ -959,7 +959,7 @@ func (lw *LiveWhiteboardView) renderTextStroke(gtx layout.Context, s api.Whitebo
 	}
 
 	stack := op.Offset(image.Pt(int(pos.X), int(pos.Y))).Push(gtx.Ops)
-	lbl := material.Label(lw.app.Theme.Material, unit.Sp(fontSize), td.Text)
+	lbl := material.Label(lw.app.Theme.Material, lw.app.Theme.Sp(fontSize), td.Text)
 	lbl.Color = clr
 	lbl.Layout(gtx)
 	stack.Pop()

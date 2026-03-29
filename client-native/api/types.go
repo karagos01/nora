@@ -616,6 +616,19 @@ type PendingApproval struct {
 	Status            string    `json:"status"`
 }
 
+// Report
+type Report struct {
+	ID              string    `json:"id"`
+	ReporterID      string    `json:"reporter_id"`
+	TargetUserID    string    `json:"target_user_id"`
+	TargetMessageID string    `json:"target_message_id,omitempty"`
+	Reason          string    `json:"reason"`
+	Status          string    `json:"status"`
+	CreatedAt       time.Time `json:"created_at"`
+	ReporterName    string    `json:"reporter_name,omitempty"`
+	TargetName      string    `json:"target_name,omitempty"`
+}
+
 // LFG (Looking For Group)
 type LFGListing struct {
 	ID           string    `json:"id"`

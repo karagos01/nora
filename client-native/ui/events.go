@@ -262,6 +262,59 @@ func (a *App) processWSEvent(conn *ServerConnection, ev api.WSEvent) {
 				return
 			}
 
+			// Check for cross-server relay DM
+			var relayPayload struct {
+				IsRelay        bool   `json:"is_relay"`
+				SenderPubKey   string `json:"sender_public_key"`
+			}
+			json.Unmarshal(ev.Payload, &relayPayload)
+			if relayPayload.IsRelay && relayPayload.SenderPubKey != "" {
+				peerKey := relayPayload.SenderPubKey
+				secretKey := a.SecretKey
+				if a.IsBlockedKey(peerKey) {
+					return
+				}
+				// Only accept relay DMs from contacts who are friends
+				if a.Contacts != nil {
+					ct := a.Contacts.GetContact(peerKey)
+					if ct == nil || !ct.IsFriend {
+						return // ignore relay DM from non-friend
+					}
+				}
+				if secretKey != "" {
+					decrypted, err := crypto.DecryptDM(secretKey, peerKey, msg.EncryptedContent)
+					if err == nil {
+						msg.DecryptedContent = decrypted
+						PlayDMSound()
+						// Resolve name
+						peerName := a.ResolveNameByKey(peerKey)
+						if a.NotifMgr != nil {
+							a.NotifMgr.NotifyMessage(conn.Name, "DM from "+peerName, truncateMsg(decrypted, 100), peerName)
+						}
+						// Save to local history
+						if a.DMHistory != nil {
+							a.DMHistory.AddMessage(store.StoredDMMessage{
+								ID:             msg.ID,
+								ConversationID: msg.ConversationID,
+								SenderID:       msg.SenderID,
+								Content:        decrypted,
+								ReplyToID:      msg.ReplyToID,
+								CreatedAt:      msg.CreatedAt,
+							})
+							a.DMHistory.Save()
+						}
+						// Add to active DM view if viewing this relay conversation
+						a.mu.Lock()
+						if conn.ActiveDMID == msg.ConversationID {
+							conn.DMMessages = append(conn.DMMessages, msg)
+						}
+						a.mu.Unlock()
+						a.Window.Invalidate()
+					}
+				}
+				return
+			}
+
 			a.mu.Lock()
 			// Find conversation and peer key
 			var peerKey string
@@ -1987,45 +2040,8 @@ func (a *App) processWSEvent(conn *ServerConnection, ev api.WSEvent) {
 			}
 		}
 
-	case "whiteboard.stroke":
-		var stroke api.WhiteboardStroke
-		if json.Unmarshal(ev.Payload, &stroke) == nil {
-			a.mu.Lock()
-			if a.WhiteboardView != nil && a.WhiteboardView.Visible && stroke.WhiteboardID == a.WhiteboardView.BoardID {
-				a.WhiteboardView.strokes = append(a.WhiteboardView.strokes, stroke)
-			}
-			a.mu.Unlock()
-		}
-
-	case "whiteboard.undo":
-		var payload struct {
-			WhiteboardID string `json:"whiteboard_id"`
-			StrokeID     string `json:"stroke_id"`
-		}
-		if json.Unmarshal(ev.Payload, &payload) == nil {
-			a.mu.Lock()
-			if a.WhiteboardView != nil && a.WhiteboardView.Visible && payload.WhiteboardID == a.WhiteboardView.BoardID {
-				for i, s := range a.WhiteboardView.strokes {
-					if s.ID == payload.StrokeID {
-						a.WhiteboardView.strokes = append(a.WhiteboardView.strokes[:i], a.WhiteboardView.strokes[i+1:]...)
-						break
-					}
-				}
-			}
-			a.mu.Unlock()
-		}
-
-	case "whiteboard.clear":
-		var payload struct {
-			WhiteboardID string `json:"whiteboard_id"`
-		}
-		if json.Unmarshal(ev.Payload, &payload) == nil {
-			a.mu.Lock()
-			if a.WhiteboardView != nil && a.WhiteboardView.Visible && payload.WhiteboardID == a.WhiteboardView.BoardID {
-				a.WhiteboardView.strokes = nil
-			}
-			a.mu.Unlock()
-		}
+	// whiteboard.stroke, whiteboard.undo, whiteboard.clear — persistent whiteboard removed
+	// Live whiteboard (voice) events handled via livewb.* events
 
 	case "swarm.piece_request":
 		if conn.Swarm != nil {

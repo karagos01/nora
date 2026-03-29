@@ -523,6 +523,21 @@ type PendingApproval struct {
 	InviterUsername    string     `json:"inviter_username,omitempty"`
 }
 
+// Report — user/message report
+type Report struct {
+	ID              string     `json:"id"`
+	ReporterID      string     `json:"reporter_id"`
+	TargetUserID    string     `json:"target_user_id"`
+	TargetMessageID string     `json:"target_message_id,omitempty"`
+	Reason          string     `json:"reason"`
+	Status          string     `json:"status"` // pending, reviewed, dismissed
+	ReviewedBy      string     `json:"reviewed_by,omitempty"`
+	ReviewedAt      *time.Time `json:"reviewed_at,omitempty"`
+	CreatedAt       time.Time  `json:"created_at"`
+	ReporterName    string     `json:"reporter_name,omitempty"`
+	TargetName      string     `json:"target_name,omitempty"`
+}
+
 // LFG (Looking For Group) listing
 type LFGListing struct {
 	ID           string           `json:"id"`

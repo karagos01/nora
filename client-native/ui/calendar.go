@@ -368,7 +368,7 @@ func (v *CalendarView) layoutDayCell(gtx layout.Context, th *material.Theme, day
 				lbl.Font.Weight = font.Bold
 			}
 			if isSelected || isToday {
-				lbl.Color = color.NRGBA{R: 255, G: 255, B: 255, A: 255}
+				lbl.Color = ColorWhite
 			} else {
 				lbl.Color = ColorText
 			}
@@ -447,7 +447,7 @@ func (v *CalendarView) layoutUpcoming(gtx layout.Context, th *material.Theme) la
 								timeStr := formatEventTime(e, now)
 								lbl := material.Caption(th, timeStr)
 								lbl.Color = ColorTextDim
-								lbl.TextSize = unit.Sp(10)
+								lbl.TextSize = v.app.Theme.Sp(10)
 								return lbl.Layout(gtx)
 							}),
 						)
@@ -497,7 +497,7 @@ func (v *CalendarView) LayoutMain(gtx layout.Context) layout.Dimensions {
 					}),
 					layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 						return v.newBtn.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-							return layoutPillBtn(gtx, th, "+ New Event", ColorAccent, color.NRGBA{R: 255, G: 255, B: 255, A: 255})
+							return layoutPillBtn(gtx, th, "+ New Event", ColorAccent, ColorWhite)
 						})
 					}),
 				)

@@ -134,7 +134,7 @@ func (d *InputDialog) Layout(gtx layout.Context) layout.Dimensions {
 										}),
 										layout.Rigid(layout.Spacer{Width: unit.Dp(8)}.Layout),
 										layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-											return layoutDialogBtn(gtx, d.app.Theme, &d.confirmBtn, d.confirmTx, ColorAccent, color.NRGBA{R: 255, G: 255, B: 255, A: 255})
+											return layoutDialogBtn(gtx, d.app.Theme, &d.confirmBtn, d.confirmTx, ColorAccent, ColorWhite)
 										}),
 									)
 								}),

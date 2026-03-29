@@ -141,7 +141,7 @@ func (tv *TunnelView) Layout(gtx layout.Context) layout.Dimensions {
 					layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 						btn := material.Button(a.Theme.Material, &tv.createBtn, "New Tunnel")
 						btn.Background = ColorAccent
-						btn.Color = color.NRGBA{R: 255, G: 255, B: 255, A: 255}
+						btn.Color = ColorWhite
 						return btn.Layout(gtx)
 					}),
 				)
@@ -344,7 +344,7 @@ func (tv *TunnelView) layoutTunnelCard(gtx layout.Context, t api.Tunnel, idx int
 										}
 										btn := material.Button(a.Theme.Material, &tv.acceptBtns[idx], "Accept")
 										btn.Background = color.NRGBA{R: 80, G: 200, B: 120, A: 255}
-										btn.Color = color.NRGBA{R: 255, G: 255, B: 255, A: 255}
+										btn.Color = ColorWhite
 										return btn.Layout(gtx)
 									}),
 									// Close/Decline button
@@ -356,7 +356,7 @@ func (tv *TunnelView) layoutTunnelCard(gtx layout.Context, t api.Tunnel, idx int
 										return layout.Inset{Left: unit.Dp(8)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
 											btn := material.Button(a.Theme.Material, &tv.closeBtns[idx], label)
 											btn.Background = ColorDanger
-											btn.Color = color.NRGBA{R: 255, G: 255, B: 255, A: 255}
+											btn.Color = ColorWhite
 											return btn.Layout(gtx)
 										})
 									}),

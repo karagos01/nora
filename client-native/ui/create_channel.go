@@ -459,7 +459,7 @@ func (d *CreateDialog) layoutContent(gtx layout.Context, cats []api.ChannelCateg
 				}),
 				layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 					return layout.Inset{Left: unit.Dp(8)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-						return layoutDialogBtn(gtx, d.app.Theme, &d.createBtn, "Create", ColorAccent, color.NRGBA{R: 255, G: 255, B: 255, A: 255})
+						return layoutDialogBtn(gtx, d.app.Theme, &d.createBtn, "Create", ColorAccent, ColorWhite)
 					})
 				}),
 			)
@@ -529,7 +529,7 @@ func (d *CreateDialog) layoutToggleBtn(gtx layout.Context, btn *widget.Clickable
 		fg := ColorTextDim
 		if active {
 			bg = ColorAccent
-			fg = color.NRGBA{R: 255, G: 255, B: 255, A: 255}
+			fg = ColorWhite
 		} else if btn.Hovered() {
 			bg = ColorHover
 		}
@@ -588,7 +588,7 @@ func (d *CreateDialog) layoutTypeBtn(gtx layout.Context, btn *widget.Clickable, 
 		}
 		fg := ColorTextDim
 		if active {
-			fg = color.NRGBA{R: 255, G: 255, B: 255, A: 255}
+			fg = ColorWhite
 		}
 		return layout.Background{}.Layout(gtx,
 			func(gtx layout.Context) layout.Dimensions {

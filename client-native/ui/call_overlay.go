@@ -149,7 +149,7 @@ func (o *CallOverlay) Layout(gtx layout.Context, call *voice.CallManager) layout
 									initial = string([]rune(peerName)[0])
 								}
 								lbl := material.H5(o.app.Theme.Material, initial)
-								lbl.Color = color.NRGBA{R: 255, G: 255, B: 255, A: 255}
+								lbl.Color = ColorWhite
 								return lbl.Layout(gtx)
 							}),
 						)
@@ -289,7 +289,7 @@ func (o *CallOverlay) layoutRoundBtn(gtx layout.Context, btn *widget.Clickable, 
 			func(gtx layout.Context) layout.Dimensions {
 				return layout.Inset{Top: unit.Dp(10), Bottom: unit.Dp(10), Left: unit.Dp(20), Right: unit.Dp(20)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
 					lbl := material.Body2(o.app.Theme.Material, text)
-					lbl.Color = color.NRGBA{R: 255, G: 255, B: 255, A: 255}
+					lbl.Color = ColorWhite
 					return lbl.Layout(gtx)
 				})
 			},

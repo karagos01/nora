@@ -481,7 +481,7 @@ func (vc *VoiceControls) layoutOptionRow(gtx layout.Context, label string, items
 								return layout.Center.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
 									lbl := material.Caption(vc.app.Theme.Material, item.label)
 									lbl.Color = fg
-									lbl.TextSize = unit.Sp(10)
+									lbl.TextSize = vc.app.Theme.Sp(10)
 									return lbl.Layout(gtx)
 								})
 							})
@@ -699,7 +699,7 @@ func (vc *VoiceControls) layoutControlIconLabelBtn(gtx layout.Context, btn *widg
 							layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 								lbl := material.Caption(vc.app.Theme.Material, label)
 								lbl.Color = fg
-								lbl.TextSize = unit.Sp(9)
+								lbl.TextSize = vc.app.Theme.Sp(9)
 								return lbl.Layout(gtx)
 							}),
 						)

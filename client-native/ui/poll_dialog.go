@@ -215,7 +215,7 @@ func (pb *PollBuilder) Layout(gtx layout.Context) layout.Dimensions {
 						return layout.Flex{}.Layout(gtx,
 							layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 								return pb.createBtn.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-									return layoutPillBtn(gtx, th, "Create", ColorAccent, color.NRGBA{R: 255, G: 255, B: 255, A: 255})
+									return layoutPillBtn(gtx, th, "Create", ColorAccent, ColorWhite)
 								})
 							}),
 							layout.Rigid(layout.Spacer{Width: unit.Dp(8)}.Layout),
@@ -259,7 +259,7 @@ func (pb *PollBuilder) layoutTypeBtn(gtx layout.Context, th *material.Theme, idx
 	txtCol := ColorTextDim
 	if pb.pollType == idx {
 		bg = ColorAccent
-		txtCol = color.NRGBA{R: 255, G: 255, B: 255, A: 255}
+		txtCol = ColorWhite
 	}
 	return pb.typeBtns[idx].Layout(gtx, func(gtx layout.Context) layout.Dimensions {
 		return layoutPillBtn(gtx, th, pollTypeLabels[idx], bg, txtCol)
@@ -340,7 +340,7 @@ func (pb *PollBuilder) layoutExpiresBtn(gtx layout.Context, th *material.Theme, 
 	txtCol := ColorTextDim
 	if active {
 		bg = ColorAccent
-		txtCol = color.NRGBA{R: 255, G: 255, B: 255, A: 255}
+		txtCol = ColorWhite
 	}
 	return pb.expiresBtns[idx].Layout(gtx, func(gtx layout.Context) layout.Dimensions {
 		return layoutPillBtn(gtx, th, expiresLabels[idx], bg, txtCol)

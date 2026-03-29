@@ -223,10 +223,14 @@ func (d *Deps) ApplyLFGListing(w http.ResponseWriter, r *http.Request) {
 	var req struct {
 		Message string `json:"message"`
 	}
-	util.DecodeJSON(r, &req)
+	if err := util.DecodeJSON(r, &req); err != nil {
+		util.Error(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
 	req.Message = strings.TrimSpace(req.Message)
 	if len(req.Message) > 500 {
-		req.Message = req.Message[:500]
+		util.Error(w, http.StatusBadRequest, "message too long (max 500 characters)")
+		return
 	}
 
 	if err := d.LFGQ.Apply(listingID, user.ID, req.Message); err != nil {

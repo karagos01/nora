@@ -582,14 +582,28 @@ func (a *App) setupServerConnection(serverURL, name, description, iconURL, stunU
 	a.Servers = append(a.Servers, conn)
 	a.mu.Unlock()
 
-	// Auto-remount previously mounted shares
+	// Auto-remount previously mounted shares (only if share still exists on server)
 	if mounted := store.GetMountedShares(a.PublicKey, serverURL); len(mounted) > 0 {
+		// Build set of valid share IDs from server
+		validShares := make(map[string]bool)
+		for _, s := range conn.MyShares {
+			validShares[s.ID] = true
+		}
+		for _, s := range conn.SharedWithMe {
+			validShares[s.ID] = true
+		}
+
 		go func() {
 			for shareID, msi := range mounted {
 				if conn.Mounts == nil {
 					continue
 				}
-				// Determine current canWrite from server data (not from saved state)
+				// Skip shares that no longer exist on server
+				if !validShares[shareID] {
+					log.Printf("Auto-remount %s: share no longer exists, skipping", msi.DisplayName)
+					continue
+				}
+				// Determine current canWrite from server data
 				canWrite := msi.CanWrite
 				for _, s := range conn.SharedWithMe {
 					if s.ID == shareID {
@@ -730,6 +744,13 @@ func (a *App) loadServerData(conn *ServerConnection) {
 					break
 				}
 			}
+		}
+	}
+
+	// Load unread counts from server (offline message tracking)
+	if unreads, err := conn.Client.GetUnreadCounts(); err == nil {
+		for chID, count := range unreads {
+			conn.UnreadCount[chID] = count
 		}
 	}
 
@@ -959,10 +980,7 @@ func (a *App) SelectChannel(id, name string) {
 		return
 	}
 
-	// Close whiteboard overlay when switching channels
-	if a.WhiteboardView != nil && a.WhiteboardView.Visible {
-		a.WhiteboardView.Visible = false
-	}
+	// (persistent whiteboard removed)
 
 	a.mu.Lock()
 	conn.ActiveChannelID = id
@@ -1002,6 +1020,12 @@ func (a *App) SelectChannel(id, name string) {
 		conn.Messages = msgs
 		a.mu.Unlock()
 		a.Window.Invalidate()
+
+		// Mark channel as read on server (last message ID)
+		if len(msgs) > 0 {
+			lastMsg := msgs[len(msgs)-1]
+			conn.Client.MarkChannelRead(id, lastMsg.ID)
+		}
 	}()
 
 	// Load pinSeenID from saved state
@@ -1074,16 +1098,22 @@ func (a *App) SelectDM(convID string) {
 	conn.TypingDMUsers = make(map[string]time.Time)
 
 	var peerKey string
-	for _, conv := range conn.DMConversations {
-		if conv.ID == convID {
-			for _, p := range conv.Participants {
-				if p.UserID != conn.UserID {
-					peerKey = p.PublicKey
-					conn.ActiveDMPeerKey = peerKey
-					break
+	// Handle relay conversations (convID = "relay:PUBKEY")
+	if len(convID) > 6 && convID[:6] == "relay:" {
+		peerKey = convID[6:]
+		conn.ActiveDMPeerKey = peerKey
+	} else {
+		for _, conv := range conn.DMConversations {
+			if conv.ID == convID {
+				for _, p := range conv.Participants {
+					if p.UserID != conn.UserID {
+						peerKey = p.PublicKey
+						conn.ActiveDMPeerKey = peerKey
+						break
+					}
 				}
+				break
 			}
-			break
 		}
 	}
 	secretKey := a.SecretKey
@@ -1104,6 +1134,12 @@ func (a *App) SelectDM(convID string) {
 		conn.DMMessages = pending
 	}
 	a.mu.Unlock()
+
+	// Skip server fetch for relay conversations (no server-side storage)
+	if len(convID) > 6 && convID[:6] == "relay:" {
+		a.Window.Invalidate()
+		return
+	}
 
 	// Fetch pending messages from server, decrypt, merge with history
 	go func() {
@@ -1171,11 +1207,18 @@ func (a *App) handlePendingDeepLink() {
 	switch dl.Type {
 	case "contact":
 		if dl.Key != "" && a.Contacts != nil {
+			key := dl.Key
+			serverURL := ""
+			// Parse key#server format
+			if idx := strings.Index(key, "#"); idx > 0 {
+				serverURL = key[idx+1:]
+				key = key[:idx]
+			}
 			name := dl.Name
 			if name == "" {
-				name = ShortenKey(dl.Key)
+				name = ShortenKey(key)
 			}
-			a.Contacts.EnsureContact(dl.Key, name, "", "")
+			a.Contacts.EnsureContact(key, name, serverURL, "")
 			log.Printf("Deep link: added contact %s (%s)", name, ShortenKey(dl.Key))
 		}
 	case "invite":

@@ -461,9 +461,108 @@ func (c *Client) SendFriendRequest(userID string) error {
 	return c.doJSON("POST", "/api/friends/requests", body, nil)
 }
 
+// MarkChannelRead marks a channel as read up to the given message ID.
+type UserProfile struct {
+	User            *User         `json:"user"`
+	MessageCount    int           `json:"message_count"`
+	UploadCount     int           `json:"upload_count"`
+	UploadSizeMB    float64       `json:"upload_size_mb"`
+	JoinedVia       string        `json:"joined_via,omitempty"`
+	InvitedBy       string        `json:"invited_by,omitempty"`
+	InvitedByName   string        `json:"invited_by_name,omitempty"`
+	ChannelStats    []ChannelStat `json:"channel_stats,omitempty"`
+	ReportsReceived int           `json:"reports_received"`
+	ReportsFiled    int           `json:"reports_filed"`
+	RecentReports   []Report      `json:"recent_reports,omitempty"`
+}
+
+type ChannelStat struct {
+	ChannelID    string `json:"channel_id"`
+	ChannelName  string `json:"channel_name"`
+	MessageCount int    `json:"message_count"`
+}
+
+// Reports
+
+func (c *Client) ReportUser(targetUserID, targetMessageID, reason string) error {
+	body := map[string]string{
+		"target_user_id":    targetUserID,
+		"target_message_id": targetMessageID,
+		"reason":            reason,
+	}
+	return c.doJSON("POST", "/api/reports", body, nil)
+}
+
+func (c *Client) GetReports() ([]Report, error) {
+	var reports []Report
+	err := c.doJSON("GET", "/api/reports", nil, &reports)
+	return reports, err
+}
+
+func (c *Client) ReviewReport(reportID, status string) error {
+	body := map[string]string{"status": status}
+	return c.doJSON("POST", fmt.Sprintf("/api/reports/%s/review", reportID), body, nil)
+}
+
+func (c *Client) GetUserProfile(userID string) (*UserProfile, error) {
+	var profile UserProfile
+	err := c.doJSON("GET", fmt.Sprintf("/api/users/%s/profile", userID), nil, &profile)
+	return &profile, err
+}
+
+func (c *Client) MarkChannelRead(channelID, messageID string) error {
+	body := map[string]string{"message_id": messageID}
+	return c.doJSON("POST", fmt.Sprintf("/api/channels/%s/read", channelID), body, nil)
+}
+
+// GetUnreadCounts returns unread message counts for all channels.
+func (c *Client) GetUnreadCounts() (map[string]int, error) {
+	var counts []struct {
+		ChannelID   string `json:"channel_id"`
+		UnreadCount int    `json:"unread_count"`
+	}
+	if err := c.doJSON("GET", "/api/unread", nil, &counts); err != nil {
+		return nil, err
+	}
+	result := make(map[string]int)
+	for _, c := range counts {
+		if c.UnreadCount > 0 {
+			result[c.ChannelID] = c.UnreadCount
+		}
+	}
+	return result, nil
+}
+
 func (c *Client) SendFriendRequestByKey(publicKey string) error {
 	body := map[string]string{"public_key": publicKey}
 	return c.doJSON("POST", "/api/friends/requests", body, nil)
+}
+
+// RelayDM sends an encrypted DM via the public relay endpoint to a remote server.
+func RelayDM(serverURL, toPubKey, fromPubKey, signature, encrypted, replyToID string) error {
+	body := map[string]string{
+		"type":              "dm",
+		"to_public_key":     toPubKey,
+		"from_public_key":   fromPubKey,
+		"signature":         signature,
+		"encrypted_content": encrypted,
+		"reply_to_id":       replyToID,
+	}
+	bodyData, err := json.Marshal(body)
+	if err != nil {
+		return err
+	}
+	resp, err := http.Post(serverURL+"/api/relay", "application/json", bytes.NewReader(bodyData))
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		var errResp struct{ Error string `json:"error"` }
+		json.NewDecoder(resp.Body).Decode(&errResp)
+		return fmt.Errorf("relay DM: %s", errResp.Error)
+	}
+	return nil
 }
 
 // RelayCallEvent sends a call signaling event to a remote server via the public relay endpoint.

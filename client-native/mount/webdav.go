@@ -11,6 +11,7 @@ import (
 	"os"
 	"path"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	"golang.org/x/net/webdav"
@@ -52,22 +53,55 @@ func startWebDAVListener(vfs VirtualFS, addr string) (*WebDAVServer, error) {
 	port := listener.Addr().(*net.TCPAddr).Port
 
 	davFS := &webdavFS{vfs: vfs}
-	handler := &webdav.Handler{
+	davHandler := &webdav.Handler{
 		FileSystem: davFS,
 		LockSystem: webdav.NewMemLS(),
 		Logger: func(r *http.Request, err error) {
 			if err != nil {
 				log.Printf("WebDAV %s %s: %v", r.Method, r.URL.Path, err)
 			} else {
-				log.Printf("WebDAV %s %s OK", r.Method, r.URL.Path)
+				log.Printf("WebDAV %s %s OK (depth=%s)", r.Method, r.URL.Path, r.Header.Get("Depth"))
 			}
 		},
 	}
 
+	// Track active connections
+	var activeConns int64
+
+	// Wrap handler for Windows WebClient compatibility
+	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		n := atomic.AddInt64(&activeConns, 1)
+		defer atomic.AddInt64(&activeConns, -1)
+		if n > 5 {
+			log.Printf("WebDAV: HIGH CONN COUNT: %d active (request: %s %s)", n, r.Method, r.URL.Path)
+		}
+		w.Header().Set("Keep-Alive", "timeout=600")
+		w.Header().Set("Connection", "keep-alive")
+		// Windows Explorer requires DAV header on OPTIONS response
+		if r.Method == "OPTIONS" {
+			w.Header().Set("DAV", "1, 2")
+			w.Header().Set("MS-Author-Via", "DAV")
+			w.Header().Set("Allow", "OPTIONS, GET, HEAD, PUT, DELETE, MKCOL, COPY, MOVE, PROPFIND, PROPPATCH, LOCK, UNLOCK")
+			w.WriteHeader(200)
+			return
+		}
+		// Force PROPFIND depth to 1 max — prevents Windows from recursively
+		// scanning all subdirectories which creates too many connections
+		if r.Method == "PROPFIND" {
+			depth := r.Header.Get("Depth")
+			if depth == "infinity" || depth == "" {
+				r.Header.Set("Depth", "1")
+			}
+		}
+		davHandler.ServeHTTP(w, r)
+	})
+
 	srv := &http.Server{
-		Handler:      handler,
-		ReadTimeout:  30 * time.Second,
-		WriteTimeout: 300 * time.Second,
+		Handler:           handler,
+		ReadTimeout:       0,
+		WriteTimeout:      0,
+		IdleTimeout:       600 * time.Second, // 10 minutes idle
+		ReadHeaderTimeout: 30 * time.Second,
 	}
 
 	ws := &WebDAVServer{
@@ -323,13 +357,19 @@ func (f *webdavFile) ensureOpen() error {
 		return nil
 	}
 	log.Printf("WebDAV: ensureOpen %s (size=%d)", f.path, f.entry.Size)
-	rc, _, err := f.vfs.GetFile(f.path)
-	if err != nil {
-		log.Printf("WebDAV: ensureOpen %s FAILED: %v", f.path, err)
-		return err
+	// Retry up to 2 times with backoff
+	var lastErr error
+	for attempt := 0; attempt < 2; attempt++ {
+		rc, _, err := f.vfs.GetFile(f.path)
+		if err == nil {
+			f.rc = rc
+			return nil
+		}
+		lastErr = err
+		log.Printf("WebDAV: ensureOpen %s attempt %d FAILED: %v", f.path, attempt+1, err)
+		time.Sleep(time.Duration(attempt+1) * time.Second)
 	}
-	f.rc = rc
-	return nil
+	return lastErr
 }
 
 // --- webdavWriteFile ---

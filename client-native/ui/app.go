@@ -98,8 +98,7 @@ type App struct {
 	LinkFileDlg    *LinkFileDialog
 	LobbyJoinDlg   *LobbyJoinDialog
 	ThreadView     *ThreadView
-	WhiteboardView *WhiteboardView
-	LiveWB         *LiveWhiteboardView
+	LiveWB *LiveWhiteboardView
 	KanbanView     *KanbanView
 	KanbanDlg      *CardEditDialog
 	CalendarView   *CalendarView
@@ -217,7 +216,6 @@ func NewApp(w *app.Window, version string) *App {
 	a.LinkFileDlg = NewLinkFileDialog(a)
 	a.LobbyJoinDlg = NewLobbyJoinDialog(a)
 	a.ThreadView = NewThreadView(a)
-	a.WhiteboardView = NewWhiteboardView(a)
 	a.LiveWB = NewLiveWhiteboardView(a)
 	a.KanbanView = NewKanbanView(a)
 	a.KanbanDlg = NewCardEditDialog(a)
@@ -542,14 +540,6 @@ func (a *App) layoutMain(gtx layout.Context) layout.Dimensions {
 					if a.LiveWB != nil && a.LiveWB.Visible {
 						return a.LiveWB.Layout(gtx)
 					}
-					// Whiteboard overlay
-					if a.WhiteboardView != nil && a.WhiteboardView.Visible {
-						if a.Mode != ViewChannels {
-							a.WhiteboardView.Visible = false
-						} else {
-							return a.WhiteboardView.Layout(gtx)
-						}
-					}
 					// VideoPlayer / StreamViewer overlay — must be in Stack with CallOverlay
 					// so call buttons (mute/hangup) remain visible
 					hasFullOverlay := (a.VideoPlayer != nil && a.VideoPlayer.Visible) || (a.StreamViewer != nil && a.StreamViewer.Visible)
@@ -749,7 +739,7 @@ func (a *App) layoutUserPanelIconBtn(gtx layout.Context, btn *widget.Clickable, 
 		return layout.Center.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
 			fg := ColorTextDim
 			if active {
-				fg = color.NRGBA{R: 255, G: 255, B: 255, A: 255}
+				fg = ColorWhite
 			}
 			return layoutIcon(gtx, icon, 18, fg)
 		})
@@ -974,8 +964,7 @@ func (a *App) handleEscapeKey() {
 		a.StreamViewer.Visible = false
 	case a.LiveWB != nil && a.LiveWB.Visible:
 		a.LiveWB.Close()
-	case a.WhiteboardView != nil && a.WhiteboardView.Visible:
-		a.WhiteboardView.Visible = false
+	// (persistent whiteboard removed — voice whiteboard handles own close)
 	case a.ThreadView != nil && a.ThreadView.Visible:
 		a.ThreadView.Visible = false
 	case a.Mode == ViewSettings || a.Mode == ViewUserSettings:

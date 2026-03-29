@@ -55,6 +55,9 @@ type ShareFS struct {
 	// Deduplication of concurrent downloads — path → done channel
 	pendingMu        sync.Mutex
 	pendingDownloads map[string]chan struct{}
+
+	// Limit concurrent downloads to prevent connection overload
+	downloadSem chan struct{}
 }
 
 // FSName returns the share name for logs and UI.
@@ -86,6 +89,7 @@ func NewShareFS(shareID, shareName, serverAddr string, client *api.Client, cache
 		deleteFn:         deleteFn,
 		pendingDirs:      make(map[string]bool),
 		pendingDownloads: make(map[string]chan struct{}),
+		downloadSem:      make(chan struct{}, 1), // serialize downloads (P2P can't handle concurrency)
 	}
 }
 
@@ -294,6 +298,10 @@ func (fs *ShareFS) GetFile(path string) (io.ReadSeekCloser, int64, error) {
 	if err := fs.cache.EnsureDir(fs.serverAddr, fs.shareID, parent); err != nil {
 		return nil, 0, fmt.Errorf("create cache dir: %w", err)
 	}
+
+	// Acquire download semaphore (limit concurrent downloads)
+	fs.downloadSem <- struct{}{}
+	defer func() { <-fs.downloadSem }()
 
 	log.Printf("ShareFS: downloading %s (expected %d bytes) to %s", path, entry.FileSize, savePath)
 	if err := fs.downloadFn(fs.shareID, entry.ID, savePath); err != nil {

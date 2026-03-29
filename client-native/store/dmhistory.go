@@ -155,6 +155,30 @@ func (h *DMHistory) DeleteConversation(convID string) {
 }
 
 // GetMessages returns all stored messages for a conversation, sorted by time.
+// RelayConvInfo describes a relay conversation found in local history.
+type RelayConvInfo struct {
+	PeerPublicKey string
+	UnreadCount   int
+}
+
+// GetRelayConversations returns relay conversations from local history.
+func (h *DMHistory) GetRelayConversations() []RelayConvInfo {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+
+	var result []RelayConvInfo
+	for convID := range h.messages {
+		if len(convID) > 6 && convID[:6] == "relay:" {
+			peerKey := convID[6:]
+			result = append(result, RelayConvInfo{
+				PeerPublicKey: peerKey,
+				UnreadCount:   0, // history count, not unread — sidebar shows conversation exists
+			})
+		}
+	}
+	return result
+}
+
 func (h *DMHistory) GetMessages(convID string) []StoredDMMessage {
 	h.mu.Lock()
 	defer h.mu.Unlock()

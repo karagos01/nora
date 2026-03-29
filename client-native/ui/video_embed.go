@@ -184,7 +184,7 @@ func (v *MessageView) layoutVideoPreview(gtx layout.Context, msgIdx, attIdx int,
 				p.LineTo(f32.Pt(cx+triR, cy))
 				p.LineTo(f32.Pt(cx-triR*0.6, cy+triR))
 				p.Close()
-				paint.FillShape(gtx.Ops, color.NRGBA{R: 255, G: 255, B: 255, A: 255},
+				paint.FillShape(gtx.Ops, ColorWhite,
 					clip.Outline{Path: p.End()}.Op())
 
 				return layout.Dimensions{Size: image.Pt(imgW, imgH)}
@@ -414,7 +414,7 @@ func layoutYouTubeEmbed(gtx layout.Context, app *App, msgID, ytURL string) layou
 					iconSize := unit.Dp(32)
 					sz := gtx.Dp(iconSize)
 					iconOff := op.Offset(image.Pt(cx-sz/2+gtx.Dp(2), cy-sz/2)).Push(gtx.Ops)
-					layoutIcon(gtx, IconPlayArrow, iconSize, color.NRGBA{R: 255, G: 255, B: 255, A: 255})
+					layoutIcon(gtx, IconPlayArrow, iconSize, ColorWhite)
 					iconOff.Pop()
 
 					// "YouTube" badge top left

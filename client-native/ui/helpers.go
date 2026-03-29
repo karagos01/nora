@@ -692,7 +692,7 @@ func layoutInlineSegs(gtx layout.Context, th *Theme, segs []styledSeg, links *Ms
 				// Fallback to text
 				lbl = material.Body1(th.Material, s.text)
 				lbl.Color = ColorText
-				lbl.TextSize = unit.Sp(22)
+				lbl.TextSize = th.Sp(22)
 				if sels != nil && mySelIdx >= 0 && mySelIdx < len(*sels) {
 					lbl.State = &(*sels)[mySelIdx]
 				}
@@ -862,7 +862,7 @@ func layoutAvatar(gtx layout.Context, app *App, username, avatarURL string, size
 			} else {
 				lbl = material.Body2(app.Theme.Material, initial)
 			}
-			lbl.Color = color.NRGBA{R: 255, G: 255, B: 255, A: 255}
+			lbl.Color = ColorWhite
 			return lbl.Layout(gtx)
 		}),
 	)

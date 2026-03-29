@@ -157,7 +157,7 @@ func (v *MessageView) layoutPoll(gtx layout.Context, idx int, msg api.Message) l
 													layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
 														col := ColorText
 														if iVoted {
-															col = color.NRGBA{R: 255, G: 255, B: 255, A: 255}
+															col = ColorWhite
 														}
 														lbl := material.Body2(th, optCopy.Label)
 														lbl.Color = col

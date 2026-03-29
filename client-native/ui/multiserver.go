@@ -236,6 +236,35 @@ func (a *App) GetUnifiedDMs() []UnifiedDM {
 		result = append(result, *dm)
 	}
 
+	// Add relay conversations from local DM history
+	if a.DMHistory != nil {
+		relayConvs := a.DMHistory.GetRelayConversations()
+		for _, rc := range relayConvs {
+			if _, exists := dmMap[rc.PeerPublicKey]; exists {
+				continue // already have this peer from a server
+			}
+			peerName := rc.PeerPublicKey[:8] + "..."
+			if a.Contacts != nil {
+				ct := a.Contacts.GetContact(rc.PeerPublicKey)
+				if ct != nil {
+					if ct.CustomName != "" {
+						peerName = ct.CustomName
+					} else if ct.AutoName != "" {
+						peerName = ct.AutoName
+					}
+				}
+			}
+			result = append(result, UnifiedDM{
+				PeerPublicKey: rc.PeerPublicKey,
+				PeerName:      peerName,
+				Online:        a.IsOnlineAnywhere(rc.PeerPublicKey),
+				TotalUnread:   rc.UnreadCount,
+				BestServerIdx: -1,
+				BestConvID:    "relay:" + rc.PeerPublicKey,
+			})
+		}
+	}
+
 	// Sort: unread first, then online, then alphabetical
 	sort.Slice(result, func(i, j int) bool {
 		if (result[i].TotalUnread > 0) != (result[j].TotalUnread > 0) {

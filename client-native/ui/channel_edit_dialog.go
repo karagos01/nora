@@ -318,7 +318,7 @@ func (d *ChannelEditDialog) Layout(gtx layout.Context) layout.Dimensions {
 											}),
 											layout.Rigid(layout.Spacer{Width: unit.Dp(8)}.Layout),
 											layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-												return layoutDialogBtn(gtx, d.app.Theme, &d.confirmBtn, "Save", ColorAccent, color.NRGBA{R: 255, G: 255, B: 255, A: 255})
+												return layoutDialogBtn(gtx, d.app.Theme, &d.confirmBtn, "Save", ColorAccent, ColorWhite)
 											}),
 										)
 									}),
@@ -437,7 +437,7 @@ func (d *ChannelEditDialog) layoutOverrideRow(gtx layout.Context, idx int, ov ap
 				if idx >= len(d.permDeleteBtns) {
 					return layout.Dimensions{}
 				}
-				return layoutDialogBtn(gtx, d.app.Theme, &d.permDeleteBtns[idx], "X", color.NRGBA{R: 200, G: 60, B: 60, A: 255}, color.NRGBA{R: 255, G: 255, B: 255, A: 255})
+				return layoutDialogBtn(gtx, d.app.Theme, &d.permDeleteBtns[idx], "X", color.NRGBA{R: 200, G: 60, B: 60, A: 255}, ColorWhite)
 			}),
 		)
 	})
@@ -529,7 +529,7 @@ func (d *ChannelEditDialog) layoutAddOverrideForm(gtx layout.Context) layout.Dim
 								}),
 								layout.Rigid(layout.Spacer{Width: unit.Dp(8)}.Layout),
 								layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-									return layoutDialogBtn(gtx, d.app.Theme, &d.addSaveBtn, "Add", ColorAccent, color.NRGBA{R: 255, G: 255, B: 255, A: 255})
+									return layoutDialogBtn(gtx, d.app.Theme, &d.addSaveBtn, "Add", ColorAccent, ColorWhite)
 								}),
 							)
 						}),
@@ -637,7 +637,7 @@ func (d *ChannelEditDialog) layoutCatOption(gtx layout.Context, btn *widget.Clic
 		}
 		fg := ColorTextDim
 		if selected {
-			fg = color.NRGBA{R: 255, G: 255, B: 255, A: 255}
+			fg = ColorWhite
 		}
 		return layout.Background{}.Layout(gtx,
 			func(gtx layout.Context) layout.Dimensions {

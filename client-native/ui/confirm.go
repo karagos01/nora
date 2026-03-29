@@ -173,7 +173,7 @@ func (d *ConfirmDialog) Layout(gtx layout.Context) layout.Dimensions {
 											if btnColor == (color.NRGBA{}) {
 												btnColor = ColorDanger
 											}
-											return layoutDialogBtn(gtx, d.app.Theme, &d.confirmBtn, confirmText, btnColor, color.NRGBA{R: 255, G: 255, B: 255, A: 255})
+											return layoutDialogBtn(gtx, d.app.Theme, &d.confirmBtn, confirmText, btnColor, ColorWhite)
 											})
 										}),
 									)

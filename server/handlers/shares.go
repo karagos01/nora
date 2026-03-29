@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"encoding/hex"
+	"log"
 	"net/http"
 	"nora/auth"
 	"nora/models"
@@ -542,12 +543,13 @@ func (d *Deps) SyncShareFiles(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Limit request body (50MB max — 50k files with metadata)
-	r.Body = http.MaxBytesReader(w, r.Body, 50*1024*1024)
+	// Limit request body (100MB max — large shares)
+	r.Body = http.MaxBytesReader(w, r.Body, 100*1024*1024)
 
 	var req syncFilesRequest
 	if err := util.DecodeJSON(r, &req); err != nil {
-		util.Error(w, http.StatusBadRequest, "invalid request body")
+		log.Printf("SyncShareFiles decode error: %v (shareID=%s)", err, shareID)
+		util.Error(w, http.StatusBadRequest, "invalid request body: "+err.Error())
 		return
 	}
 

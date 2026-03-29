@@ -293,7 +293,7 @@ func (d *ZipUploadDialog) Layout(gtx layout.Context) layout.Dimensions {
 										layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 											gtx.Constraints.Min.X = half
 											gtx.Constraints.Max.X = half
-											return d.layoutEqualBtn(gtx, &d.zipBtn, "Upload as ZIP", ColorAccent, color.NRGBA{R: 255, G: 255, B: 255, A: 255})
+											return d.layoutEqualBtn(gtx, &d.zipBtn, "Upload as ZIP", ColorAccent, ColorWhite)
 										}),
 									)
 								}),
@@ -317,7 +317,7 @@ func (d *ZipUploadDialog) Layout(gtx layout.Context) layout.Dimensions {
 											layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 												gtx.Constraints.Min.X = half
 												gtx.Constraints.Max.X = half
-												return d.layoutEqualBtn(gtx, &d.p2pZipBtn, "P2P as ZIP", ColorAccent, color.NRGBA{R: 255, G: 255, B: 255, A: 255})
+												return d.layoutEqualBtn(gtx, &d.p2pZipBtn, "P2P as ZIP", ColorAccent, ColorWhite)
 											}),
 										)
 									})
@@ -549,7 +549,7 @@ func (d *ZipExtractDialog) Layout(gtx layout.Context) layout.Dimensions {
 								layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 									return layout.Flex{Axis: layout.Vertical}.Layout(gtx,
 										layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-											return d.layoutFullWidthBtn(gtx, &d.extractDeleteBtn, "Extract & delete ZIP", ColorAccent, color.NRGBA{R: 255, G: 255, B: 255, A: 255})
+											return d.layoutFullWidthBtn(gtx, &d.extractDeleteBtn, "Extract & delete ZIP", ColorAccent, ColorWhite)
 										}),
 										layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 											return layout.Inset{Top: unit.Dp(8)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {

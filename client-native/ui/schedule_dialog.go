@@ -293,7 +293,7 @@ func (sb *ScheduleBuilder) Layout(gtx layout.Context) layout.Dimensions {
 						return layout.Flex{}.Layout(gtx,
 							layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 								return sb.scheduleBtn.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-									return layoutPillBtn(gtx, th, "Schedule", ColorAccent, color.NRGBA{R: 255, G: 255, B: 255, A: 255})
+									return layoutPillBtn(gtx, th, "Schedule", ColorAccent, ColorWhite)
 								})
 							}),
 							layout.Rigid(layout.Spacer{Width: unit.Dp(8)}.Layout),
@@ -357,7 +357,7 @@ func (sb *ScheduleBuilder) layoutDayBtn(gtx layout.Context, th *material.Theme, 
 	fg := ColorTextDim
 	if sb.dayIndex == idx {
 		bg = ColorAccent
-		fg = color.NRGBA{R: 255, G: 255, B: 255, A: 255}
+		fg = ColorWhite
 	}
 	return sb.dayBtns[idx].Layout(gtx, func(gtx layout.Context) layout.Dimensions {
 		return layoutPillBtn(gtx, th, label, bg, fg)
@@ -424,7 +424,7 @@ func (sb *ScheduleBuilder) layoutScheduledItem(gtx layout.Context, th *material.
 								return layout.Dimensions{}
 							}
 							return sb.cancelBtns[idx].Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-								return layoutPillBtn(gtx, th, "Cancel", color.NRGBA{R: 180, G: 60, B: 60, A: 255}, color.NRGBA{R: 255, G: 255, B: 255, A: 255})
+								return layoutPillBtn(gtx, th, "Cancel", color.NRGBA{R: 180, G: 60, B: 60, A: 255}, ColorWhite)
 							})
 						}),
 					)

@@ -42,6 +42,7 @@ var (
 	ColorSuccess  = color.NRGBA{R: 80, G: 200, B: 120, A: 255}  // green (= ColorOnline)
 	ColorWarning  = color.NRGBA{R: 240, G: 180, B: 40, A: 255}  // yellow
 	ColorAccentDim = color.NRGBA{R: 100, G: 72, B: 160, A: 255} // darker accent
+	ColorWhite     = color.NRGBA{R: 255, G: 255, B: 255, A: 255}
 )
 
 type Theme struct {

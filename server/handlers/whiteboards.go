@@ -6,6 +6,7 @@ import (
 	"nora/models"
 	"nora/util"
 	"nora/ws"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -148,6 +149,7 @@ func (d *Deps) AddWhiteboardStroke(w http.ResponseWriter, r *http.Request) {
 		util.Error(w, http.StatusBadRequest, "path_data too large (max 50KB)")
 		return
 	}
+	req.Color = strings.ToLower(req.Color)
 	if req.Color != "" && !isValidHexColor(req.Color) {
 		util.Error(w, http.StatusBadRequest, "invalid color format")
 		return

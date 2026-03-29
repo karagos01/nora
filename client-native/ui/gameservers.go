@@ -221,7 +221,7 @@ func (v *GameServersView) LayoutSidebar(gtx layout.Context) layout.Dimensions {
 									return layout.Inset{Left: unit.Dp(6)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
 										lbl := material.Body1(v.app.Theme.Material, "Game Servers")
 										lbl.Color = ColorText
-										lbl.TextSize = unit.Sp(14)
+										lbl.TextSize = v.app.Theme.Sp(14)
 										return lbl.Layout(gtx)
 									})
 								}),
@@ -600,7 +600,7 @@ func (v *GameServersView) layoutServerCard(gtx layout.Context, gs api.GameServer
 									layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 										lbl := material.Body1(v.app.Theme.Material, gs.Name)
 										lbl.Color = ColorText
-										lbl.TextSize = unit.Sp(15)
+										lbl.TextSize = v.app.Theme.Sp(15)
 										return lbl.Layout(gtx)
 									}),
 									layout.Rigid(func(gtx layout.Context) layout.Dimensions {
@@ -647,7 +647,7 @@ func (v *GameServersView) layoutServerCard(gtx layout.Context, gs api.GameServer
 									selMac := op.Record(gtx.Ops)
 									paint.ColorOp{Color: color.NRGBA{R: 255, G: 80, B: 80, A: 60}}.Add(gtx.Ops)
 									selCall := selMac.Stop()
-									return v.errorSels[idx].Layout(gtx, v.app.Theme.Material.Shaper, font.Font{Typeface: v.app.Theme.Material.Face}, unit.Sp(11), textCall, selCall)
+									return v.errorSels[idx].Layout(gtx, v.app.Theme.Material.Shaper, font.Font{Typeface: v.app.Theme.Material.Face}, v.app.Theme.Sp(11), textCall, selCall)
 								})
 							}
 							return layout.Dimensions{}
@@ -662,7 +662,7 @@ func (v *GameServersView) layoutServerCard(gtx layout.Context, gs api.GameServer
 							info := fmt.Sprintf("CPU %s  ·  %s / %s  ·  Net %s", stats.CPUPercent, stats.MemUsage, stats.MemLimit, stats.NetIO)
 							lbl := material.Body2(v.app.Theme.Material, info)
 							lbl.Color = ColorTextDim
-							lbl.TextSize = unit.Sp(11)
+							lbl.TextSize = v.app.Theme.Sp(11)
 							return lbl.Layout(gtx)
 						})
 					}),
@@ -678,7 +678,7 @@ func (v *GameServersView) layoutServerCard(gtx layout.Context, gs api.GameServer
 							items = append(items, layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 								lbl := material.Body2(v.app.Theme.Material, memberCount)
 								lbl.Color = ColorTextDim
-								lbl.TextSize = unit.Sp(11)
+								lbl.TextSize = v.app.Theme.Sp(11)
 								return lbl.Layout(gtx)
 							}))
 							for _, m := range members {
@@ -705,7 +705,7 @@ func (v *GameServersView) layoutServerCard(gtx layout.Context, gs api.GameServer
 												return layout.Inset{Left: unit.Dp(4)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
 													lbl := material.Body2(v.app.Theme.Material, username)
 													lbl.Color = ColorText
-													lbl.TextSize = unit.Sp(11)
+													lbl.TextSize = v.app.Theme.Sp(11)
 													return lbl.Layout(gtx)
 												})
 											}),
@@ -815,7 +815,7 @@ func (v *GameServersView) layoutServerCard(gtx layout.Context, gs api.GameServer
 										return layout.Inset{Left: unit.Dp(6)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
 											lbl := material.Body2(v.app.Theme.Material, "Starting...")
 											lbl.Color = ColorAccent
-											lbl.TextSize = unit.Sp(12)
+											lbl.TextSize = v.app.Theme.Sp(12)
 											return lbl.Layout(gtx)
 										})
 									}),
@@ -835,7 +835,7 @@ func (v *GameServersView) layoutServerCard(gtx layout.Context, gs api.GameServer
 								layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 									lbl := material.Body2(v.app.Theme.Material, "RCON Command")
 									lbl.Color = ColorTextDim
-									lbl.TextSize = unit.Sp(11)
+									lbl.TextSize = v.app.Theme.Sp(11)
 									return lbl.Layout(gtx)
 								}),
 								// Input + Send
@@ -855,7 +855,7 @@ func (v *GameServersView) layoutServerCard(gtx layout.Context, gs api.GameServer
 															e := material.Editor(v.app.Theme.Material, &v.rconEditors[idx], "e.g. list, say hello")
 															e.Color = ColorText
 															e.HintColor = ColorTextDim
-															e.TextSize = unit.Sp(12)
+															e.TextSize = v.app.Theme.Sp(12)
 															e.Font.Typeface = "Go Mono"
 															return e.Layout(gtx)
 														})
@@ -892,7 +892,7 @@ func (v *GameServersView) layoutServerCard(gtx layout.Context, gs api.GameServer
 													gtx.Constraints.Max.Y = gtx.Dp(120)
 													lbl := material.Body2(v.app.Theme.Material, resp)
 													lbl.Color = ColorText
-													lbl.TextSize = unit.Sp(11)
+													lbl.TextSize = v.app.Theme.Sp(11)
 													lbl.Font.Typeface = "Go Mono"
 													return lbl.Layout(gtx)
 												})
@@ -974,7 +974,7 @@ func (v *GameServersView) layoutCreateDialog(gtx layout.Context) layout.Dimensio
 								return layout.Inset{Top: unit.Dp(12)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
 									lbl := material.Body2(v.app.Theme.Material, "Preset")
 									lbl.Color = ColorTextDim
-									lbl.TextSize = unit.Sp(12)
+									lbl.TextSize = v.app.Theme.Sp(12)
 									return lbl.Layout(gtx)
 								})
 							}),
@@ -1080,7 +1080,7 @@ func (v *GameServersView) layoutPresetBtn(gtx layout.Context, name string, selec
 			return layout.Inset{Top: unit.Dp(8), Bottom: unit.Dp(8), Left: unit.Dp(4), Right: unit.Dp(4)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
 				lbl := material.Body2(v.app.Theme.Material, name)
 				lbl.Color = textColor
-				lbl.TextSize = unit.Sp(12)
+				lbl.TextSize = v.app.Theme.Sp(12)
 				lbl.Alignment = text.Middle
 				return lbl.Layout(gtx)
 			})
@@ -1404,7 +1404,7 @@ func (v *GameServersView) layoutFileExplorer(gtx layout.Context, conn *ServerCon
 										}
 										lbl := material.Body1(v.app.Theme.Material, path)
 										lbl.Color = ColorText
-										lbl.TextSize = unit.Sp(14)
+										lbl.TextSize = v.app.Theme.Sp(14)
 										return lbl.Layout(gtx)
 									}),
 								)
@@ -1449,7 +1449,7 @@ func (v *GameServersView) layoutFileExplorer(gtx layout.Context, conn *ServerCon
 													return layout.Inset{Left: unit.Dp(4)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
 														lbl := material.Body2(v.app.Theme.Material, info.Path)
 														lbl.Color = ColorTextDim
-														lbl.TextSize = unit.Sp(11)
+														lbl.TextSize = v.app.Theme.Sp(11)
 														return lbl.Layout(gtx)
 													})
 												}),
@@ -1513,7 +1513,7 @@ func (v *GameServersView) layoutFileExplorer(gtx layout.Context, conn *ServerCon
 												e := material.Editor(v.app.Theme.Material, &fe.mkdirEd, "new-folder")
 												e.Color = ColorText
 												e.HintColor = ColorTextDim
-												e.TextSize = unit.Sp(13)
+												e.TextSize = v.app.Theme.Sp(13)
 												return e.Layout(gtx)
 											})
 										},
@@ -1549,7 +1549,7 @@ func (v *GameServersView) layoutFileExplorer(gtx layout.Context, conn *ServerCon
 					return layout.Inset{Top: unit.Dp(4), Left: unit.Dp(16)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
 						lbl := material.Body2(v.app.Theme.Material, fe.Error)
 						lbl.Color = ColorDanger
-						lbl.TextSize = unit.Sp(12)
+						lbl.TextSize = v.app.Theme.Sp(12)
 						return lbl.Layout(gtx)
 					})
 				}),
@@ -1707,7 +1707,7 @@ func (v *GameServersView) layoutTextEditor(gtx layout.Context, conn *ServerConne
 										}
 										lbl := material.Body1(v.app.Theme.Material, title)
 										lbl.Color = ColorText
-										lbl.TextSize = unit.Sp(14)
+										lbl.TextSize = v.app.Theme.Sp(14)
 										return lbl.Layout(gtx)
 									}),
 									layout.Rigid(func(gtx layout.Context) layout.Dimensions {
@@ -1766,7 +1766,7 @@ func (v *GameServersView) layoutTextEditor(gtx layout.Context, conn *ServerConne
 					return layout.Inset{Left: unit.Dp(16), Bottom: unit.Dp(4)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
 						lbl := material.Body2(v.app.Theme.Material, te.Error)
 						lbl.Color = ColorDanger
-						lbl.TextSize = unit.Sp(12)
+						lbl.TextSize = v.app.Theme.Sp(12)
 						return lbl.Layout(gtx)
 					})
 				}),
@@ -1805,7 +1805,7 @@ func (v *GameServersView) layoutField(gtx layout.Context, label string, ed *widg
 		layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 			lbl := material.Body2(v.app.Theme.Material, label)
 			lbl.Color = ColorTextDim
-			lbl.TextSize = unit.Sp(12)
+			lbl.TextSize = v.app.Theme.Sp(12)
 			return lbl.Layout(gtx)
 		}),
 		layout.Rigid(func(gtx layout.Context) layout.Dimensions {
@@ -1822,7 +1822,7 @@ func (v *GameServersView) layoutField(gtx layout.Context, label string, ed *widg
 							e := material.Editor(v.app.Theme.Material, ed, hint)
 							e.Color = ColorText
 							e.HintColor = ColorTextDim
-							e.TextSize = unit.Sp(14)
+							e.TextSize = v.app.Theme.Sp(14)
 							return e.Layout(gtx)
 						})
 					},
@@ -1931,7 +1931,7 @@ func (v *GameServersView) layoutTextEditorEdit(gtx layout.Context) layout.Dimens
 				lblGtx.Constraints.Min.Y = 0
 				measMacro := op.Record(gtx.Ops)
 				widestNum := fmt.Sprintf("%*d", numDigits, numLines)
-				measLbl := material.Label(v.app.Theme.Material, unit.Sp(13), widestNum)
+				measLbl := material.Label(v.app.Theme.Material, v.app.Theme.Sp(13), widestNum)
 				measLbl.Font.Typeface = "Go Mono"
 				measDims := layout.Inset{Left: unit.Dp(8), Right: unit.Dp(12)}.Layout(lblGtx, measLbl.Layout)
 				measMacro.Stop()
@@ -1949,7 +1949,7 @@ func (v *GameServersView) layoutTextEditorEdit(gtx layout.Context) layout.Dimens
 					}
 					lineStack := op.Offset(image.Pt(0, yOff)).Push(gtx.Ops)
 					num := fmt.Sprintf("%*d", numDigits, i+1)
-					lbl := material.Label(v.app.Theme.Material, unit.Sp(13), num)
+					lbl := material.Label(v.app.Theme.Material, v.app.Theme.Sp(13), num)
 					lbl.Color = ColorTextDim
 					lbl.Font.Typeface = "Go Mono"
 					layout.Inset{Left: unit.Dp(8), Right: unit.Dp(12)}.Layout(lblGtx, lbl.Layout)
@@ -1970,7 +1970,7 @@ func (v *GameServersView) layoutTextEditorEdit(gtx layout.Context) layout.Dimens
 
 						// Measure line height
 						measMacro := op.Record(gtx.Ops)
-						tmpLbl := material.Label(v.app.Theme.Material, unit.Sp(13), "X")
+						tmpLbl := material.Label(v.app.Theme.Material, v.app.Theme.Sp(13), "X")
 						tmpLbl.Font.Typeface = "Go Mono"
 						measDims := tmpLbl.Layout(lblGtx)
 						measMacro.Stop()
@@ -1992,7 +1992,7 @@ func (v *GameServersView) layoutTextEditorEdit(gtx layout.Context) layout.Dimens
 							xOff := 0
 							for _, tok := range toks {
 								tokStack := op.Offset(image.Pt(xOff, 0)).Push(gtx.Ops)
-								lbl := material.Label(v.app.Theme.Material, unit.Sp(13), tok.text)
+								lbl := material.Label(v.app.Theme.Material, v.app.Theme.Sp(13), tok.text)
 								lbl.Color = tok.color
 								lbl.Font.Typeface = "Go Mono"
 								dims := lbl.Layout(lblGtx)
@@ -2015,7 +2015,7 @@ func (v *GameServersView) layoutTextEditorEdit(gtx layout.Context) layout.Dimens
 						e.Color = ColorText
 					}
 					e.HintColor = ColorTextDim
-					e.TextSize = unit.Sp(13)
+					e.TextSize = v.app.Theme.Sp(13)
 					e.Font.Typeface = "Go Mono"
 					return e.Layout(gtx)
 				})
@@ -2044,7 +2044,7 @@ func (v *GameServersView) layoutTextEditorView(gtx layout.Context) layout.Dimens
 						lbl := material.Body2(v.app.Theme.Material, num)
 						lbl.Color = ColorTextDim
 						lbl.Font.Typeface = "Go Mono"
-						lbl.TextSize = unit.Sp(13)
+						lbl.TextSize = v.app.Theme.Sp(13)
 						return layout.Inset{Right: unit.Dp(12)}.Layout(gtx, lbl.Layout)
 					}),
 					// Line tokens
@@ -2053,7 +2053,7 @@ func (v *GameServersView) layoutTextEditorView(gtx layout.Context) layout.Dimens
 						if len(toks) == 0 {
 							lbl := material.Body2(v.app.Theme.Material, " ")
 							lbl.Font.Typeface = "Go Mono"
-							lbl.TextSize = unit.Sp(13)
+							lbl.TextSize = v.app.Theme.Sp(13)
 							return lbl.Layout(gtx)
 						}
 						var items []layout.FlexChild
@@ -2063,7 +2063,7 @@ func (v *GameServersView) layoutTextEditorView(gtx layout.Context) layout.Dimens
 								lbl := material.Body2(v.app.Theme.Material, tok.text)
 								lbl.Color = tok.color
 								lbl.Font.Typeface = "Go Mono"
-								lbl.TextSize = unit.Sp(13)
+								lbl.TextSize = v.app.Theme.Sp(13)
 								return lbl.Layout(gtx)
 							}))
 						}
@@ -2088,7 +2088,7 @@ func layoutButton(gtx layout.Context, th *Theme, text string, clr color.NRGBA, h
 	dims := layout.Inset{Top: unit.Dp(6), Bottom: unit.Dp(6), Left: unit.Dp(16), Right: unit.Dp(16)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
 		lbl := material.Body2(th.Material, text)
 		lbl.Color = ColorText
-		lbl.TextSize = unit.Sp(13)
+		lbl.TextSize = th.Sp(13)
 		return lbl.Layout(gtx)
 	})
 	call := macro.Stop()
@@ -2114,7 +2114,7 @@ func layoutSmallButton(gtx layout.Context, th *Theme, text string, clr color.NRG
 	dims := layout.Inset{Top: unit.Dp(4), Bottom: unit.Dp(4), Left: unit.Dp(10), Right: unit.Dp(10)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
 		lbl := material.Body2(th.Material, text)
 		lbl.Color = clr
-		lbl.TextSize = unit.Sp(12)
+		lbl.TextSize = th.Sp(12)
 		return lbl.Layout(gtx)
 	})
 	call := macro.Stop()

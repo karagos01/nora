@@ -41,6 +41,15 @@ type UserPopup struct {
 	shareQRBtn widget.Clickable
 	copyKeyBtn widget.Clickable
 
+	// Admin profile
+	profileBtn    widget.Clickable
+	showProfile   bool
+	profile       *api.UserProfile
+	profileLoaded bool
+
+	// Report
+	reportBtn widget.Clickable
+
 	// Role assignment
 	roleBtns  []widget.Clickable
 	userRoles map[string]bool // roleID → assigned
@@ -76,6 +85,9 @@ func (p *UserPopup) Show(userID, username string) {
 	p.UserID = userID
 	p.Username = username
 	p.rolesLoaded = false
+	p.showProfile = false
+	p.profileLoaded = false
+	p.profile = nil
 	p.userRoles = nil
 	p.sharesLoaded = false
 	p.shareAccess = nil
@@ -330,8 +342,52 @@ func (p *UserPopup) Layout(gtx layout.Context) layout.Dimensions {
 	}
 	if p.copyKeyBtn.Clicked(gtx) {
 		if p.PublicKey != "" {
-			copyToClipboard(p.PublicKey)
+			// Build key#server format
+			copyStr := p.PublicKey
+			conn := p.app.Conn()
+			if conn != nil && conn.URL != "" {
+				copyStr = p.PublicKey + "#" + conn.URL
+			}
+			copyToClipboard(copyStr)
 		}
+		return layout.Dimensions{Size: gtx.Constraints.Max}
+	}
+
+	// Profile button (admin)
+	if p.profileBtn.Clicked(gtx) && showAdmin {
+		p.showProfile = !p.showProfile
+		if p.showProfile && !p.profileLoaded {
+			uid := userID
+			go func() {
+				if conn := p.app.Conn(); conn != nil {
+					prof, err := conn.Client.GetUserProfile(uid)
+					if err == nil {
+						p.profile = prof
+						p.profileLoaded = true
+						p.app.Window.Invalidate()
+					}
+				}
+			}()
+		}
+	}
+
+	// Report button
+	if p.reportBtn.Clicked(gtx) {
+		uid := userID
+		uname := p.Username
+		p.Hide()
+		p.app.InputDlg.Show("Report "+uname, "Reason (optional)", "Report", "", func(reason string) {
+			go func() {
+				if conn := p.app.Conn(); conn != nil {
+					if err := conn.Client.ReportUser(uid, "", reason); err != nil {
+						p.app.Toasts.Error("Report failed: " + err.Error())
+					} else {
+						p.app.Toasts.Info("User reported.")
+					}
+					p.app.Window.Invalidate()
+				}
+			}()
+		})
 		return layout.Dimensions{Size: gtx.Constraints.Max}
 	}
 
@@ -492,7 +548,13 @@ func (p *UserPopup) Layout(gtx layout.Context) layout.Dimensions {
 									return layout.Inset{Bottom: unit.Dp(8), Left: unit.Dp(0)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
 										return p.copyKeyBtn.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
 											shortKey := ShortenKey(p.PublicKey)
-											lbl := material.Caption(p.app.Theme.Material, shortKey+" [copy]")
+											conn := p.app.Conn()
+											label := shortKey
+											if conn != nil && conn.Name != "" {
+												label = shortKey + "#" + conn.Name
+											}
+											label += " [copy]"
+											lbl := material.Caption(p.app.Theme.Material, label)
 											lbl.Color = ColorTextDim
 											if p.copyKeyBtn.Hovered() {
 												lbl.Color = ColorAccent
@@ -554,6 +616,25 @@ func (p *UserPopup) Layout(gtx layout.Context) layout.Dimensions {
 										return layout.Dimensions{}
 									}
 									return p.layoutMenuItem(gtx, &p.shareQRBtn, "Share Contact QR")
+								}),
+
+								// Profile (admin)
+								layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+									if !showAdmin {
+										return layout.Dimensions{}
+									}
+									label := "View Profile"
+									if p.showProfile {
+										label = "Hide Profile"
+									}
+									return p.layoutMenuItem(gtx, &p.profileBtn, label)
+								}),
+								// Profile details
+								layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+									if !p.showProfile || p.profile == nil {
+										return layout.Dimensions{}
+									}
+									return p.layoutProfile(gtx)
 								}),
 
 								// Roles (owner only)
@@ -634,6 +715,10 @@ func (p *UserPopup) Layout(gtx layout.Context) layout.Dimensions {
 									return p.layoutSharesSection(gtx, myShares)
 								}),
 
+								// Report
+								layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+									return p.layoutMenuItemDanger(gtx, &p.reportBtn, "Report")
+								}),
 								// Block
 								layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 									return p.layoutMenuItemDanger(gtx, &p.blockBtn, "Block")
@@ -778,19 +863,87 @@ func (p *UserPopup) openDMFor(userID string) {
 	}
 	p.app.mu.RUnlock()
 
+	// Try to create DM on active server
 	log.Printf("openDMFor: creating new DM with user %s", userID)
 	conv, err := conn.Client.CreateDMConversation(userID)
 	if err != nil {
-		log.Printf("CreateDMConversation error: %v", err)
+		log.Printf("CreateDMConversation error: %v — trying cross-server", err)
+
+		// User might be on a different server — find them and try that server
+		p.app.mu.RLock()
+		var peerPubKey string
+		for _, s := range p.app.Servers {
+			for _, u := range s.Users {
+				if u.ID == userID {
+					peerPubKey = u.PublicKey
+					break
+				}
+			}
+			if peerPubKey != "" {
+				break
+			}
+		}
+		p.app.mu.RUnlock()
+
+		if peerPubKey != "" {
+			// Try FindBestDMServer
+			p.app.mu.RLock()
+			srvIdx, convID, found := p.app.FindBestDMServer(peerPubKey)
+			p.app.mu.RUnlock()
+
+			if found && convID != "" {
+				p.app.mu.Lock()
+				p.app.ActiveServer = srvIdx
+				p.app.mu.Unlock()
+				p.app.SelectDM(convID)
+				p.app.Window.Invalidate()
+				return
+			}
+
+			if found && srvIdx >= 0 {
+				// Server found but no conv — create on that server
+				p.app.mu.RLock()
+				targetConn := p.app.Servers[srvIdx]
+				var targetUserID string
+				for _, u := range targetConn.Users {
+					if u.PublicKey == peerPubKey {
+						targetUserID = u.ID
+						break
+					}
+				}
+				p.app.mu.RUnlock()
+
+				if targetUserID != "" {
+					conv2, err := targetConn.Client.CreateDMConversation(targetUserID)
+					if err == nil {
+						p.app.mu.Lock()
+						p.app.ActiveServer = srvIdx
+						targetConn.DMConversations = append(targetConn.DMConversations, *conv2)
+						p.app.mu.Unlock()
+						p.app.SelectDM(conv2.ID)
+						p.app.Window.Invalidate()
+						return
+					}
+				}
+			}
+
+			// Fallback: open relay conversation
+			relayConvID := "relay:" + peerPubKey
+			p.app.mu.Lock()
+			conn.ActiveDMID = relayConvID
+			conn.ActiveDMPeerKey = peerPubKey
+			p.app.Mode = ViewDM
+			p.app.mu.Unlock()
+			p.app.Window.Invalidate()
+			return
+		}
 		return
 	}
-	log.Printf("openDMFor: created conv %s", conv.ID)
 
 	// Reload conversations from server to get full participant data (including PublicKey)
 	convs, err := conn.Client.GetDMConversations()
 	if err != nil {
 		log.Printf("GetDMConversations error: %v", err)
-		// Fallback: use the conversation we just created
 		p.app.mu.Lock()
 		conn.DMConversations = append(conn.DMConversations, *conv)
 		p.app.mu.Unlock()
@@ -881,6 +1034,134 @@ func (p *UserPopup) blockUserFor(userID string) {
 	if err := conn.Client.BlockUser(userID); err != nil {
 		log.Printf("BlockUser error: %v", err)
 	}
+}
+
+func (p *UserPopup) layoutProfile(gtx layout.Context) layout.Dimensions {
+	prof := p.profile
+	th := p.app.Theme
+
+	var items []layout.FlexChild
+
+	// Header
+	items = append(items, layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+		lbl := material.Caption(th.Material, "USER PROFILE")
+		lbl.Color = ColorAccent
+		return lbl.Layout(gtx)
+	}))
+
+	// Stats
+	statsText := fmt.Sprintf("Messages: %d  |  Uploads: %d (%.1f MB)", prof.MessageCount, prof.UploadCount, prof.UploadSizeMB)
+	items = append(items, layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+		return layout.Inset{Top: unit.Dp(4)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+			lbl := material.Caption(th.Material, statsText)
+			lbl.Color = ColorText
+			return lbl.Layout(gtx)
+		})
+	}))
+
+	// Invite chain
+	if prof.InvitedByName != "" {
+		text := "Invited by: " + prof.InvitedByName
+		if prof.JoinedVia != "" {
+			text += " (code: " + prof.JoinedVia + ")"
+		}
+		items = append(items, layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+			return layout.Inset{Top: unit.Dp(2)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+				lbl := material.Caption(th.Material, text)
+				lbl.Color = ColorTextDim
+				return lbl.Layout(gtx)
+			})
+		}))
+	}
+
+	// Join date
+	if prof.User != nil && !prof.User.CreatedAt.IsZero() {
+		text := "Joined: " + prof.User.CreatedAt.Local().Format("2006-01-02 15:04")
+		items = append(items, layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+			return layout.Inset{Top: unit.Dp(2)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+				lbl := material.Caption(th.Material, text)
+				lbl.Color = ColorTextDim
+				return lbl.Layout(gtx)
+			})
+		}))
+	}
+
+	// Channel stats (top channels)
+	if len(prof.ChannelStats) > 0 {
+		items = append(items, layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+			return layout.Inset{Top: unit.Dp(6)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+				lbl := material.Caption(th.Material, "TOP CHANNELS")
+				lbl.Color = ColorAccent
+				return lbl.Layout(gtx)
+			})
+		}))
+		max := len(prof.ChannelStats)
+		if max > 10 {
+			max = 10
+		}
+		for i := 0; i < max; i++ {
+			cs := prof.ChannelStats[i]
+			items = append(items, layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+				return layout.Inset{Top: unit.Dp(1), Left: unit.Dp(8)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+					lbl := material.Caption(th.Material, fmt.Sprintf("#%s — %d msgs", cs.ChannelName, cs.MessageCount))
+					lbl.Color = ColorTextDim
+					return lbl.Layout(gtx)
+				})
+			}))
+		}
+	}
+
+	// Reports
+	if prof.ReportsReceived > 0 || prof.ReportsFiled > 0 {
+		items = append(items, layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+			return layout.Inset{Top: unit.Dp(6)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+				lbl := material.Caption(th.Material, "REPORTS")
+				lbl.Color = ColorDanger
+				return lbl.Layout(gtx)
+			})
+		}))
+		text := fmt.Sprintf("Received: %d  |  Filed: %d", prof.ReportsReceived, prof.ReportsFiled)
+		items = append(items, layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+			return layout.Inset{Top: unit.Dp(2)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+				lbl := material.Caption(th.Material, text)
+				clr := ColorTextDim
+				if prof.ReportsReceived >= 3 {
+					clr = ColorDanger
+				}
+				lbl.Color = clr
+				return lbl.Layout(gtx)
+			})
+		}))
+		// Recent reports
+		for _, r := range prof.RecentReports {
+			report := r
+			items = append(items, layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+				return layout.Inset{Top: unit.Dp(2), Left: unit.Dp(8)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+					status := report.Status
+					reason := report.Reason
+					if reason == "" {
+						reason = "(no reason)"
+					}
+					text := fmt.Sprintf("[%s] by %s: %s", status, report.ReporterName, reason)
+					lbl := material.Caption(th.Material, text)
+					lbl.Color = ColorTextDim
+					lbl.MaxLines = 2
+					return lbl.Layout(gtx)
+				})
+			}))
+		}
+	}
+
+	// Bottom padding
+	items = append(items, layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+		return layout.Inset{Bottom: unit.Dp(4)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+			return layout.Dimensions{}
+		})
+	}))
+
+	return layout.Inset{Left: unit.Dp(8), Right: unit.Dp(8), Top: unit.Dp(4)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+		return layout.Flex{Axis: layout.Vertical}.Layout(gtx, items...)
+	})
 }
 
 func (p *UserPopup) layoutSharesSection(gtx layout.Context, shares []api.SharedDirectory) layout.Dimensions {
@@ -979,10 +1260,41 @@ func (p *UserPopup) layoutServerNames(gtx layout.Context) layout.Dimensions {
 				if srv == "" {
 					srv = sn.ServerURL
 				}
-				lbl := material.Caption(p.app.Theme.Material, name+" on "+srv)
-				lbl.Color = ColorTextDim
-				lbl.MaxLines = 1
-				return lbl.Layout(gtx)
+				// Check online status on this server
+				online := false
+				p.app.mu.RLock()
+				for _, s := range p.app.Servers {
+					if s.URL == sn.ServerURL {
+						for _, u := range s.Users {
+							if u.PublicKey == sn.PublicKey {
+								online = s.OnlineUsers[u.ID]
+								break
+							}
+						}
+						break
+					}
+				}
+				p.app.mu.RUnlock()
+
+				return layout.Flex{Alignment: layout.Middle}.Layout(gtx,
+					layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+						sz := gtx.Dp(6)
+						clr := ColorOffline
+						if online {
+							clr = ColorOnline
+						}
+						paint.FillShape(gtx.Ops, clr, clip.Ellipse{Max: image.Pt(sz, sz)}.Op(gtx.Ops))
+						return layout.Dimensions{Size: image.Pt(sz, sz)}
+					}),
+					layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+						return layout.Inset{Left: unit.Dp(4)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+							lbl := material.Caption(p.app.Theme.Material, name+" on "+srv)
+							lbl.Color = ColorTextDim
+							lbl.MaxLines = 1
+							return lbl.Layout(gtx)
+						})
+					}),
+				)
 			})
 		}))
 	}

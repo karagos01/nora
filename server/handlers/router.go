@@ -88,7 +88,10 @@ type Deps struct {
 	AutoMod *moderation.AutoMod
 
 	// LFG (Looking For Group)
-	LFGQ *queries.LFGQueries
+	LFGQ      *queries.LFGQueries
+	ReadState *queries.ReadStateQueries
+	ProfileQ  *queries.ProfileQueries
+	Reports   *queries.ReportQueries
 
 	// VPN Tunnels
 	Tunnels *queries.TunnelQueries
@@ -153,6 +156,12 @@ func NewRouter(d *Deps) http.Handler {
 
 	// Users
 	protected.HandleFunc("GET /api/users", d.ListUsers)
+	protected.HandleFunc("GET /api/users/{id}/profile", d.GetUserProfile)
+
+	// Reports
+	protected.HandleFunc("POST /api/reports", d.CreateReport)
+	protected.HandleFunc("GET /api/reports", d.ListReports)
+	protected.HandleFunc("POST /api/reports/{id}/review", d.ReviewReport)
 	protected.HandleFunc("GET /api/users/{id}", d.GetUser)
 	protected.HandleFunc("PATCH /api/users/me", d.UpdateMe)
 	protected.HandleFunc("POST /api/users/me/avatar", d.UploadAvatar)
@@ -161,6 +170,10 @@ func NewRouter(d *Deps) http.Handler {
 	// Channels
 	protected.HandleFunc("GET /api/channels", d.ListChannels)
 	protected.HandleFunc("POST /api/channels", d.CreateChannel)
+
+	// Channel read state
+	protected.HandleFunc("POST /api/channels/{id}/read", d.MarkChannelRead)
+	protected.HandleFunc("GET /api/unread", d.GetUnreadCounts)
 	protected.HandleFunc("POST /api/channels/reorder", d.ReorderChannels)
 	protected.HandleFunc("GET /api/channels/{id}", d.GetChannel)
 	protected.HandleFunc("PATCH /api/channels/{id}", d.UpdateChannel)

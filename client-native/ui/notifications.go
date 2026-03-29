@@ -625,7 +625,7 @@ func (nc *NotificationCenter) layoutBadge(gtx layout.Context, count int) layout.
 			func(gtx layout.Context) layout.Dimensions {
 				return layout.Inset{Top: unit.Dp(2), Bottom: unit.Dp(2), Left: unit.Dp(6), Right: unit.Dp(6)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
 					lbl := material.Caption(nc.app.Theme.Material, text)
-					lbl.Color = color.NRGBA{R: 255, G: 255, B: 255, A: 255}
+					lbl.Color = ColorWhite
 					return lbl.Layout(gtx)
 				})
 			},

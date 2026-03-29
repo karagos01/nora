@@ -152,7 +152,7 @@ func (u *UpdateBar) layoutAvailable(gtx layout.Context) layout.Dimensions {
 		layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
 			text := fmt.Sprintf("Update available (build %s)", u.newVersion)
 			lbl := material.Body2(u.app.Theme.Material, text)
-			lbl.Color = color.NRGBA{R: 255, G: 255, B: 255, A: 255}
+			lbl.Color = ColorWhite
 			return lbl.Layout(gtx)
 		}),
 		layout.Rigid(func(gtx layout.Context) layout.Dimensions {
@@ -180,7 +180,7 @@ func (u *UpdateBar) layoutDownloading(gtx layout.Context) layout.Dimensions {
 				layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 					text := fmt.Sprintf("Downloading update (build %s)... %d%%", u.newVersion, pct)
 					lbl := material.Body2(u.app.Theme.Material, text)
-					lbl.Color = color.NRGBA{R: 255, G: 255, B: 255, A: 255}
+					lbl.Color = ColorWhite
 					return lbl.Layout(gtx)
 				}),
 				// Progress bar
@@ -199,7 +199,7 @@ func (u *UpdateBar) layoutReady(gtx layout.Context) layout.Dimensions {
 	return layout.Flex{Alignment: layout.Middle, Spacing: layout.SpaceBetween}.Layout(gtx,
 		layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
 			lbl := material.Body2(u.app.Theme.Material, "Update ready! Restart to apply.")
-			lbl.Color = color.NRGBA{R: 255, G: 255, B: 255, A: 255}
+			lbl.Color = ColorWhite
 			return lbl.Layout(gtx)
 		}),
 		layout.Rigid(func(gtx layout.Context) layout.Dimensions {
@@ -216,7 +216,7 @@ func (u *UpdateBar) layoutError(gtx layout.Context) layout.Dimensions {
 		layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
 			text := "Update failed: " + u.errMsg
 			lbl := material.Body2(u.app.Theme.Material, text)
-			lbl.Color = color.NRGBA{R: 255, G: 255, B: 255, A: 255}
+			lbl.Color = ColorWhite
 			return lbl.Layout(gtx)
 		}),
 		layout.Rigid(func(gtx layout.Context) layout.Dimensions {
@@ -280,7 +280,7 @@ func (u *UpdateBar) layoutButton(gtx layout.Context, btn *widget.Clickable, text
 				return btn.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
 					return layout.UniformInset(unit.Dp(6)).Layout(gtx, func(gtx layout.Context) layout.Dimensions {
 						lbl := material.Caption(u.app.Theme.Material, text)
-						lbl.Color = color.NRGBA{R: 255, G: 255, B: 255, A: 255}
+						lbl.Color = ColorWhite
 						return lbl.Layout(gtx)
 					})
 				})
@@ -296,7 +296,7 @@ func (u *UpdateBar) layoutDismiss(gtx layout.Context) layout.Dimensions {
 			return layout.UniformInset(unit.Dp(6)).Layout(gtx, func(gtx layout.Context) layout.Dimensions {
 				c := color.NRGBA{R: 200, G: 200, B: 200, A: 200}
 				if u.dismissBtn.Hovered() {
-					c = color.NRGBA{R: 255, G: 255, B: 255, A: 255}
+					c = ColorWhite
 				}
 				lbl := material.Caption(u.app.Theme.Material, "Dismiss")
 				lbl.Color = c

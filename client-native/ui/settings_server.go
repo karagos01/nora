@@ -3,7 +3,6 @@ package ui
 import (
 	"fmt"
 	"image"
-	"image/color"
 	"log"
 	"path/filepath"
 	"strconv"
@@ -418,7 +417,7 @@ func (v *SettingsView) layoutEmojisSection(gtx layout.Context, conn *ServerConne
 
 func (v *SettingsView) layoutBansSection(gtx layout.Context) layout.Dimensions {
 	// Sub-tab clicks
-	tabNames := []string{"Bans", "Device Bans", "Invite Chain", "Quarantine", "Approvals"}
+	tabNames := []string{"Bans", "Device Bans", "Invite Chain", "Quarantine", "Approvals", "Reports"}
 	for i := range v.bansSubBtns {
 		if v.bansSubBtns[i].Clicked(gtx) {
 			v.bansSubTab = i
@@ -432,6 +431,8 @@ func (v *SettingsView) layoutBansSection(gtx layout.Context) layout.Dimensions {
 				v.quarantineLoaded = false
 			case 4:
 				v.approvalsLoaded = false
+			case 5:
+				v.reportsLoaded = false
 			}
 		}
 	}
@@ -456,7 +457,7 @@ func (v *SettingsView) layoutBansSection(gtx layout.Context) layout.Dimensions {
 							fg := ColorTextDim
 							if selected {
 								bg = ColorAccent
-								fg = color.NRGBA{R: 255, G: 255, B: 255, A: 255}
+								fg = ColorWhite
 							}
 							return v.bansSubBtns[idx].Layout(gtx, func(gtx layout.Context) layout.Dimensions {
 								return layout.Background{}.Layout(gtx,
@@ -495,6 +496,8 @@ func (v *SettingsView) layoutBansSection(gtx layout.Context) layout.Dimensions {
 		items = append(items, v.layoutQuarantineList(gtx)...)
 	case 4:
 		items = append(items, v.layoutApprovalsList(gtx)...)
+	case 5:
+		items = append(items, v.layoutReportsList(gtx)...)
 	}
 
 	return layout.Flex{Axis: layout.Vertical}.Layout(gtx, items...)
@@ -565,6 +568,23 @@ func (v *SettingsView) lazyLoadBansSubdata() {
 				if len(v.approveUserBtns) < len(approvals) {
 					v.approveUserBtns = make([]widget.Clickable, len(approvals)+5)
 					v.rejectUserBtns = make([]widget.Clickable, len(approvals)+5)
+				}
+				v.app.Window.Invalidate()
+			}()
+		}
+	case 5:
+		if !v.reportsLoaded {
+			v.reportsLoaded = true
+			go func() {
+				reports, err := c.Client.GetReports()
+				if err != nil {
+					log.Printf("GetReports: %v", err)
+					return
+				}
+				v.pendingReports = reports
+				if len(v.reviewBtns) < len(reports) {
+					v.reviewBtns = make([]widget.Clickable, len(reports)+5)
+					v.dismissBtns = make([]widget.Clickable, len(reports)+5)
 				}
 				v.app.Window.Invalidate()
 			}()
@@ -1748,13 +1768,13 @@ func (v *SettingsView) layoutBackupSection(gtx layout.Context) layout.Dimensions
 			return layout.Flex{}.Layout(gtx,
 				layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 					return v.backupBtn.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-						return layoutPillBtn(gtx, th, "Create Backup", ColorAccent, color.NRGBA{R: 255, G: 255, B: 255, A: 255})
+						return layoutPillBtn(gtx, th, "Create Backup", ColorAccent, ColorWhite)
 					})
 				}),
 				layout.Rigid(layout.Spacer{Width: unit.Dp(8)}.Layout),
 				layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 					return v.restoreBtn.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-						return layoutPillBtn(gtx, th, "Restore Backup", ColorDanger, color.NRGBA{R: 255, G: 255, B: 255, A: 255})
+						return layoutPillBtn(gtx, th, "Restore Backup", ColorDanger, ColorWhite)
 					})
 				}),
 			)
@@ -1779,4 +1799,124 @@ func (v *SettingsView) layoutBackupSection(gtx layout.Context) layout.Dimensions
 			return layout.Dimensions{}
 		}),
 	)
+}
+
+func (v *SettingsView) layoutReportsList(gtx layout.Context) []layout.FlexChild {
+	var items []layout.FlexChild
+
+	// Handle review/dismiss clicks
+	for i, r := range v.pendingReports {
+		if i < len(v.reviewBtns) && v.reviewBtns[i].Clicked(gtx) {
+			rid := r.ID
+			go func() {
+				if conn := v.app.Conn(); conn != nil {
+					conn.Client.ReviewReport(rid, "reviewed")
+					v.reportsLoaded = false
+					v.app.Window.Invalidate()
+				}
+			}()
+		}
+		if i < len(v.dismissBtns) && v.dismissBtns[i].Clicked(gtx) {
+			rid := r.ID
+			go func() {
+				if conn := v.app.Conn(); conn != nil {
+					conn.Client.ReviewReport(rid, "dismissed")
+					v.reportsLoaded = false
+					v.app.Window.Invalidate()
+				}
+			}()
+		}
+	}
+
+	if len(v.pendingReports) == 0 {
+		items = append(items, layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+			return layout.Inset{Top: unit.Dp(16), Left: unit.Dp(16)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+				lbl := material.Body2(v.app.Theme.Material, "No pending reports")
+				lbl.Color = ColorTextDim
+				return lbl.Layout(gtx)
+			})
+		}))
+		return items
+	}
+
+	for i, r := range v.pendingReports {
+		idx := i
+		report := r
+		items = append(items, layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+			return layout.Inset{Top: unit.Dp(8), Left: unit.Dp(16), Right: unit.Dp(16)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+				return layout.Stack{}.Layout(gtx,
+					layout.Expanded(func(gtx layout.Context) layout.Dimensions {
+						sz := gtx.Constraints.Min
+						rr := gtx.Dp(6)
+						paint.FillShape(gtx.Ops, ColorCard, clip.RRect{
+							Rect: image.Rect(0, 0, sz.X, sz.Y),
+							NE: rr, NW: rr, SE: rr, SW: rr,
+						}.Op(gtx.Ops))
+						return layout.Dimensions{Size: sz}
+					}),
+					layout.Stacked(func(gtx layout.Context) layout.Dimensions {
+						return layout.Inset{Top: unit.Dp(8), Bottom: unit.Dp(8), Left: unit.Dp(12), Right: unit.Dp(12)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+							return layout.Flex{Axis: layout.Vertical}.Layout(gtx,
+								// Reporter → Target
+								layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+									text := report.ReporterName + " reported " + report.TargetName
+									lbl := material.Body2(v.app.Theme.Material, text)
+									lbl.Color = ColorText
+									return lbl.Layout(gtx)
+								}),
+								// Reason
+								layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+									if report.Reason == "" {
+										return layout.Dimensions{}
+									}
+									return layout.Inset{Top: unit.Dp(2)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+										lbl := material.Caption(v.app.Theme.Material, "Reason: "+report.Reason)
+										lbl.Color = ColorTextDim
+										return lbl.Layout(gtx)
+									})
+								}),
+								// Time
+								layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+									return layout.Inset{Top: unit.Dp(2)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+										lbl := material.Caption(v.app.Theme.Material, report.CreatedAt.Local().Format("2006-01-02 15:04"))
+										lbl.Color = ColorTextDim
+										return lbl.Layout(gtx)
+									})
+								}),
+								// Buttons
+								layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+									return layout.Inset{Top: unit.Dp(6)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+										return layout.Flex{Alignment: layout.Middle}.Layout(gtx,
+											layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+												btn := material.Button(v.app.Theme.Material, &v.reviewBtns[idx], "Take Action")
+												btn.Background = ColorDanger
+												btn.Color = ColorWhite
+												btn.CornerRadius = unit.Dp(4)
+												btn.TextSize = v.app.Theme.Sp(12)
+												btn.Inset = layout.Inset{Top: unit.Dp(4), Bottom: unit.Dp(4), Left: unit.Dp(10), Right: unit.Dp(10)}
+												return btn.Layout(gtx)
+											}),
+											layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+												return layout.Inset{Left: unit.Dp(6)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+													btn := material.Button(v.app.Theme.Material, &v.dismissBtns[idx], "Dismiss")
+													btn.Background = ColorInput
+													btn.Color = ColorText
+													btn.CornerRadius = unit.Dp(4)
+													btn.TextSize = v.app.Theme.Sp(12)
+													btn.Inset = layout.Inset{Top: unit.Dp(4), Bottom: unit.Dp(4), Left: unit.Dp(10), Right: unit.Dp(10)}
+													return btn.Layout(gtx)
+												})
+											}),
+										)
+									})
+								}),
+							)
+						})
+					}),
+				)
+			})
+		}))
+	}
+
+	return items
 }

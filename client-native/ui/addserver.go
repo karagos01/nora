@@ -217,7 +217,7 @@ func (v *AddServerView) layoutConnectBtn(gtx layout.Context) layout.Dimensions {
 						text = "Connecting..."
 					}
 					lbl := material.Body2(v.app.Theme.Material, text)
-					lbl.Color = color.NRGBA{R: 255, G: 255, B: 255, A: 255}
+					lbl.Color = ColorWhite
 					return lbl.Layout(gtx)
 				})
 			})

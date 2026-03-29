@@ -212,7 +212,7 @@ func (v *SidebarView) layoutIconBtn(gtx layout.Context, btn *widget.Clickable, t
 
 		return layout.Center.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
 			lbl := material.H6(v.app.Theme.Material, text)
-			lbl.Color = color.NRGBA{R: 255, G: 255, B: 255, A: 255}
+			lbl.Color = ColorWhite
 			return lbl.Layout(gtx)
 		})
 	})
@@ -323,7 +323,7 @@ func (v *SidebarView) layoutIconBtnIcon(gtx layout.Context, btn *widget.Clickabl
 		}.Op(gtx.Ops))
 
 		return layout.Center.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-			return layoutIcon(gtx, icon, 28, color.NRGBA{R: 255, G: 255, B: 255, A: 255})
+			return layoutIcon(gtx, icon, 28, ColorWhite)
 		})
 	})
 }
@@ -371,7 +371,7 @@ func (v *SidebarView) layoutAddBtn(gtx layout.Context) layout.Dimensions {
 		}.Op(gtx.Ops))
 
 		return layout.Center.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-			return layoutIcon(gtx, IconAdd, 24, color.NRGBA{R: 255, G: 255, B: 255, A: 255})
+			return layoutIcon(gtx, IconAdd, 24, ColorWhite)
 		})
 	})
 }

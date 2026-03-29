@@ -2,7 +2,6 @@ package ui
 
 import (
 	"image"
-	"image/color"
 
 	"gioui.org/gesture"
 	"gioui.org/io/key"
@@ -293,7 +292,7 @@ func (v *LoginView) layoutButton(gtx layout.Context) layout.Dimensions {
 						text = "..."
 					}
 					lbl := material.Body1(v.app.Theme.Material, text)
-					lbl.Color = color.NRGBA{R: 255, G: 255, B: 255, A: 255}
+					lbl.Color = ColorWhite
 					lbl.Alignment = 1
 					return lbl.Layout(gtx)
 				})
