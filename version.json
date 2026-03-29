@@ -2,6 +2,6 @@
   "build": 8,
   "url_windows": "https://noraproject.eu/NORA-windows.zip",
   "url_linux": "https://noraproject.eu/nora-native",
-  "sha256_windows": "d8f9f9978e6fa6c89fd0b1c1f55059f04ca4c15b49151d53c292efe0acef0aa3",
-  "sha256_linux": "d4973504c15d23874bc132270ff1f5dfeb8ad6ee0348b91700a413ae009c1020"
+  "sha256_windows": "9b5ea935faaa512f88189bc6cf3c806ab17ba421dab71e0b6acf44d62f3e3dc6",
+  "sha256_linux": "8fdb2b34df7a63ce08aba4db5bf2e34356876eff4fa97064a6213a926e897856"
 }

@@ -1,6 +1,7 @@
 package update
 
 import (
+	"archive/zip"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
@@ -12,6 +13,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"strconv"
+	"strings"
 	"time"
 )
 
@@ -172,13 +174,21 @@ func Apply(tmpPath string) error {
 	}
 
 	if runtime.GOOS == "windows" {
+		// Windows update is a ZIP — extract NORA.exe from it
+		exePath, err := extractExeFromZip(tmpPath, filepath.Dir(exe))
+		if err != nil {
+			// Fallback: maybe it's already a raw exe (not zip)
+			exePath = tmpPath
+		} else {
+			os.Remove(tmpPath) // remove zip after extraction
+		}
+
 		oldPath := exe + ".old"
-		os.Remove(oldPath) // remove previous .old if exists
+		os.Remove(oldPath)
 		if err := os.Rename(exe, oldPath); err != nil {
 			return fmt.Errorf("rename old: %w", err)
 		}
-		if err := os.Rename(tmpPath, exe); err != nil {
-			// rollback
+		if err := os.Rename(exePath, exe); err != nil {
 			os.Rename(oldPath, exe)
 			return fmt.Errorf("rename new: %w", err)
 		}
@@ -231,4 +241,38 @@ func CheckAndPrompt(currentVersion string, onResult func(Result)) {
 	if res != nil && res.Available {
 		onResult(*res)
 	}
+}
+
+// extractExeFromZip extracts the .exe file from a ZIP archive to destDir.
+func extractExeFromZip(zipPath, destDir string) (string, error) {
+	r, err := zip.OpenReader(zipPath)
+	if err != nil {
+		return "", err
+	}
+	defer r.Close()
+
+	for _, f := range r.File {
+		if strings.HasSuffix(strings.ToLower(f.Name), ".exe") && !strings.Contains(f.Name, "/") {
+			// Found top-level .exe
+			rc, err := f.Open()
+			if err != nil {
+				return "", err
+			}
+			defer rc.Close()
+
+			outPath := filepath.Join(destDir, "nora-update-extracted.exe")
+			out, err := os.Create(outPath)
+			if err != nil {
+				return "", err
+			}
+			if _, err := io.Copy(out, rc); err != nil {
+				out.Close()
+				os.Remove(outPath)
+				return "", err
+			}
+			out.Close()
+			return outPath, nil
+		}
+	}
+	return "", fmt.Errorf("no .exe found in zip")
 }
