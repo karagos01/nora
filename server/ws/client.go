@@ -14,7 +14,7 @@ const (
 	writeWait      = 10 * time.Second
 	pongWait       = 60 * time.Second
 	pingPeriod     = 54 * time.Second
-	maxMessageSize = 131072
+	maxMessageSize = 10 * 1024 * 1024 // 10MB
 )
 
 type Client struct {
@@ -131,7 +131,9 @@ func (c *Client) handleEvent(event IncomingEvent) {
 		}
 		c.hub.mu.RUnlock()
 
-	case EventFileOffer, EventFileAccept, EventFileReject, EventFileChunk, EventFileAck, EventFileComplete, EventFileCancel, EventFileResume, EventFileIce, EventFileRequest:
+	case EventFileOffer, EventFileAccept, EventFileReject, EventFileChunk, EventFileAck, EventFileComplete, EventFileCancel, EventFileResume, EventFileIce, EventFileRequest,
+		EventBulkOffer, EventBulkAccept, EventBulkIce,
+		EventMountOffer, EventMountAccept, EventMountIce, EventMountRequest:
 		c.relayFileEvent(event)
 
 	case EventGroupMessage, EventGroupKey:

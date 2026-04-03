@@ -78,7 +78,9 @@ type ServerConnection struct {
 	// Call manager (1:1 DM hovory)
 	Call *voice.CallManager
 	// P2P file transfer manager
-	P2P *p2p.Manager
+	P2P          *p2p.Manager
+	BulkSessions  map[string]*p2p.BulkSession  // transferID → active bulk session
+	MountSessions map[string]*p2p.MountSession // shareID → persistent mount session
 
 	// LAN Party
 	LANParties []api.LANParty
@@ -371,6 +373,8 @@ func (a *App) setupServerConnection(serverURL, name, description, iconURL, stunU
 		ScreenSharers:   make(map[string]string),
 		LiveWhiteboards: make(map[string]string),
 		SharePaths:      make(map[string]string),
+		BulkSessions:    make(map[string]*p2p.BulkSession),
+		MountSessions:   make(map[string]*p2p.MountSession),
 	}
 
 	// Load persisted SharePaths from identity
@@ -493,15 +497,65 @@ func (a *App) setupServerConnection(serverURL, name, description, iconURL, stunU
 		}()
 	})
 
+	conn.P2P.SetOnSendStart(func(transferID, fileName string, fileSize int64) {
+		a.StatusBar.Set(StatusItem{
+			ID:       "upload-" + transferID,
+			Label:    "Uploading",
+			Detail:   fileName,
+			Progress: 0,
+			Icon:     IconUpload,
+		})
+		a.Window.Invalidate()
+	})
+	conn.P2P.SetOnSendDone(func(transferID string) {
+		a.StatusBar.Remove("upload-" + transferID)
+		a.Window.Invalidate()
+	})
+
 	// Initialize swarm manager
 	conn.Swarm = p2p.NewSwarmManager(conn.UserID, conn.StunURL, sendWS, invalidate)
 
 	// Initialize MountManager for shared directories
 	conn.Mounts = mount.NewMountManager(serverURL, client, func(shareID, fileID, savePath string) error {
+		// Use persistent mount session if available
+		a.mu.RLock()
+		ms := conn.MountSessions[shareID]
+		a.mu.RUnlock()
+
+		if ms != nil && ms.IsConnected() {
+			// Find file metadata for the request
+			a.mu.RLock()
+			var fileName, relPath string
+			for _, s := range conn.SharedWithMe {
+				if s.ID == shareID {
+					break
+				}
+			}
+			a.mu.RUnlock()
+
+			// We need fileName and relPath — extract from savePath via cache structure
+			// savePath = ~/.nora/cache/{server}/{shareID}/{relPath}/{fileName}
+			base := filepath.Base(savePath)
+			dir := filepath.Dir(savePath)
+			rel := ""
+			// Walk up to find the shareID component
+			parts := strings.Split(filepath.ToSlash(dir), "/")
+			for i, p := range parts {
+				if p == shareID && i+1 < len(parts) {
+					rel = strings.Join(parts[i+1:], "/")
+					break
+				}
+			}
+			fileName = base
+			relPath = rel
+
+			return ms.RequestFile(fileID, fileName, relPath, savePath)
+		}
+
+		// Fallback: individual P2P transfer
 		if conn.P2P == nil {
 			return fmt.Errorf("P2P not available")
 		}
-		// Find ownerID for this share
 		a.mu.RLock()
 		var ownerID string
 		for _, s := range conn.SharedWithMe {
@@ -515,7 +569,6 @@ func (a *App) setupServerConnection(serverURL, name, description, iconURL, stunU
 			return fmt.Errorf("owner not found for share %s", shareID)
 		}
 
-		// Call RequestTransfer API
 		resp, err := conn.Client.RequestTransfer(shareID, fileID)
 		if err != nil {
 			return fmt.Errorf("request transfer: %w", err)
@@ -525,15 +578,11 @@ func (a *App) setupServerConnection(serverURL, name, description, iconURL, stunU
 			return fmt.Errorf("no transfer_id in response")
 		}
 
-		// Wait for registration at the owner
 		time.Sleep(500 * time.Millisecond)
-
-		// Start P2P download
 		conn.P2P.RequestDownload(ownerID, transferID, savePath)
 
-		// Wait for completion (polling)
-		for i := 0; i < 600; i++ { // max 10 minutes
-			time.Sleep(time.Second)
+		for i := 0; i < 6000; i++ {
+			time.Sleep(100 * time.Millisecond)
 			if conn.P2P.IsDownloaded(transferID) {
 				return nil
 			}
@@ -603,11 +652,13 @@ func (a *App) setupServerConnection(serverURL, name, description, iconURL, stunU
 					log.Printf("Auto-remount %s: share no longer exists, skipping", msi.DisplayName)
 					continue
 				}
-				// Determine current canWrite from server data
+				// Determine current canWrite and ownerID from server data
 				canWrite := msi.CanWrite
+				var ownerID string
 				for _, s := range conn.SharedWithMe {
 					if s.ID == shareID {
 						canWrite = s.CanWrite
+						ownerID = s.OwnerID
 						break
 					}
 				}
@@ -616,6 +667,9 @@ func (a *App) setupServerConnection(serverURL, name, description, iconURL, stunU
 					log.Printf("Auto-remount %s: %v", msi.DisplayName, err)
 				} else {
 					log.Printf("Auto-remounted %s at %s (port=%d, canWrite=%v)", msi.DisplayName, info.Path, info.Port, canWrite)
+					if ownerID != "" && a.SharesView != nil {
+						a.SharesView.initMountSession(conn, shareID, ownerID)
+					}
 				}
 			}
 			// Persist to save potentially new port/letter
@@ -747,9 +801,18 @@ func (a *App) loadServerData(conn *ServerConnection) {
 		}
 	}
 
-	// Load unread counts from server (offline message tracking)
+	// Load unread counts from server (offline message tracking).
+	// Skip the channel the user is currently viewing — those messages
+	// are already visible, and overwriting would create phantom unreads.
 	if unreads, err := conn.Client.GetUnreadCounts(); err == nil {
+		viewingCh := ""
+		if a.Mode == ViewChannels {
+			viewingCh = conn.ActiveChannelID
+		}
 		for chID, count := range unreads {
+			if chID == viewingCh {
+				continue
+			}
 			conn.UnreadCount[chID] = count
 		}
 	}

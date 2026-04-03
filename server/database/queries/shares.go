@@ -2,6 +2,8 @@ package queries
 
 import (
 	"database/sql"
+	"strings"
+
 	"nora/models"
 )
 
@@ -336,6 +338,48 @@ func (q *ShareQueries) GetFile(id string) (*models.SharedFileEntry, error) {
 	}
 	f.IsDir = isDir != 0
 	return f, nil
+}
+
+// GetFiles returns multiple files by IDs, queried in batches to avoid SQLite limits.
+func (q *ShareQueries) GetFiles(ids []string) ([]*models.SharedFileEntry, error) {
+	if len(ids) == 0 {
+		return nil, nil
+	}
+	const batchSize = 500
+	var result []*models.SharedFileEntry
+	for i := 0; i < len(ids); i += batchSize {
+		end := i + batchSize
+		if end > len(ids) {
+			end = len(ids)
+		}
+		batch := ids[i:end]
+		placeholders := make([]string, len(batch))
+		args := make([]any, len(batch))
+		for j, id := range batch {
+			placeholders[j] = "?"
+			args[j] = id
+		}
+		query := `SELECT id, directory_id, relative_path, file_name, file_size, is_dir, file_hash, modified_at, cached_at
+			FROM shared_file_cache WHERE id IN (` + strings.Join(placeholders, ",") + `)`
+		rows, err := q.DB.Query(query, args...)
+		if err != nil {
+			return result, err
+		}
+		for rows.Next() {
+			f := &models.SharedFileEntry{}
+			var isDir int
+			if err := rows.Scan(&f.ID, &f.DirectoryID, &f.RelativePath, &f.FileName, &f.FileSize, &isDir, &f.FileHash, &f.ModifiedAt, &f.CachedAt); err != nil {
+				continue
+			}
+			f.IsDir = isDir != 0
+			result = append(result, f)
+		}
+		rows.Close()
+		if err := rows.Err(); err != nil {
+			return result, err
+		}
+	}
+	return result, nil
 }
 
 func (q *ShareQueries) DeleteFileEntry(directoryID, relativePath, fileName string) error {

@@ -11,6 +11,7 @@ import (
 
 	"nora-client/api"
 	"nora-client/crypto"
+	"nora-client/p2p"
 	"nora-client/store"
 )
 
@@ -42,15 +43,16 @@ func (a *App) processWSEvent(conn *ServerConnection, ev api.WSEvent) {
 			if msg.ChannelID == conn.ActiveChannelID {
 				conn.Messages = append(conn.Messages, msg)
 			}
-			if !viewing {
+			if viewing {
+				// Update server read state so reconnect doesn't bring back phantom unreads
+				go conn.Client.MarkChannelRead(msg.ChannelID, msg.ID)
+			} else if msg.UserID != conn.UserID {
 				conn.UnreadCount[msg.ChannelID]++
-				if msg.UserID != conn.UserID {
-					notifyChannel = true
-					notifSender = a.ResolveNameByID(conn, msg.UserID)
-					notifChName = findChannelName(conn, msg.ChannelID)
-					notifContent = msg.Content
-					notifChID = msg.ChannelID
-				}
+				notifyChannel = true
+				notifSender = a.ResolveNameByID(conn, msg.UserID)
+				notifChName = findChannelName(conn, msg.ChannelID)
+				notifContent = msg.Content
+				notifChID = msg.ChannelID
 			}
 			// Clear typing for this user in the given channel
 			if conn.ChannelTyping[msg.ChannelID] != nil {
@@ -285,11 +287,15 @@ func (a *App) processWSEvent(conn *ServerConnection, ev api.WSEvent) {
 					decrypted, err := crypto.DecryptDM(secretKey, peerKey, msg.EncryptedContent)
 					if err == nil {
 						msg.DecryptedContent = decrypted
-						PlayDMSound()
 						// Resolve name
 						peerName := a.ResolveNameByKey(peerKey)
-						if a.NotifMgr != nil {
-							a.NotifMgr.NotifyMessage(conn.Name, "DM from "+peerName, truncateMsg(decrypted, 100), peerName)
+						// Only notify if not viewing this DM conversation
+						viewingRelay := conn.ActiveDMID == msg.ConversationID && a.Mode == ViewDM
+						if !viewingRelay && a.ShouldNotify(conn, "", "") {
+							PlayDMSound()
+							if a.NotifMgr != nil {
+								a.NotifMgr.NotifyMessage(conn.Name, "DM from "+peerName, truncateMsg(decrypted, 100), peerName)
+							}
 						}
 						// Save to local history
 						if a.DMHistory != nil {
@@ -2172,7 +2178,9 @@ func (a *App) processWSEvent(conn *ServerConnection, ev api.WSEvent) {
 				a.Window.Invalidate()
 			}
 			// Play LFG sound + desktop notification for other users' listings
-			if listing.UserID != conn.UserID {
+			// Skip if we're already viewing the channel or it's our own listing
+			viewing := listing.ChannelID == conn.ActiveChannelID && a.Mode == ViewChannels
+			if listing.UserID != conn.UserID && !viewing && a.ShouldNotify(conn, listing.ChannelID, "") {
 				PlayLFGSound()
 				if a.NotifMgr != nil {
 					creatorName := a.ResolveNameByID(conn, listing.UserID)
@@ -2219,30 +2227,34 @@ func (a *App) processWSEvent(conn *ServerConnection, ev api.WSEvent) {
 			}
 			a.Window.Invalidate()
 
-			// Count pending + find latest applicant name
-			pending := 0
-			applicantName := ""
-			for _, ap := range data.Applications {
-				if ap.Status == "pending" {
-					pending++
-					if ap.User != nil {
-						applicantName = ap.User.DisplayName
-						if applicantName == "" {
-							applicantName = ap.User.Username
+			// Only notify if not currently viewing the LFG board for this channel
+			viewing := data.ChannelID == conn.ActiveChannelID && a.Mode == ViewChannels
+			if !viewing {
+				// Count pending + find latest applicant name
+				pending := 0
+				applicantName := ""
+				for _, ap := range data.Applications {
+					if ap.Status == "pending" {
+						pending++
+						if ap.User != nil {
+							applicantName = ap.User.DisplayName
+							if applicantName == "" {
+								applicantName = ap.User.Username
+							}
 						}
 					}
 				}
-			}
-			PlayLFGSound()
-			notifMsg := fmt.Sprintf("New LFG application from %s", applicantName)
-			if pending > 1 {
-				notifMsg = fmt.Sprintf("%d pending LFG applications", pending)
-			}
-			if a.NotifMgr != nil {
-				a.NotifMgr.NotifyMessage(conn.Name, "LFG Application", notifMsg, applicantName)
-			}
-			if a.NotifCenter != nil {
-				a.NotifCenter.AddAlert(conn.Name, "LFG Application", notifMsg)
+				PlayLFGSound()
+				notifMsg := fmt.Sprintf("New LFG application from %s", applicantName)
+				if pending > 1 {
+					notifMsg = fmt.Sprintf("%d pending LFG applications", pending)
+				}
+				if a.NotifMgr != nil {
+					a.NotifMgr.NotifyMessage(conn.Name, "LFG Application", notifMsg, applicantName)
+				}
+				if a.NotifCenter != nil {
+					a.NotifCenter.AddAlert(conn.Name, "LFG Application", notifMsg)
+				}
 			}
 		}
 
@@ -2327,8 +2339,10 @@ func (a *App) processWSEvent(conn *ServerConnection, ev api.WSEvent) {
 			RequesterID  string `json:"requester_id"`
 		}
 		if json.Unmarshal(ev.Payload, &payload) == nil {
+			requesterName := a.ResolveNameByID(conn, payload.RequesterID)
 			log.Printf("Transfer request: %s wants file %s from share %s",
 				payload.RequesterID, payload.FileName, payload.DirectoryID)
+			a.Toasts.Info(fmt.Sprintf("%s is downloading %s", requesterName, payload.FileName))
 
 			// Owner auto-respond: find local path and register file for P2P
 			a.mu.RLock()
@@ -2362,6 +2376,204 @@ func (a *App) processWSEvent(conn *ServerConnection, ev api.WSEvent) {
 				}
 			} else {
 				log.Printf("Transfer request: no local path for share %s", payload.DirectoryID)
+			}
+		}
+	case "transfer.bundle":
+		var payload struct {
+			TransferID  string `json:"transfer_id"`
+			DirectoryID string `json:"directory_id"`
+			RequesterID string `json:"requester_id"`
+			Files       []p2p.BulkFileRequest `json:"files"`
+		}
+		if json.Unmarshal(ev.Payload, &payload) == nil && len(payload.Files) > 0 {
+			requesterName := a.ResolveNameByID(conn, payload.RequesterID)
+			log.Printf("Bulk request: %s wants %d files from share %s",
+				payload.RequesterID, len(payload.Files), payload.DirectoryID)
+			a.Toasts.Info(fmt.Sprintf("%s is downloading %d files", requesterName, len(payload.Files)))
+
+			a.mu.RLock()
+			localRoot, ok := conn.SharePaths[payload.DirectoryID]
+			a.mu.RUnlock()
+
+			if ok && localRoot != "" {
+				sendWS := func(eventType string, payload any) error {
+					return conn.WS.SendJSON(eventType, payload)
+				}
+				bs := p2p.NewBulkSender(conn.StunURL, sendWS, payload.TransferID, payload.RequesterID, localRoot, payload.Files)
+				a.mu.Lock()
+				conn.BulkSessions[payload.TransferID] = bs
+				a.mu.Unlock()
+
+				tid := payload.TransferID
+				cancelUpload := func() {
+					a.ConfirmDlg.ShowWithCancel("Cancel upload",
+						fmt.Sprintf("Cancel uploading %d files?", len(payload.Files)),
+						"Cancel upload",
+						func() {
+							bs.Close()
+							a.StatusBar.Remove("bulk-send-" + tid)
+							a.mu.Lock()
+							delete(conn.BulkSessions, tid)
+							a.mu.Unlock()
+							a.Toasts.Info("Upload cancelled")
+							a.Window.Invalidate()
+						},
+						nil,
+					)
+					a.Window.Invalidate()
+				}
+				bs.OnProgress = func(doneFiles, totalFiles int, doneBytes, totalBytes int64) {
+					pct := float64(doneFiles) / float64(totalFiles)
+					a.StatusBar.Set(StatusItem{
+						ID:       "bulk-send-" + tid,
+						Label:    "Uploading",
+						Detail:   fmt.Sprintf("%d / %d files", doneFiles, totalFiles),
+						Progress: pct,
+						Icon:     IconUpload,
+						OnCancel: cancelUpload,
+					})
+					a.Window.Invalidate()
+				}
+				bs.OnDone = func() {
+					a.StatusBar.Remove("bulk-send-" + tid)
+					a.mu.Lock()
+					delete(conn.BulkSessions, tid)
+					a.mu.Unlock()
+					a.Window.Invalidate()
+				}
+				go bs.StartSend()
+			}
+		}
+
+	case "bulk.accept":
+		var payload struct {
+			TransferID string `json:"transfer_id"`
+			SDP        string `json:"sdp"`
+		}
+		if json.Unmarshal(ev.Payload, &payload) == nil {
+			a.mu.RLock()
+			bs := conn.BulkSessions[payload.TransferID]
+			a.mu.RUnlock()
+			if bs != nil {
+				bs.HandleAccept(payload.SDP)
+			}
+		}
+
+	case "bulk.offer":
+		var payload struct {
+			TransferID string `json:"transfer_id"`
+			SDP        string `json:"sdp"`
+			TotalFiles int    `json:"total_files"`
+			TotalBytes int64  `json:"total_bytes"`
+			From       string `json:"from"`
+		}
+		if json.Unmarshal(ev.Payload, &payload) == nil {
+			a.mu.RLock()
+			bs := conn.BulkSessions[payload.TransferID]
+			a.mu.RUnlock()
+			if bs != nil {
+				bs.TotalFiles = payload.TotalFiles
+				bs.TotalBytes = payload.TotalBytes
+				go bs.HandleOffer(payload.SDP)
+			}
+		}
+
+	case "bulk.ice":
+		var payload struct {
+			TransferID string  `json:"transfer_id"`
+			Candidate  string  `json:"candidate"`
+			SDPMid     *string `json:"sdp_mid"`
+			SDPMLine   *uint16 `json:"sdp_mline"`
+		}
+		if json.Unmarshal(ev.Payload, &payload) == nil {
+			a.mu.RLock()
+			bs := conn.BulkSessions[payload.TransferID]
+			a.mu.RUnlock()
+			if bs != nil {
+				bs.AddICECandidate(payload.Candidate, payload.SDPMid, payload.SDPMLine)
+			}
+		}
+	case "mount.request":
+		// Receiver asks owner to establish a mount session for a share
+		var payload struct {
+			SessionID string `json:"session_id"`
+			ShareID   string `json:"share_id"`
+			From      string `json:"from"`
+		}
+		if json.Unmarshal(ev.Payload, &payload) == nil {
+			a.mu.RLock()
+			localRoot, ok := conn.SharePaths[payload.ShareID]
+			a.mu.RUnlock()
+			if ok && localRoot != "" {
+				sendWS := func(eventType string, pl any) error {
+					return conn.WS.SendJSON(eventType, pl)
+				}
+				ms := p2p.NewMountSessionOwner(conn.StunURL, sendWS, payload.SessionID, payload.From, localRoot, payload.ShareID)
+				sid := payload.SessionID
+				ms.OnSendProgress = func(fileName string, sent, total int64) {
+					pct := float64(sent) / float64(total)
+					a.StatusBar.Set(StatusItem{
+						ID:       "mount-send-" + sid,
+						Label:    "Sending",
+						Detail:   fileName,
+						Progress: pct,
+						Icon:     IconUpload,
+					})
+					a.Window.Invalidate()
+				}
+				ms.OnSendDone = func(fileName string) {
+					a.StatusBar.Remove("mount-send-" + sid)
+					a.Window.Invalidate()
+				}
+				a.mu.Lock()
+				conn.MountSessions[payload.SessionID] = ms
+				a.mu.Unlock()
+				go ms.StartOwner()
+			}
+		}
+
+	case "mount.offer":
+		var payload struct {
+			SessionID string `json:"session_id"`
+			ShareID   string `json:"share_id"`
+			SDP       string `json:"sdp"`
+		}
+		if json.Unmarshal(ev.Payload, &payload) == nil {
+			a.mu.RLock()
+			ms := conn.MountSessions[payload.ShareID]
+			a.mu.RUnlock()
+			if ms != nil {
+				go ms.HandleOffer(payload.SDP)
+			}
+		}
+
+	case "mount.accept":
+		var payload struct {
+			SessionID string `json:"session_id"`
+			SDP       string `json:"sdp"`
+		}
+		if json.Unmarshal(ev.Payload, &payload) == nil {
+			a.mu.RLock()
+			ms := conn.MountSessions[payload.SessionID]
+			a.mu.RUnlock()
+			if ms != nil {
+				ms.HandleAccept(payload.SDP)
+			}
+		}
+
+	case "mount.ice":
+		var payload struct {
+			SessionID string `json:"session_id"`
+			Candidate string  `json:"candidate"`
+			SDPMid    *string `json:"sdp_mid"`
+			SDPMLine  *uint16 `json:"sdp_mline"`
+		}
+		if json.Unmarshal(ev.Payload, &payload) == nil {
+			a.mu.RLock()
+			ms := conn.MountSessions[payload.SessionID]
+			a.mu.RUnlock()
+			if ms != nil {
+				ms.AddICECandidate(payload.Candidate, payload.SDPMid, payload.SDPMLine)
 			}
 		}
 	}
@@ -2481,3 +2693,4 @@ func (a *App) rotateGroupKey(conn *ServerConnection, groupID string) {
 	}
 	log.Printf("Rotated group key for %s, distributed to %d members", groupID, len(members)-1)
 }
+

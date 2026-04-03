@@ -107,6 +107,7 @@ type App struct {
 	NotifMgr    *NotifManager
 	TunnelView  *TunnelView
 	LFGBoard    *LFGBoardView
+	StatusBar   *StatusBar
 
 	// Context menu (right-click)
 	ContextMenu *ContextMenu
@@ -129,8 +130,8 @@ type App struct {
 	YouTubeQuality int // preferred height (360, 480, 720), 0 = auto
 
 	// User panel (bottom of channel sidebar)
-	userSettingsBtn widget.Clickable
-	logoutBtn       widget.Clickable
+	userSettingsBtn   widget.Clickable
+	logoutBtn         widget.Clickable
 
 	// Image cache
 	Images *ImageCache
@@ -225,6 +226,7 @@ func NewApp(w *app.Window, version string) *App {
 	a.NotifMgr = NewNotifManager(a)
 	a.TunnelView = NewTunnelView(a)
 	a.LFGBoard = NewLFGBoardView(a)
+	a.StatusBar = NewStatusBar()
 	a.DroppedFiles = make(chan []string, 4)
 	a.Images = NewImageCache()
 	a.ContextMenu = NewContextMenu(a)
@@ -528,6 +530,9 @@ func (a *App) layoutMain(gtx layout.Context) layout.Dimensions {
 						}),
 						layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 							return a.VoiceCtrl.Layout(gtx)
+						}),
+						layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+							return a.layoutStatusBar(gtx)
 						}),
 						layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 							return a.layoutUserPanel(gtx)

@@ -7,6 +7,7 @@ import (
 	"image/color"
 	"log"
 	"os"
+	"path"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -184,6 +185,7 @@ func (v *SharesView) LayoutSidebar(gtx layout.Context) layout.Dimensions {
 			shareID := s.ID
 			shareName := s.DisplayName
 			canWrite := s.CanWrite
+			ownerID := s.OwnerID
 			go func() {
 				if conn.Mounts != nil {
 					info, err := conn.Mounts.Mount(shareID, shareName, canWrite)
@@ -192,6 +194,8 @@ func (v *SharesView) LayoutSidebar(gtx layout.Context) layout.Dimensions {
 					} else {
 						log.Printf("Mounted %s at %s", shareName, info.Path)
 						v.persistMountedShares(conn)
+						// Establish persistent P2P session for fast file access
+						v.initMountSession(conn, shareID, ownerID)
 					}
 					v.app.Window.Invalidate()
 				}
@@ -423,8 +427,8 @@ func (v *SharesView) LayoutMain(gtx layout.Context) layout.Dimensions {
 	// Click handlery
 	if v.parentBtn.Clicked(gtx) {
 		if v.BrowsePath != "/" {
-			v.BrowsePath = filepath.Dir(v.BrowsePath)
-			if v.BrowsePath == "." {
+			v.BrowsePath = path.Dir(v.BrowsePath)
+			if v.BrowsePath == "." || v.BrowsePath == "" {
 				v.BrowsePath = "/"
 			}
 			v.loadFiles()
@@ -604,8 +608,32 @@ func (v *SharesView) LayoutMain(gtx layout.Context) layout.Dimensions {
 	}
 
 	for i, se := range v.sortedFiles {
-		// Find the original api.SharedFileEntry by ID
-		if i < len(v.fileBtns) && v.fileBtns[i].Clicked(gtx) {
+		// Check download/swarm buttons FIRST — they sit inside fileBtns,
+		// so a click on them also triggers fileBtns[i].Clicked().
+		downloadClicked := i < len(v.downloadBtns) && v.downloadBtns[i].Clicked(gtx)
+		swarmClicked := i < len(v.swarmBtns) && v.swarmBtns[i].Clicked(gtx)
+
+		if downloadClicked {
+			if se.IsDir {
+				dirPath := v.BrowsePath
+				if dirPath == "/" {
+					dirPath = "/" + se.Name
+				} else {
+					dirPath = dirPath + "/" + se.Name
+				}
+				v.downloadDirectory(dirPath)
+			} else if origFile := v.findOrigFileByID(se.ID); origFile != nil {
+				v.requestDownload(*origFile)
+			}
+		}
+		if swarmClicked && !se.IsDir {
+			if origFile := v.findOrigFileByID(se.ID); origFile != nil {
+				v.requestSwarmDownload(*origFile)
+			}
+		}
+
+		// Navigate into directory only if no action button was clicked
+		if i < len(v.fileBtns) && v.fileBtns[i].Clicked(gtx) && !downloadClicked && !swarmClicked {
 			if se.IsDir {
 				if strings.Contains(se.Name, "..") || strings.ContainsAny(se.Name, "/\\") {
 					continue
@@ -618,16 +646,6 @@ func (v *SharesView) LayoutMain(gtx layout.Context) layout.Dimensions {
 				fw.ClearSelection()
 				fw.CancelRename()
 				v.loadFiles()
-			}
-		}
-		if i < len(v.downloadBtns) && v.downloadBtns[i].Clicked(gtx) && !se.IsDir {
-			if origFile := v.findOrigFileByID(se.ID); origFile != nil {
-				v.requestDownload(*origFile)
-			}
-		}
-		if i < len(v.swarmBtns) && v.swarmBtns[i].Clicked(gtx) && !se.IsDir {
-			if origFile := v.findOrigFileByID(se.ID); origFile != nil {
-				v.requestSwarmDownload(*origFile)
 			}
 		}
 	}
@@ -1594,8 +1612,8 @@ func (v *SharesView) layoutFileList(gtx layout.Context) layout.Dimensions {
 					}
 				}
 
-				// Download button (files only)
-				if !entry.IsDir && i < len(v.downloadBtns) {
+				// Download button
+				if i < len(v.downloadBtns) {
 					btn := &v.downloadBtns[i]
 					extras = append(extras, func(gtx layout.Context) layout.Dimensions {
 						return btn.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
@@ -2225,41 +2243,285 @@ func (v *SharesView) syncLocalFiles() {
 	}()
 }
 
-func (v *SharesView) downloadAllFiles() {
+// fileWithPath pairs a file entry with its parent directory path for recursive downloads.
+type fileWithPath struct {
+	file api.SharedFileEntry
+	path string // parent directory path within the share (e.g. "/photos/vacation")
+}
+
+// downloadBatch downloads all files to rootDest via a single bulk P2P connection.
+func (v *SharesView) downloadBatch(conn *ServerConnection, shareID string, allFiles []fileWithPath, rootDest, stripPrefix string) {
+	totalFiles := len(allFiles)
+
 	v.downloadingAll = true
 	v.downloadAllDone = 0
+	v.downloadAllTotal = totalFiles
+	v.app.StatusBar.Set(StatusItem{
+		ID:       "share-download",
+		Label:    "Downloading",
+		Detail:   fmt.Sprintf("0 / %d files", totalFiles),
+		Progress: 0,
+		Icon:     IconDownload,
+	})
+	v.app.Window.Invalidate()
 
-	// Collect all non-dir files in current view
-	var filesToDownload []api.SharedFileEntry
+	// Send all file IDs in one bulk request
+	fileIDs := make([]string, len(allFiles))
+	for i, fp := range allFiles {
+		fileIDs[i] = fp.file.ID
+	}
+
+	resp, err := conn.Client.RequestBundleTransfer(shareID, fileIDs)
+	if err != nil {
+		log.Printf("RequestBundleTransfer error: %v", err)
+		v.downloadingAll = false
+		v.app.StatusBar.Remove("share-download")
+		v.app.Toasts.Info("Download failed: " + err.Error())
+		v.app.Window.Invalidate()
+		return
+	}
+
+	transferID, _ := resp["transfer_id"].(string)
+	if transferID == "" {
+		v.downloadingAll = false
+		v.app.StatusBar.Remove("share-download")
+		return
+	}
+
+	// Find owner
 	v.app.mu.RLock()
-	for _, f := range v.Files {
-		if !f.IsDir {
-			filesToDownload = append(filesToDownload, f)
+	var ownerID string
+	for _, s := range conn.MyShares {
+		if s.ID == shareID {
+			ownerID = s.OwnerID
+			break
+		}
+	}
+	for _, s := range conn.SharedWithMe {
+		if s.ID == shareID {
+			ownerID = s.OwnerID
+			break
 		}
 	}
 	v.app.mu.RUnlock()
 
-	v.downloadAllTotal = len(filesToDownload)
-	if v.downloadAllTotal == 0 {
+	if ownerID == "" {
 		v.downloadingAll = false
-		v.app.Toasts.Info("No files to download")
+		v.app.StatusBar.Remove("share-download")
 		return
 	}
 
-	v.app.Toasts.Info(fmt.Sprintf("Downloading %d files...", v.downloadAllTotal))
+	// Create bulk receiver — one persistent WebRTC connection for all files
+	sendWS := func(eventType string, payload any) error {
+		return conn.WS.SendJSON(eventType, payload)
+	}
+	done := make(chan struct{})
+	cancelled := make(chan struct{})
+	bs := p2p.NewBulkReceiver(conn.StunURL, sendWS, transferID, ownerID, rootDest, totalFiles, 0)
 
-	go func() {
-		for i, f := range filesToDownload {
-			v.requestDownload(f)
-			v.downloadAllDone = i + 1
-			v.app.Window.Invalidate()
-			// Wait a bit between downloads to not overload P2P
-			time.Sleep(2 * time.Second)
-		}
-		v.downloadingAll = false
-		v.app.Toasts.Info(fmt.Sprintf("Downloaded %d files", v.downloadAllTotal))
+	cancelFn := func() {
+		v.app.ConfirmDlg.ShowWithOptions("Cancel download",
+			fmt.Sprintf("Cancel download? %d / %d files downloaded to:\n%s", v.downloadAllDone, totalFiles, rootDest),
+			"Cancel & delete files", "Cancel download", "Continue",
+			func() {
+				// Cancel & delete
+				select {
+				case cancelled <- struct{}{}:
+				default:
+				}
+				go func() {
+					os.RemoveAll(rootDest)
+					v.app.Toasts.Info("Download cancelled, files deleted")
+					v.app.Window.Invalidate()
+				}()
+			},
+			func() {
+				// Cancel, keep files
+				select {
+				case cancelled <- struct{}{}:
+				default:
+				}
+				v.app.Toasts.Info("Download cancelled")
+			},
+		)
 		v.app.Window.Invalidate()
-	}()
+	}
+
+	bs.OnProgress = func(doneFiles, total int, doneBytes, totalBytes int64) {
+		v.downloadAllDone = doneFiles
+		v.app.StatusBar.Set(StatusItem{
+			ID:       "share-download",
+			Label:    "Downloading",
+			Detail:   fmt.Sprintf("%d / %d files", doneFiles, total),
+			Progress: float64(doneFiles) / float64(total),
+			Icon:     IconDownload,
+			OnCancel: cancelFn,
+		})
+		v.app.Window.Invalidate()
+	}
+	// Set initial status with cancel
+	v.app.StatusBar.Set(StatusItem{
+		ID:       "share-download",
+		Label:    "Downloading",
+		Detail:   fmt.Sprintf("0 / %d files", totalFiles),
+		Progress: 0,
+		Icon:     IconDownload,
+		OnCancel: cancelFn,
+	})
+
+	bs.OnDone = func() {
+		select {
+		case done <- struct{}{}:
+		default:
+		}
+	}
+
+	v.app.mu.Lock()
+	conn.BulkSessions[transferID] = bs
+	v.app.mu.Unlock()
+
+	// Wait for transfer to complete or cancel
+	select {
+	case <-done:
+	case <-cancelled:
+	case <-time.After(30 * time.Minute):
+		log.Printf("Bulk download timed out: %s", transferID)
+	}
+
+	v.app.mu.Lock()
+	delete(conn.BulkSessions, transferID)
+	v.app.mu.Unlock()
+	bs.Close()
+
+	v.downloadingAll = false
+	v.app.StatusBar.Remove("share-download")
+	select {
+	case <-cancelled:
+		// Already handled
+	default:
+		v.app.Toasts.Info(fmt.Sprintf("Downloaded %d files", totalFiles))
+	}
+	v.app.Window.Invalidate()
+}
+
+
+func (v *SharesView) downloadDirectory(dirPath string) {
+	shareID := v.ActiveShareID
+	conn := v.app.Conn()
+	if conn == nil || shareID == "" {
+		return
+	}
+
+	dirName := filepath.Base(dirPath)
+	if dirName == "" || dirName == "/" || dirName == "." {
+		dirName = "share"
+	}
+
+	v.app.SaveDlg.ShowFolderPick(func(destDir string) {
+		rootDest := filepath.Join(destDir, dirName)
+
+		go func() {
+			v.app.Toasts.Info("Collecting files...")
+			v.app.Window.Invalidate()
+
+			var allFiles []fileWithPath
+			var collectFiles func(path string)
+			collectFiles = func(path string) {
+				files, err := conn.Client.GetShareFiles(shareID, path)
+				if err != nil {
+					log.Printf("GetShareFiles error for path %s: %v", path, err)
+					return
+				}
+				for _, f := range files {
+					if f.IsDir {
+						subPath := path
+						if subPath == "/" {
+							subPath = "/" + f.FileName
+						} else {
+							subPath = subPath + "/" + f.FileName
+						}
+						collectFiles(subPath)
+					} else {
+						allFiles = append(allFiles, fileWithPath{file: f, path: path})
+					}
+				}
+			}
+			collectFiles(dirPath)
+
+			if len(allFiles) == 0 {
+				v.app.Toasts.Info("No files in directory")
+				return
+			}
+
+			v.app.Toasts.Info(fmt.Sprintf("Downloading %d files to %s...", len(allFiles), rootDest))
+			v.downloadBatch(conn, shareID, allFiles, rootDest, dirPath)
+		}()
+	})
+}
+
+func (v *SharesView) downloadAllFiles() {
+	shareID := v.ActiveShareID
+	conn := v.app.Conn()
+	if conn == nil || shareID == "" {
+		return
+	}
+
+	v.app.mu.RLock()
+	shareName := "share"
+	for _, s := range conn.MyShares {
+		if s.ID == shareID {
+			shareName = s.DisplayName
+			break
+		}
+	}
+	for _, s := range conn.SharedWithMe {
+		if s.ID == shareID {
+			shareName = s.DisplayName
+			break
+		}
+	}
+	v.app.mu.RUnlock()
+
+	v.app.SaveDlg.ShowFolderPick(func(destDir string) {
+		rootDest := filepath.Join(destDir, shareName)
+
+		go func() {
+			v.app.Toasts.Info("Collecting files...")
+			v.app.Window.Invalidate()
+
+			var allFiles []fileWithPath
+			var collectFiles func(dir string)
+			collectFiles = func(dir string) {
+				files, err := conn.Client.GetShareFiles(shareID, dir)
+				if err != nil {
+					log.Printf("GetShareFiles error for path %s: %v", dir, err)
+					return
+				}
+				for _, f := range files {
+					if f.IsDir {
+						subDir := dir
+						if subDir == "/" {
+							subDir = "/" + f.FileName
+						} else {
+							subDir = subDir + "/" + f.FileName
+						}
+						collectFiles(subDir)
+					} else {
+						allFiles = append(allFiles, fileWithPath{file: f, path: dir})
+					}
+				}
+			}
+			collectFiles("/")
+
+			if len(allFiles) == 0 {
+				v.app.Toasts.Info("No files to download")
+				return
+			}
+
+			v.app.Toasts.Info(fmt.Sprintf("Downloading %d files to %s...", len(allFiles), rootDest))
+			v.downloadBatch(conn, shareID, allFiles, rootDest, "/")
+		}()
+	})
 }
 
 func (v *SharesView) syncShareFiles(shareID, localPath string) {
@@ -2435,6 +2697,53 @@ func (v *SharesView) requestDownload(f api.SharedFileEntry) {
 	}()
 }
 
+// requestDownloadTo downloads a file to an explicit save path (used by directory download).
+func (v *SharesView) requestDownloadTo(f api.SharedFileEntry, savePath string) {
+	shareID := v.ActiveShareID
+
+	go func() {
+		conn := v.app.Conn()
+		if conn == nil {
+			return
+		}
+
+		v.app.mu.RLock()
+		var ownerID string
+		for _, s := range conn.MyShares {
+			if s.ID == shareID {
+				ownerID = s.OwnerID
+				break
+			}
+		}
+		for _, s := range conn.SharedWithMe {
+			if s.ID == shareID {
+				ownerID = s.OwnerID
+				break
+			}
+		}
+		v.app.mu.RUnlock()
+
+		resp, err := conn.Client.RequestTransfer(shareID, f.ID)
+		if err != nil {
+			log.Printf("RequestTransfer error: %v", err)
+			return
+		}
+
+		transferID, _ := resp["transfer_id"].(string)
+		if transferID == "" {
+			log.Printf("RequestTransfer: no transfer_id in response")
+			return
+		}
+
+		log.Printf("Download to: transfer_id=%s, owner=%s, save=%s", transferID, ownerID, savePath)
+		time.Sleep(500 * time.Millisecond)
+
+		if conn.P2P != nil && ownerID != "" {
+			conn.P2P.RequestDownload(ownerID, transferID, savePath)
+		}
+	}()
+}
+
 func (v *SharesView) requestSwarmDownload(f api.SharedFileEntry) {
 	shareID := v.ActiveShareID
 	browsePath := v.BrowsePath
@@ -2557,6 +2866,25 @@ func (v *SharesView) persistSharePaths() {
 		paths[k] = val
 	}
 	store.UpdateSharePaths(v.app.PublicKey, conn.URL, paths)
+}
+
+// initMountSession establishes a persistent P2P connection for mount file access.
+func (v *SharesView) initMountSession(conn *ServerConnection, shareID, ownerID string) {
+	sendWS := func(eventType string, payload any) error {
+		return conn.WS.SendJSON(eventType, payload)
+	}
+	ms := p2p.NewMountSessionReceiver(conn.StunURL, sendWS, shareID, ownerID, shareID)
+
+	v.app.mu.Lock()
+	conn.MountSessions[shareID] = ms
+	v.app.mu.Unlock()
+
+	// Ask owner to create their side
+	conn.WS.SendJSON("mount.request", map[string]any{
+		"to":         ownerID,
+		"session_id": shareID,
+		"share_id":   shareID,
+	})
 }
 
 // persistMountedShares saves currently mounted shares to identities.json

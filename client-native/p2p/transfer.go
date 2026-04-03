@@ -80,6 +80,8 @@ type Transfer struct {
 	onMarkSent   func(string)                          // callback to mark transfer as sent (sender-side)
 	onAutoRetry  func(peerID, transferID, savePath string, offset int64) // auto-retry on failure
 	onZipStart   func(savePath string)                  // callback: .zip transfer started
+	onSendStart  func(transferID, fileName string, fileSize int64) // callback: sending started
+	onSendDone   func(transferID string)                // callback: sending completed
 	retries      int
 }
 
@@ -103,6 +105,10 @@ type Manager struct {
 	onZipStart func(savePath string)
 	// Callback: .zip file successfully downloaded → UI offers extraction
 	onZipDone func(savePath string)
+	// Callback: sending a file started (sender-side)
+	onSendStart func(transferID, fileName string, fileSize int64)
+	// Callback: sending a file completed (sender-side)
+	onSendDone func(transferID string)
 }
 
 // sharesFilePath returns the path to the file with persisted shared files.
@@ -202,6 +208,18 @@ func (m *Manager) SetOnZipStart(fn func(savePath string)) {
 func (m *Manager) SetOnZipDone(fn func(savePath string)) {
 	m.mu.Lock()
 	m.onZipDone = fn
+	m.mu.Unlock()
+}
+
+func (m *Manager) SetOnSendStart(fn func(transferID, fileName string, fileSize int64)) {
+	m.mu.Lock()
+	m.onSendStart = fn
+	m.mu.Unlock()
+}
+
+func (m *Manager) SetOnSendDone(fn func(transferID string)) {
+	m.mu.Lock()
+	m.onSendDone = fn
 	m.mu.Unlock()
 }
 
@@ -475,12 +493,22 @@ func (m *Manager) HandleRequest(from string, payload json.RawMessage) {
 		return
 	}
 
-	m.mu.Lock()
-	rf, ok := m.registeredFiles[p.TransferID]
-	m.mu.Unlock()
-	if !ok {
-		log.Printf("p2p: request for unknown file: %s", p.TransferID)
-		// File is not registered (sender offline/restarted)
+	// Look up registered file — retry briefly in case a bundle is still being created
+	var rf *RegisteredFile
+	for attempt := 0; attempt < 30; attempt++ {
+		m.mu.Lock()
+		rf = m.registeredFiles[p.TransferID]
+		m.mu.Unlock()
+		if rf != nil {
+			break
+		}
+		if attempt == 0 {
+			log.Printf("p2p: file not yet registered, waiting: %s", p.TransferID)
+		}
+		time.Sleep(time.Second)
+	}
+	if rf == nil {
+		log.Printf("p2p: request for unknown file after retries: %s", p.TransferID)
 		m.sendWS("file.reject", map[string]string{
 			"to":          from,
 			"transfer_id": p.TransferID,
@@ -504,6 +532,8 @@ func (m *Manager) HandleRequest(from string, payload json.RawMessage) {
 		onProgress: m.invalidate,
 		onDone:     m.invalidate,
 		onMarkSent: func(id string) { m.MarkSent(id) },
+		onSendStart: m.onSendStart,
+		onSendDone:  m.onSendDone,
 	}
 
 	m.mu.Lock()
@@ -589,6 +619,14 @@ func (t *Transfer) initSendOffer(requesterID, transferID string) {
 
 // sendFile reads the file in chunks and sends via DataChannel with flow control.
 func (t *Transfer) sendFile() {
+	if t.onSendStart != nil {
+		tid := t.baseID
+		if tid == "" {
+			tid = t.ID
+		}
+		t.onSendStart(tid, t.FileName, t.FileSize)
+	}
+
 	f, err := os.Open(t.filePath)
 	if err != nil {
 		t.fail("open file: " + err.Error())
@@ -659,6 +697,9 @@ func (t *Transfer) sendFile() {
 	})
 	if t.onMarkSent != nil {
 		t.onMarkSent(tid)
+	}
+	if t.onSendDone != nil {
+		t.onSendDone(tid)
 	}
 	if t.onDone != nil {
 		t.onDone()

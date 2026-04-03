@@ -1356,6 +1356,14 @@ func (c *Client) RequestTransfer(shareID, fileID string) (map[string]interface{}
 	return resp, err
 }
 
+// RequestBundleTransfer requests a bundled transfer of multiple small files as a single tar.
+func (c *Client) RequestBundleTransfer(shareID string, fileIDs []string) (map[string]interface{}, error) {
+	body := map[string]any{"file_ids": fileIDs}
+	var resp map[string]interface{}
+	err := c.doJSON("POST", fmt.Sprintf("/api/shares/%s/transfer/bundle", shareID), body, &resp)
+	return resp, err
+}
+
 // Swarm P2P sharing
 
 func (c *Client) SwarmAddSeed(shareID, fileID string) error {

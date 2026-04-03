@@ -682,6 +682,78 @@ func (d *Deps) TransferRequest(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+// TransferBundleRequest bundles multiple small files into a single P2P transfer.
+// The owner creates a tar archive and sends it as one transfer.
+func (d *Deps) TransferBundleRequest(w http.ResponseWriter, r *http.Request) {
+	user := auth.GetUser(r)
+	shareID := r.PathValue("id")
+
+	dir, err := d.Shares.GetDirectory(shareID)
+	if err != nil {
+		util.Error(w, http.StatusNotFound, "share not found")
+		return
+	}
+
+	if dir.OwnerID != user.ID {
+		perm, err := d.Shares.GetEffectivePermission(shareID, user.ID)
+		if err != nil || !perm.CanRead || perm.IsBlocked {
+			util.Error(w, http.StatusForbidden, "no access")
+			return
+		}
+	}
+
+	var req struct {
+		FileIDs []string `json:"file_ids"`
+	}
+	if err := util.DecodeJSON(r, &req); err != nil || len(req.FileIDs) == 0 {
+		util.Error(w, http.StatusBadRequest, "file_ids required")
+		return
+	}
+	if len(req.FileIDs) > 50000 {
+		util.Error(w, http.StatusBadRequest, "too many files (max 50000)")
+		return
+	}
+
+	files, err := d.Shares.GetFiles(req.FileIDs)
+	if err != nil {
+		util.Error(w, http.StatusInternalServerError, "failed to get files")
+		return
+	}
+
+	// Verify all files belong to this share
+	var bundleFiles []map[string]any
+	for _, f := range files {
+		if f.DirectoryID != shareID || f.IsDir {
+			continue
+		}
+		bundleFiles = append(bundleFiles, map[string]any{
+			"file_id":       f.ID,
+			"file_name":     f.FileName,
+			"file_size":     f.FileSize,
+			"relative_path": f.RelativePath,
+		})
+	}
+
+	if len(bundleFiles) == 0 {
+		util.Error(w, http.StatusBadRequest, "no valid files")
+		return
+	}
+
+	transferID, _ := uuid.NewV7()
+	event, _ := ws.NewEvent(ws.EventTransferBundle, map[string]any{
+		"transfer_id":  transferID.String(),
+		"directory_id": shareID,
+		"files":        bundleFiles,
+		"requester_id": user.ID,
+	})
+	d.Hub.BroadcastToUser(dir.OwnerID, event)
+
+	util.JSON(w, http.StatusOK, map[string]any{
+		"transfer_id":  transferID.String(),
+		"owner_online": d.Hub.IsUserOnline(dir.OwnerID),
+	})
+}
+
 // UploadRequest — file upload request to share (uploader → owner)
 func (d *Deps) UploadRequest(w http.ResponseWriter, r *http.Request) {
 	user := auth.GetUser(r)

@@ -61,6 +61,7 @@ type SaveDialog struct {
 
 	onSave     func(string)
 	needsFocus bool
+	folderMode bool // when true, pick a directory (no filename field)
 }
 
 func NewSaveDialog(a *App) *SaveDialog {
@@ -75,6 +76,20 @@ func NewSaveDialog(a *App) *SaveDialog {
 }
 
 func (d *SaveDialog) Show(defaultName string, onSave func(string)) {
+	d.folderMode = false
+	d.showCommon(onSave)
+	d.filenameEditor.SetText(defaultName)
+	d.filenameEditor.SetCaret(len(defaultName), 0)
+}
+
+// ShowFolderPick opens the dialog in folder-pick mode (no filename field).
+// The callback receives the selected directory path.
+func (d *SaveDialog) ShowFolderPick(onPick func(string)) {
+	d.folderMode = true
+	d.showCommon(onPick)
+}
+
+func (d *SaveDialog) showCommon(onSave func(string)) {
 	d.Visible = true
 	d.onSave = onSave
 	d.needsFocus = true
@@ -99,9 +114,6 @@ func (d *SaveDialog) Show(defaultName string, onSave func(string)) {
 	d.showHints = false
 	d.selectedHint = -1
 	d.pathHints = nil
-
-	d.filenameEditor.SetText(defaultName)
-	d.filenameEditor.SetCaret(len(defaultName), 0)
 	d.readDir()
 }
 
@@ -166,6 +178,18 @@ func (d *SaveDialog) navigateTo(dir string) {
 }
 
 func (d *SaveDialog) doSave() {
+	if d.folderMode {
+		if d.onSave == nil {
+			return
+		}
+		addRecentDir(d.currentDir)
+		fn := d.onSave
+		dir := d.currentDir
+		d.Hide()
+		fn(dir)
+		return
+	}
+
 	name := strings.TrimSpace(d.filenameEditor.Text())
 	if name == "" || d.onSave == nil {
 		return
@@ -274,10 +298,14 @@ func (d *SaveDialog) Layout(gtx layout.Context) layout.Dimensions {
 		return layout.Dimensions{}
 	}
 
-	// Focus the filename editor on open
+	// Focus the appropriate editor on open
 	if d.needsFocus {
 		d.needsFocus = false
-		gtx.Execute(key.FocusCmd{Tag: &d.filenameEditor})
+		if d.folderMode {
+			gtx.Execute(key.FocusCmd{Tag: &d.pathEditor})
+		} else {
+			gtx.Execute(key.FocusCmd{Tag: &d.filenameEditor})
+		}
 	}
 
 	// Detect text change in path editor — recompute hints
@@ -470,8 +498,11 @@ func (d *SaveDialog) Layout(gtx layout.Context) layout.Dimensions {
 										return d.layoutFileList(gtx)
 									})
 								}),
-								// Filename editor
+								// Filename editor (hidden in folder mode)
 								layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+									if d.folderMode {
+										return layout.Dimensions{}
+									}
 									return d.layoutFilenameEditor(gtx)
 								}),
 								// Buttons
@@ -814,7 +845,11 @@ func (d *SaveDialog) layoutButtons(gtx layout.Context) layout.Dimensions {
 		}),
 		layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 			return layout.Inset{Left: unit.Dp(8)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-				return layoutDialogBtn(gtx, d.app.Theme, &d.saveBtn, "Save", ColorAccent, ColorWhite)
+				label := "Save"
+				if d.folderMode {
+					label = "Select"
+				}
+				return layoutDialogBtn(gtx, d.app.Theme, &d.saveBtn, label, ColorAccent, ColorWhite)
 			})
 		}),
 	)

@@ -335,6 +335,7 @@ func NewRouter(d *Deps) http.Handler {
 	protected.HandleFunc("GET /api/shares/{id}/files", d.ListShareFiles)
 	protected.HandleFunc("POST /api/shares/{id}/files/sync", d.SyncShareFiles)
 	protected.HandleFunc("POST /api/shares/{id}/transfer/request", d.TransferRequest)
+	protected.HandleFunc("POST /api/shares/{id}/transfer/bundle", d.TransferBundleRequest)
 	protected.HandleFunc("POST /api/shares/{id}/upload/request", d.UploadRequest)
 	protected.HandleFunc("DELETE /api/shares/{id}/files", d.DeleteShareFile)
 	protected.HandleFunc("POST /api/shares/{id}/files/rename", d.RenameShareFile)

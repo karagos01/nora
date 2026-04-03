@@ -59,7 +59,7 @@ func (ws *WSClient) Connect(ctx context.Context) error {
 	if err != nil {
 		return fmt.Errorf("WS connect: %w", err)
 	}
-	conn.SetReadLimit(1 << 20) // 1MB
+	conn.SetReadLimit(10 << 20) // 10MB
 	ws.mu.Lock()
 	ws.conn = conn
 	ws.mu.Unlock()

@@ -20,14 +20,17 @@ type ConfirmDialog struct {
 	Title   string
 	Message string
 
-	confirmBtn widget.Clickable
-	cancelBtn  widget.Clickable
-	overlayBtn widget.Clickable
-	cardBtn    widget.Clickable
+	confirmBtn  widget.Clickable
+	secondBtn   widget.Clickable
+	cancelBtn   widget.Clickable
+	overlayBtn  widget.Clickable
+	cardBtn     widget.Clickable
 
 	onConfirm    func()
+	onSecond     func()
 	onCancel     func()
 	ConfirmText  string
+	SecondText   string     // empty → no second button
 	CancelText   string     // empty → "Cancel"
 	confirmColor color.NRGBA // confirm button color (default ColorDanger)
 }
@@ -77,10 +80,26 @@ func (d *ConfirmDialog) ShowConfirm(title, message string, onConfirm func()) {
 	d.onCancel = nil
 }
 
+// ShowWithOptions shows a dialog with 3 action buttons (danger, secondary, dismiss).
+func (d *ConfirmDialog) ShowWithOptions(title, message, confirmText, secondText, cancelText string, onConfirm, onSecond func()) {
+	d.Visible = true
+	d.Title = title
+	d.Message = message
+	d.ConfirmText = confirmText
+	d.SecondText = secondText
+	d.CancelText = cancelText
+	d.confirmColor = ColorDanger
+	d.onConfirm = onConfirm
+	d.onSecond = onSecond
+	d.onCancel = nil
+}
+
 func (d *ConfirmDialog) Hide() {
 	d.Visible = false
 	d.onConfirm = nil
+	d.onSecond = nil
 	d.onCancel = nil
+	d.SecondText = ""
 }
 
 func (d *ConfirmDialog) Layout(gtx layout.Context) layout.Dimensions {
@@ -90,6 +109,14 @@ func (d *ConfirmDialog) Layout(gtx layout.Context) layout.Dimensions {
 
 	if d.confirmBtn.Clicked(gtx) {
 		fn := d.onConfirm
+		d.Hide()
+		if fn != nil {
+			go fn()
+		}
+		return layout.Dimensions{Size: gtx.Constraints.Max}
+	}
+	if d.secondBtn.Clicked(gtx) {
+		fn := d.onSecond
 		d.Hide()
 		if fn != nil {
 			go fn()
@@ -158,10 +185,18 @@ func (d *ConfirmDialog) Layout(gtx layout.Context) layout.Dimensions {
 									return layout.Flex{Spacing: layout.SpaceStart}.Layout(gtx,
 										layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 											cancelText := d.CancelText
-												if cancelText == "" {
-													cancelText = "Cancel"
-												}
-												return layoutDialogBtn(gtx, d.app.Theme, &d.cancelBtn, cancelText, ColorInput, ColorText)
+											if cancelText == "" {
+												cancelText = "Cancel"
+											}
+											return layoutDialogBtn(gtx, d.app.Theme, &d.cancelBtn, cancelText, ColorInput, ColorText)
+										}),
+										layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+											if d.SecondText == "" {
+												return layout.Dimensions{}
+											}
+											return layout.Inset{Left: unit.Dp(8)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+												return layoutDialogBtn(gtx, d.app.Theme, &d.secondBtn, d.SecondText, ColorInput, ColorText)
+											})
 										}),
 										layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 											return layout.Inset{Left: unit.Dp(8)}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
@@ -170,10 +205,10 @@ func (d *ConfirmDialog) Layout(gtx layout.Context) layout.Dimensions {
 													confirmText = "Delete"
 												}
 												btnColor := d.confirmColor
-											if btnColor == (color.NRGBA{}) {
-												btnColor = ColorDanger
-											}
-											return layoutDialogBtn(gtx, d.app.Theme, &d.confirmBtn, confirmText, btnColor, ColorWhite)
+												if btnColor == (color.NRGBA{}) {
+													btnColor = ColorDanger
+												}
+												return layoutDialogBtn(gtx, d.app.Theme, &d.confirmBtn, confirmText, btnColor, ColorWhite)
 											})
 										}),
 									)
